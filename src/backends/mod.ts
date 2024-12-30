@@ -13,10 +13,14 @@ import { getLogger } from "../utils/log.ts";
 
 const logger = getLogger(import.meta);
 
-export async function resolveHandler(c: Context) {
+export async function resolveHandler(c: Context, serviceAccountName: string) {
   logger.debug("Resolving Handler for Request...");
   const reqInfo = extractRequestInfo(c.req.raw);
   const { bucket } = reqInfo;
+
+  if (serviceAccountName) {
+    // TODO: implement authorization
+  }
 
   if (!bucket) {
     logger.critical("Bucket not specified in the request");

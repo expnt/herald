@@ -107,6 +107,12 @@ export const envVarConfigSchema = z.object({
     .enum(["NOTSET", "DEBUG", "INFO", "WARN", "ERROR", "CRITICAL"])
     .optional(),
   env: z.enum(["DEV", "PROD"]).default("DEV"),
+  k8s_api: z.string(),
+  pod_name: z.string().optional(),
+  namespace: z.string().optional(),
+  jwk_uri: z.string().optional().default(
+    "http://127.0.0.1:8001/openid/v1/jwks",
+  ),
   config_file_path: z.string().default("herald.yaml"),
   version: z.string().default("0.1"),
   sentry_dsn: z.string().optional(),
@@ -114,5 +120,29 @@ export const envVarConfigSchema = z.object({
   sentry_traces_sample_rate: z.coerce.number().positive().min(0).max(1).default(
     1,
   ),
-});
+}).superRefine(
+  (data, ctx) => {
+    if (data.env === "DEV" && !data.pod_name) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "POD_NAME not found in environment. Set the ENV variable to PROD if running in a Kubernetes cluster",
+      });
+    }
+    if (data.env === "DEV" && !data.namespace) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "NAMESPACE not found in environment. Set the ENV variable to PROD if running in a Kubernetes cluster",
+      });
+    }
+    if (data.env === "DEV" && !data.k8s_api) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "K8S_API not found in environment. Set the ENV variable to DEV if running locally",
+      });
+    }
+  },
+);
 export type EnvVarConfig = z.infer<typeof envVarConfigSchema>;

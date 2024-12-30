@@ -5,7 +5,7 @@ import { getLogger, reportToSentry, setupLoggers } from "./utils/log.ts";
 import { resolveHandler } from "./backends/mod.ts";
 import { HTTPException } from "./types/http-exception.ts";
 import * as Sentry from "sentry";
-import { decodeToken } from "./auth/mod.ts";
+import { authenicateRequestAndReturnPodServiceAccount } from "./auth/mod.ts";
 // import { taskHandler } from "./backends/tasks.ts";
 
 // setup
@@ -54,15 +54,22 @@ app.all("/*", async (c) => {
     return c.text(healthStatus, 200);
   }
 
-  if (envVarsConfig.env === "PROD") {
-    decodeToken(c.req.header("Authorization") || "");
-  }
-
   if (path === "/") {
     return c.text("Proxy is running...", 200);
   }
 
-  const response = await resolveHandler(c);
+  const token = c.req.header("Authorization");
+  if (!token) {
+    const errMessage = "No token provided";
+    throw new HTTPException(401, {
+      message: errMessage,
+    });
+  }
+  const serviceAccountName = await authenicateRequestAndReturnPodServiceAccount(
+    token,
+  );
+
+  const response = await resolveHandler(c, serviceAccountName);
   return response;
 });
 

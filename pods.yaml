@@ -1,5 +1,0 @@
-pods:
-  - serviceaccount:
-      name: “default”
-      uid: “c249f269-ef2b-4d3c-8279-3e4f2198793c”
-    sub: “system:serviceaccount:jwk-auth-app:default”

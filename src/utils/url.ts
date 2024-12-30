@@ -218,3 +218,33 @@ export function deserializeToRequest(data: Record<string, any>): Request {
     // body: data.method !== 'GET' && data.method !== 'HEAD' ? data.body : null,
   });
 }
+
+export async function retryFetchWithExponentialBackoff<T>(
+  fn: () => Promise<T>,
+  retries = 5,
+  initialDelay = 100,
+  maxDelay = 1000,
+): Promise<T | Error> {
+  let attempt = 0;
+  let delayDuration = initialDelay;
+  let err: Error = new Error("Unknown error");
+
+  while (attempt < retries) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (attempt >= retries - 1) {
+        logger.critical(error);
+        reportToSentry(error as Error);
+        err = error as Error;
+        attempt++;
+      }
+
+      await delay(delayDuration);
+      delayDuration = Math.min(delayDuration * 2, maxDelay);
+      attempt++;
+    }
+  }
+
+  return err;
+}

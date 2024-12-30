@@ -183,11 +183,11 @@ export function getBucketConfig(
 export function loadEnvConfig(
   defaults: Partial<EnvVarConfig> = {},
 ): EnvVarConfig {
-  const envVars = Object.keys(envVarConfigSchema.shape)
+  const envVars = Object.keys(envVarConfigSchema._def.schema.shape)
     .map((k) => k.toUpperCase());
 
   const config = configOrExit(
-    envVarConfigSchema,
+    envVarConfigSchema._def.schema,
     defaults,
     [
       Object.fromEntries(
