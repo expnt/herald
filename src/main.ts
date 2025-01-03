@@ -6,11 +6,12 @@ import { resolveHandler } from "./backends/mod.ts";
 import { HTTPException } from "./types/http-exception.ts";
 import * as Sentry from "sentry";
 import { decodeToken } from "./auth/mod.ts";
+import { taskHandler } from "./backends/tasks.ts";
 // import { taskHandler } from "./backends/tasks.ts";
 
 // setup
 await configInit();
-await setupLoggers();
+setupLoggers();
 
 // Sentry setup
 Sentry.init({
@@ -87,7 +88,7 @@ app.onError((err, c) => {
   return c.text(errMessage);
 });
 
-// taskHandler();
+taskHandler();
 
 Deno.serve({ port: globalConfig.port }, app.fetch);
 

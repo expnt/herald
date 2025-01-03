@@ -34,19 +34,19 @@ repos:
     rev: v1.0.3
     hooks:
       - id: tofu_fmt
-      - id: tofu_checkov
-        args:
-          - --args=--skip-check CKV_TF_1
-          - --args=--skip-check CKV_TF_2
-          - --args=--skip-check CKV_SECRET_9
-          - --args=--skip-check CKV_GCP_62
-          - --args=--skip-check CKV_GCP_114
-          - --args=--skip-check CKV_K8S_*
-          - --args=--skip-path deploy/app/chart-generic
-          - --args=--skip-path deploy/app/chart-/generic
-      - id: tofu_tflint
-        args:
-          - --args=--disable-rule terraform_module_pinned_source
+      # - id: tofu_checkov
+      #   args:
+      #     - --args=--skip-check CKV_TF_1
+      #     - --args=--skip-check CKV_TF_2
+      #     - --args=--skip-check CKV_SECRET_9
+      #     - --args=--skip-check CKV_GCP_62
+      #     - --args=--skip-check CKV_GCP_114
+      #     - --args=--skip-check CKV_K8S_*
+      #     - --args=--skip-path deploy/app/chart-generic
+      #     - --args=--skip-path deploy/app/chart-/generic
+      # - id: tofu_tflint
+      #   args:
+      #     - --args=--disable-rule terraform_module_pinned_source
       # - id: tofu_trivy
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.10.0.1

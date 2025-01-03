@@ -6,7 +6,7 @@ import {
   S3Client,
   S3ClientConfig,
   ServiceOutputTypes,
-} from "aws-sdk/client-s3";
+} from "aws-sdk/client-s3-esm";
 import { assert, assertEquals } from "std/assert";
 
 export function getS3Client(config: S3ClientConfig) {
@@ -141,16 +141,25 @@ export async function createBucketWithoutSDK(
   const date = new Date().toUTCString();
   const payload = `<?xml version="1.0" encoding="UTF-8"?>
 <CreateBucketConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
-  <LocationConstraint>${region}</LocationConstraint>
+  <LocationConstraint>local</LocationConstraint>
 </CreateBucketConfiguration>`;
 
   const headers = {
-    "Content-Type": "application/xml",
+    "content-type": "text/plain;charset=UTF-8",
     "Host": new URL(url).host,
-    "x-amz-date": date,
+    "x-amz-date": new Date().toISOString().replace(/[:-]/g, "").replace(
+      /\.\d{3}Z$/,
+      "Z",
+    ),
     "Authorization": `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${
       date.slice(12, 22)
     }/${region}/s3/aws4_request, SignedHeaders=content-type;host;x-amz-date, Signature=`,
+    "content-length": "0",
+    "x-amz-content-sha256":
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "accept-encoding": "identity",
+    "amz-sdk-invocation-id": "d6503e2b-eaae-434e-9abf-b64f24f3570c",
+    "amz-sdk-request": "attempt=1",
   };
 
   const response = await fetch(url, {

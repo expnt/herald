@@ -8,19 +8,26 @@ import {
   ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
-} from "aws-sdk/client-s3";
+} from "aws-sdk/client-s3-esm";
 import { createTempFile, createTempStream } from "../../../utils/file.ts";
 import { assert } from "std/assert";
-import { setupBucket } from "../../../utils/s3.ts";
-import { Upload } from "aws-sdk/lib-storage";
-import { getS3Client } from "../../../src/utils/s3.ts";
+import { getS3Client, setupBucket } from "../../../utils/s3.ts";
+import { Upload } from "aws-sdk/lib-storage-esm";
 
 const filePath = await createTempFile(1); // 1MB
 
 const bucket = "s3-test";
 const objectKey = path.basename(filePath);
 
-const s3 = getS3Client(bucket);
+const s3 = getS3Client({
+  credentials: {
+    accessKeyId: "minio",
+    secretAccessKey: "password",
+  },
+  region: "local",
+  forcePathStyle: true,
+  endpoint: "http://localhost:8000",
+});
 
 async function deleteBucketIfExists(bucketName: string) {
   while (true) {

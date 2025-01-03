@@ -45,34 +45,6 @@ $RECYCLE.BIN/
 *.msp
 
 ############################
-# Packages
-############################
-
-*.7z
-*.csv
-*.dat
-*.dmg
-*.gz
-*.iso
-*.jar
-*.rar
-*.tar
-*.zip
-*.com
-*.class
-*.dll
-*.exe
-*.o
-*.seed
-*.so
-*.swo
-*.swp
-*.swn
-*.swm
-*.out
-*.pid
-
-############################
 # Logs and databases
 ############################
 
@@ -92,45 +64,6 @@ ssl
 nbproject
 public/uploads/*
 !public/uploads/.gitkeep
-
-############################
-# Node.js
-############################
-
-lib-cov
-lcov.info
-pids
-logs
-results
-node_modules
-.node_history
-
-############################
-# Tests
-############################
-
-testApp
-coverage
-
-############################
-# Strapi
-############################
-
-.env*
-!.env.example
-license.txt
-exports
-*.cache
-dist
-build
-.strapi-updater.json
-src/plugins/
-
-src/providers/
-public/scorm/*
-.vscode
-src/extensions/documentation/documentation/1.0.0/full_documentation.json
-.strapi
 
 **/.terraform/*
 *.tfstate

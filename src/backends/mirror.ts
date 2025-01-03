@@ -25,14 +25,11 @@ const logger = getLogger(import.meta);
 const kv = taskStore.queue;
 const lockedStorages = taskStore.lockedStorages;
 
-function taskHandler() {
-  kv.listenQueue(async (task: MirrorTask) => {
-    logger.info(`Processing task: ${task.command}`);
-    await processTask(task);
-  });
+export function getBucketFromTask(task: MirrorTask) {
+  return task.mainBucketConfig.typ === "S3BucketConfig"
+    ? task.mainBucketConfig.config.bucket
+    : task.mainBucketConfig.config.container;
 }
-
-taskHandler();
 
 // update the remote task queue store every 5 minutes
 setInterval(async () => {
@@ -180,20 +177,6 @@ function generateS3PutObjectHeaders(
   headers.set("expect", "100-continue");
   headers.set("accept-encoding", "gzip, br");
   headers.set("x-amz-content-sha256", "UNSIGNED-PAYLOAD");
-  return headers;
-}
-
-export function generateS3CreateBucketHeaders(bucketConfig: S3Config): Headers {
-  const headers = new Headers();
-  headers.set("Host", `${bucketConfig.endpoint}`);
-  headers.set("x-amz-date", new Date().toISOString());
-  headers.set("x-amz-content-sha256", "UNSIGNED-PAYLOAD");
-  headers.set(
-    "Authorization",
-    `AWS4-HMAC-SHA256 Credential=${bucketConfig.credentials.accessKeyId}/${bucketConfig.region}/s3/aws4_request, SignedHeaders=host;x-amz-date;x-amz-content-sha256, Signature=${
-      generateSignature(bucketConfig)
-    }`,
-  );
   return headers;
 }
 
@@ -424,16 +407,9 @@ export async function mirrorCreateBucket(
   replica: ReplicaS3Config | ReplicaSwiftConfig,
 ): Promise<void> {
   if (replica.typ === "ReplicaS3Config") {
-    const headers = new Headers(originalRequest.headers);
-    headers.set(
-      "Authorization",
-      `AWS4-HMAC-SHA256 Credential=${replica.config.credentials.accessKeyId}/${replica.config.region}/s3/aws4_request, SignedHeaders=host;x-amz-date;x-amz-content-sha256, Signature=${
-        generateSignature(replica.config)
-      }`,
-    );
     const modifiedRequest = new Request(originalRequest.url, {
       method: originalRequest.method,
-      headers: headers,
+      headers: originalRequest.headers,
       body: generateCreateBucketXml(replica.config.region),
     });
     await s3_buckets.createBucket(modifiedRequest, replica.config);

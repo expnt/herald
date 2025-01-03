@@ -2,7 +2,7 @@ import {
   CreateBucketCommand,
   DeleteBucketCommand,
   S3Client,
-} from "aws-sdk/client-s3";
+} from "aws-sdk/client-s3-esm";
 import { assertEquals } from "std/assert";
 import { loggingMiddleware, testConfig } from "../../utils/mod.ts";
 import { proxyUrl } from "../../../src/config/mod.ts";

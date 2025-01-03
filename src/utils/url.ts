@@ -104,7 +104,7 @@ export async function forwardRequestWithTimeouts(
       body: signed.body ?? undefined,
     });
 
-    logger.debug(`Request: ${Deno.inspect(newRequest)}`);
+    // logger.debug(`Request: ${Deno.inspect(newRequest)}`);
 
     // Need to add the url, or content-length gets set to -1
     const response = await fetch(redirect, newRequest);

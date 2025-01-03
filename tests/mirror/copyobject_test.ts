@@ -4,7 +4,7 @@ import {
   HeadObjectCommand,
   PutObjectCommand,
   S3ClientConfig,
-} from "aws-sdk/client-s3";
+} from "aws-sdk/client-s3-esm";
 import {
   checkCopyObject,
   checkCreateBucket,

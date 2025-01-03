@@ -7,7 +7,7 @@ provider "aws" {
     s3 = "http://localhost:8000/"
   }
 
-  region     = "local"
+  region = "local"
 
   access_key = "minio"
   secret_key = "password"
@@ -16,6 +16,6 @@ provider "aws" {
   skip_credentials_validation = true
   skip_region_validation      = true
   skip_requesting_account_id  = true
-  s3_use_path_style            = true
+  s3_use_path_style           = true
   # skip_s3_checksum            = true
 }

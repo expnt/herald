@@ -1,29 +1,21 @@
 import { LevelName, Logger } from "std/log";
 import { basename, dirname, extname } from "std/path";
 import * as log from "std/log";
-import { ensureDir, exists } from "std/fs";
 import { envVarsConfig } from "../config/mod.ts";
 import { magenta } from "std/fmt/colors";
 import * as Sentry from "sentry";
 
-const logFilePath = "logs/.log";
 const loggers = new Map<string, Logger>();
-
-async function setupLogFile() {
-  if (await exists(logFilePath)) {
-    await Deno.remove(logFilePath);
-  }
-
-  await ensureDir(dirname(logFilePath));
-}
 
 const consoleHandler = new log.ConsoleHandler("NOTSET", {
   formatter: (logRecord) => {
-    const { datetime, levelName, msg } = logRecord;
+    const { datetime, levelName, msg, loggerName } = logRecord;
 
-    const formattedDate =
-      datetime.toISOString().replace("T", " ").split(".")[0];
-    let finalMessasge = `${formattedDate} ${levelName} ${msg}`;
+    const formattedDate = datetime
+      ? datetime.toISOString().replace("T", " ").split(".")[0]
+      : new Date().toISOString().replace("T", " ").split(".")[0];
+    let finalMessasge =
+      `${formattedDate} ${levelName} [${loggerName}] -- ${msg}`;
     if (logRecord.level === log.LogLevels.DEBUG) {
       finalMessasge = magenta(finalMessasge);
     }
@@ -31,19 +23,17 @@ const consoleHandler = new log.ConsoleHandler("NOTSET", {
   },
 });
 
-export async function setupLoggers() {
-  await setupLogFile();
-  log.setup({
-    handlers: {
-      file: new log.FileHandler("DEBUG", {
-        filename: logFilePath,
-        formatter: (record) =>
-          `${record.datetime} ${record.levelName} ${record.msg}`,
-      }),
-    },
+export function setupLoggers(name: ImportMeta | string | null = null) {
+  if (name && typeof name === "object") {
+    const bname = basename(name.url);
+    const dname = basename(dirname(name.url));
+    name = `${dname}/${bname.replace(extname(bname), "")}`;
+  }
 
-    loggers: {},
+  const defaultLogger = new log.Logger(name ?? "default", "INFO", {
+    handlers: [consoleHandler],
   });
+  loggers.set("", defaultLogger);
 }
 
 export function getLogLevel(): LevelName {

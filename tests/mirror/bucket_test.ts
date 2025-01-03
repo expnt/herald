@@ -3,7 +3,7 @@ import {
   DeleteBucketCommand,
   HeadBucketCommand,
   S3ClientConfig,
-} from "aws-sdk/client-s3";
+} from "aws-sdk/client-s3-esm";
 import {
   checkCreateBucket,
   deleteBucketIfExists,
