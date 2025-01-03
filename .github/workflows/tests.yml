@@ -1,0 +1,77 @@
+name: test suite
+run-name: test suite for ${{ github.event.pull_request.title || github.ref }}
+on:
+  workflow_dispatch:
+    inputs:
+      tmate_enabled:
+        type: boolean
+        description: |
+          Run the build with tmate debugging enabled (https://github.com/marketplace/actions/debugging-with-tmate).
+          This disables all but the test-full jobs.
+        required: false
+        default: false
+  push:
+    branches:
+      - main
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            website:
+              - '.github/workflows/tests.yml'
+              - 'src/metatype.dev/**'
+            typegate: # for the standalone/image (not typegate tests which rely on everything)
+              - '.github/workflows/tests.yml'
+              - 'src/common/**'
+              - 'src/mt_deno/**'
+              - 'src/pyrt_wit_wire/**'
+              - 'src/typegate/**'
+              - 'src/wit/**'
+              - 'Cargo.lock'
+            full:
+              - '.github/workflows/tests.yml'
+              - 'src/**'
+              - 'tests/**'
+              - 'examples/**'
+              - 'Cargo.lock'
+    outputs:
+      website: ${{ steps.filter.outputs.website }}
+      typegate: ${{ steps.filter.outputs.typegate }}
+      full: ${{ steps.filter.outputs.full }}
+
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - if: ${{ env.AWS_ACCESS_KEY_ID != '' }}
+        name: Setup sccache secrets
+        run: echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+      - if: ${{ env.AWS_ACCESS_KEY_ID  != '' }}
+        uses: mozilla-actions/sccache-action@v0.0.6
+      - uses: metatypedev/setup-ghjk@318209a9d215f70716a4ac89dbeb9653a2deb8bc
+      - shell: bash
+        run: |
+          sudo apt update && sudo apt install -y --no-install-recommends libclang-dev clang
+
+          ghjk x install-ts
+          ghjk x install-website
+          ghjk x fetch-deno
+
+          # pre-resolve everything to disable resolutions
+          # changing the lockfile which would fail the hooks
+          ghjk p resolve
+          SKIP=ghjk-resolve pre-commit run --show-diff-on-failure --color=always --all-filexx
