@@ -6,7 +6,7 @@ import { s3Resolver } from "./s3/mod.ts";
 import { swiftResolver } from "./swift/mod.ts";
 import { extractRequestInfo } from "../utils/s3.ts";
 import { getLogger } from "../utils/log.ts";
-import { hasBucketAccess } from "../auth/mod.ts";
+import { getAuthType, hasBucketAccess } from "../auth/mod.ts";
 
 const logger = getLogger(import.meta);
 
@@ -22,7 +22,8 @@ export async function resolveHandler(c: Context, serviceAccountName: string) {
     });
   }
 
-  if (!hasBucketAccess(serviceAccountName, bucketName)) {
+  const auth = getAuthType();
+  if (auth !== "none" && !hasBucketAccess(serviceAccountName, bucketName)) {
     logger.critical(
       `Service Account: ${serviceAccountName} does not have access to bucket: ${bucketName}`,
     );

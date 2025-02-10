@@ -66,7 +66,7 @@ export async function s3Resolver(
         message: "Method Not Allowed",
       });
     case "PUT":
-      if (objectKey && request.headers.get("x-amz-copy-source") !== undefined) {
+      if (objectKey && request.headers.get("x-amz-copy-source")) {
         return await handlers.copyObject(request, bucketConfig);
       }
 

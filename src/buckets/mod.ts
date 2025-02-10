@@ -14,12 +14,38 @@ export class Bucket {
     private _backend: string,
   ) {}
 
+  public static fromJSON(json: {
+    _name: string;
+    _config: S3Config | SwiftConfig;
+    _replicas?: object[];
+    _typ: string;
+    _backend: string;
+  }): Bucket {
+    const replicas = json._replicas
+      // deno-lint-ignore no-explicit-any
+      ? json._replicas.map((replicaJson: any) => Bucket.fromJSON(replicaJson))
+      : [];
+    return new Bucket(
+      json._name,
+      json._config,
+      replicas,
+      json._typ,
+      json._backend,
+    );
+  }
+
   public getReplica(name: string) {
     return this.replicas.find((replica) => replica.name === name);
   }
 
   get name() {
     return this._name;
+  }
+
+  get bucketName() {
+    return this.typ === "S3BucketConfig" || this.typ === "ReplicaS3Config"
+      ? (this.config as S3Config).bucket
+      : (this.config as SwiftConfig).container;
   }
 
   public hasReplicas() {
@@ -40,6 +66,10 @@ export class Bucket {
 
   get backend() {
     return this._backend;
+  }
+
+  get isReplica() {
+    return this.typ == "ReplicaS3Config" || this.typ == "ReplicaSwiftConfig";
   }
 }
 

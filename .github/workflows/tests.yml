@@ -70,7 +70,7 @@ jobs:
 
   build-docker:
       needs: changes
-      if: ${{ needs.changes.outputs.full == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.tmate_enabled) }}
+      if: ${{ needs.changes.outputs.full == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.tmate_enabled) && github.event.pull_request.draft == false  }}
       runs-on: ubuntu-latest
       steps:
         - uses: actions/checkout@v4
@@ -97,3 +97,30 @@ jobs:
             platforms: linux/amd64,linux/arm64
             push: true
             tags: ghcr.io/${{ github.repository_owner }}/herald:${{ env.TAG }}
+
+  test-full:
+    needs: changes
+    if: ${{ needs.changes.outputs.full == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.tmate_enabled) && github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: metatypedev/setup-ghjk@318209a9d215f70716a4ac89dbeb9653a2deb8bc
+        with:
+          cache-disable: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install tofu
+        run: |
+          curl --proto '=https' --tlsv1.2 -fsSL https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh
+          chmod +x install-opentofu.sh
+          ./install-opentofu.sh --install-method deb
+          rm -f install-opentofu.sh
+      - shell: bash
+        run: |
+          curl -fsSL https://deno.land/install.sh | sh -s v2.1.4
+          export DENO_INSTALL="$HOME/.deno"
+          export PATH="$DENO_INSTALL/bin:$PATH"
+          ghjk x dev-compose up
+          ghjk x setup-auth
+          deno test

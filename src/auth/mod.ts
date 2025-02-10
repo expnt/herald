@@ -228,3 +228,7 @@ export function hasBucketAccess(
 
   return sa.buckets.includes(bucket);
 }
+
+export function getAuthType() {
+  return envVarsConfig.auth_type;
+}

@@ -1,6 +1,6 @@
 import { formatParams, forwardRequestWithTimeouts } from "../../utils/url.ts";
 import { getLogger, reportToSentry } from "../../utils/log.ts";
-import { S3BucketConfig, S3Config } from "../../config/mod.ts";
+import { S3Config } from "../../config/mod.ts";
 import { prepareMirrorRequests } from "../mirror.ts";
 import { Bucket } from "../../buckets/mod.ts";
 import { s3Resolver } from "./mod.ts";
@@ -36,7 +36,7 @@ export async function createBucket(
     if (mirrorOperation) {
       await prepareMirrorRequests(
         req,
-        bucketConfig as S3BucketConfig,
+        bucketConfig,
         "createBucket",
       );
     }
@@ -73,7 +73,7 @@ export async function deleteBucket(
     if (mirrorOperation) {
       await prepareMirrorRequests(
         req,
-        bucketConfig as S3BucketConfig,
+        bucketConfig,
         "deleteBucket",
       );
     }
@@ -93,16 +93,21 @@ export async function routeQueryParamedRequest(
   let response = await forwardRequestWithTimeouts(
     req,
     bucketConfig.config as S3Config,
+    bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
   );
 
   if (response instanceof Error && bucketConfig.hasReplicas()) {
+    logger.warn(
+      `${formattedParams} Failed on Primary Bucket: ${bucketConfig.bucketName}`,
+    );
+    logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
         ? await s3Resolver(req, replica)
         : await swiftResolver(req, replica);
       if (res instanceof Error) {
         logger.warn(
-          `${formatParams} Operation Failed on Replica: ${replica.name}`,
+          `${formattedParams} Operation Failed on Replica: ${replica.name}`,
         );
         continue;
       }
@@ -138,9 +143,14 @@ export async function headBucket(
   let response = await forwardRequestWithTimeouts(
     req,
     bucketConfig.config as S3Config,
+    bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
   );
 
   if (response instanceof Error && bucketConfig.hasReplicas()) {
+    logger.warn(
+      `Head Bucket Failed on Primary Bucket: ${bucketConfig.bucketName}`,
+    );
+    logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
         ? await s3Resolver(req, replica)

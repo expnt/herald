@@ -11,3 +11,15 @@ services:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: password
       MINIO_DEFAULT_BUCKETS: "test"
+  minio-replica:
+    image: bitnami/minio:2024
+    platform: linux/amd64
+    restart: unless-stopped
+    ports:
+      - "9090:9000"
+      - "9091:9001"
+    environment:
+      MINIO_REGION_NAME: local
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: password
+      MINIO_DEFAULT_BUCKETS: "test"

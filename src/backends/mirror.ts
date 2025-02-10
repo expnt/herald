@@ -1,12 +1,4 @@
-import {
-  ReplicaConfig,
-  ReplicaS3Config,
-  ReplicaSwiftConfig,
-  S3BucketConfig,
-  S3Config,
-  SwiftBucketConfig,
-  SwiftConfig,
-} from "../config/types.ts";
+import { ReplicaS3Config, S3Config, SwiftConfig } from "../config/types.ts";
 import { getLogger, reportToSentry } from "../utils/log.ts";
 import { s3Utils } from "../utils/mod.ts";
 import * as s3 from "./s3/objects.ts";
@@ -17,7 +9,8 @@ import { S3_COPY_SOURCE_HEADER } from "../constants/headers.ts";
 import { MirrorableCommands, MirrorTask } from "./types.ts";
 import taskStore from "./task_store.ts";
 import { deserializeToRequest, serializeRequest } from "../utils/url.ts";
-import { bucketStore, globalConfig } from "../config/mod.ts";
+import { bucketStore } from "../config/mod.ts";
+import { Bucket } from "../buckets/mod.ts";
 
 const logger = getLogger(import.meta);
 
@@ -25,9 +18,7 @@ const kv = taskStore.queue;
 const lockedStorages = taskStore.lockedStorages;
 
 export function getBucketFromTask(task: MirrorTask) {
-  return task.mainBucketConfig.typ === "S3BucketConfig"
-    ? task.mainBucketConfig.config.bucket
-    : task.mainBucketConfig.config.container;
+  return task.mainBucketConfig.bucketName;
 }
 
 // update the remote task queue store every 5 minutes
@@ -62,26 +53,12 @@ export async function enqueueMirrorTask(task: MirrorTask) {
 
 export async function prepareMirrorRequests(
   req: Request,
-  bucketConfig: S3BucketConfig | SwiftBucketConfig,
+  bucketConfig: Bucket,
   command: MirrorableCommands,
 ) {
   logger.info("[S3 backend] mirroring requests...");
 
-  const replicaBuckets: ReplicaConfig[] = [];
-  for (const replica of globalConfig.replicas) {
-    const primaryBucket = bucketConfig.typ === "S3BucketConfig"
-      ? bucketConfig.config.bucket
-      : bucketConfig.config.container;
-
-    const replicaBucket = replica.typ === "ReplicaS3Config"
-      ? replica.config.bucket
-      : replica.config.container;
-
-    if (replicaBucket === primaryBucket) {
-      replicaBuckets.push(replica);
-    }
-  }
-  for (const backupConfig of replicaBuckets) {
+  for (const backupConfig of bucketConfig.replicas) {
     const task: MirrorTask = {
       mainBucketConfig: bucketConfig,
       backupBucketConfig: backupConfig,
@@ -118,14 +95,14 @@ function _getCopyObjectRequest(
   return copyObjectRequest;
 }
 
-function getDownloadS3Url(originalRequest: Request, primary: S3BucketConfig) {
+function getDownloadS3Url(originalRequest: Request, config: S3Config) {
   const reqMeta = s3Utils.extractRequestInfo(originalRequest);
 
   if (reqMeta.urlFormat === "Path") {
-    return `${primary.config.endpoint}/${reqMeta.bucket}/${reqMeta.objectKey}`;
+    return `${config.endpoint}/${reqMeta.bucket}/${reqMeta.objectKey}`;
   }
 
-  return `${reqMeta.bucket}.${primary.config.endpoint}/${reqMeta.objectKey}`;
+  return `${reqMeta.bucket}.${config.endpoint}/${reqMeta.objectKey}`;
 }
 
 function generateCreateBucketXml(region: string): string {
@@ -155,20 +132,23 @@ function generateSignature(_bucketConfig: S3Config): string {
 }
 
 export async function mirrorPutObject(
-  primary: S3BucketConfig | SwiftBucketConfig,
-  replica: ReplicaS3Config | ReplicaSwiftConfig,
+  primary: Bucket,
+  replica: Bucket,
   originalRequest: Request,
 ): Promise<void> {
   if (primary.typ === "S3BucketConfig") {
     // get object from s3
-    const getObjectUrl = getDownloadS3Url(originalRequest, primary);
+    const getObjectUrl = getDownloadS3Url(
+      originalRequest,
+      primary.config as S3Config,
+    );
     const getObjectRequest = new Request(getObjectUrl, {
-      headers: generateS3GetObjectHeaders(primary.config),
+      headers: generateS3GetObjectHeaders(primary.config as S3Config),
       method: "GET",
     });
 
     const primaryBucket = bucketStore.buckets.find((bucket) =>
-      bucket.name === primary.config.bucket
+      bucket.name === primary.bucketName
     )!;
     const response = await s3.getObject(getObjectRequest, primaryBucket);
 
@@ -216,16 +196,17 @@ export async function mirrorPutObject(
   }
 
   // get object from swift
+  const config = primary.config as SwiftConfig;
   const getObjectRequest = new Request(originalRequest.url, {
     method: "GET",
     headers: generateS3GetObjectHeaders(
       {
-        endpoint: primary.config.auth_url,
-        region: primary.config.region,
-        bucket: primary.config.container,
+        endpoint: config.auth_url,
+        region: config.region,
+        bucket: config.container,
         credentials: {
-          accessKeyId: primary.config.credentials.username,
-          secretAccessKey: primary.config.credentials.password,
+          accessKeyId: config.credentials.username,
+          secretAccessKey: config.credentials.password,
         },
         forcePathStyle: true, // FIXME
         typ: "S3Config",
@@ -233,7 +214,7 @@ export async function mirrorPutObject(
     ),
   });
   const primaryBucket = bucketStore.buckets.find((bucket) =>
-    bucket.name === primary.config.container
+    bucket.name === config.container
   )!;
   const response = await swift.getObject(getObjectRequest, primaryBucket);
 
@@ -300,7 +281,7 @@ export async function mirrorPutObject(
  * @param originalRequest
  */
 export async function mirrorDeleteObject(
-  replica: ReplicaS3Config | ReplicaSwiftConfig,
+  replica: Bucket,
   originalRequest: Request,
 ): Promise<void> {
   const primaryBucket = bucketStore.buckets.find((bucket) =>
@@ -308,11 +289,12 @@ export async function mirrorDeleteObject(
   )!;
   switch (replica.typ) {
     case "ReplicaS3Config": {
+      const config = replica.config as S3Config;
       const headers = new Headers(originalRequest.headers);
       headers.set(
         "Authorization",
-        `AWS4-HMAC-SHA256 Credential=${replica.config.credentials.accessKeyId}/${replica.config.region}/s3/aws4_request, SignedHeaders=host;x-amz-date;x-amz-content-sha256, Signature=${
-          generateSignature(replica.config)
+        `AWS4-HMAC-SHA256 Credential=${config.credentials.accessKeyId}/${config.region}/s3/aws4_request, SignedHeaders=host;x-amz-date;x-amz-content-sha256, Signature=${
+          generateSignature(config)
         }`,
       );
       const modifiedRequest = new Request(originalRequest.url, {
@@ -339,7 +321,7 @@ export async function mirrorDeleteObject(
  * @param originalRequest
  */
 export async function mirrorCopyObject(
-  replica: ReplicaS3Config | ReplicaSwiftConfig,
+  replica: Bucket,
   originalRequest: Request,
 ): Promise<void> {
   const primaryBucket = bucketStore.buckets.find((bucket) =>
@@ -347,11 +329,12 @@ export async function mirrorCopyObject(
   )!;
   switch (replica.typ) {
     case "ReplicaS3Config": {
+      const config = replica.config as S3Config;
       const headers = new Headers(originalRequest.headers);
       headers.set(
         "Authorization",
-        `AWS4-HMAC-SHA256 Credential=${replica.config.credentials.accessKeyId}/${replica.config.region}/s3/aws4_request, SignedHeaders=host;x-amz-date;x-amz-content-sha256, Signature=${
-          generateSignature(replica.config)
+        `AWS4-HMAC-SHA256 Credential=${config.credentials.accessKeyId}/${config.region}/s3/aws4_request, SignedHeaders=host;x-amz-date;x-amz-content-sha256, Signature=${
+          generateSignature(config)
         }`,
       );
       const modifiedRequest = new Request(originalRequest.url, {
@@ -374,10 +357,10 @@ export async function mirrorCopyObject(
 
 export async function mirrorCreateBucket(
   originalRequest: Request,
-  replica: ReplicaS3Config | ReplicaSwiftConfig,
+  replica: Bucket,
 ): Promise<void> {
   const primaryBucket = bucketStore.buckets.find((bucket) =>
-    bucket.name === replica.name
+    bucket.bucketName === replica.bucketName
   )!;
   if (replica.typ === "ReplicaS3Config") {
     const modifiedRequest = new Request(originalRequest.url, {
@@ -395,17 +378,18 @@ export async function mirrorCreateBucket(
 
 export async function mirrorDeleteBucket(
   originalRequest: Request,
-  replica: ReplicaS3Config | ReplicaSwiftConfig,
+  replica: Bucket,
 ) {
   const primaryBucket = bucketStore.buckets.find((bucket) =>
     bucket.name === replica.name
   )!;
   if (replica.typ === "ReplicaS3Config") {
+    const config = replica.config as S3Config;
     const headers = new Headers(originalRequest.headers);
     headers.set(
       "Authorization",
-      `AWS4-HMAC-SHA256 Credential=${replica.config.credentials.accessKeyId}/${replica.config.region}/s3/aws4_request, SignedHeaders=host;x-amz-date;x-amz-content-sha256, Signature=${
-        generateSignature(replica.config)
+      `AWS4-HMAC-SHA256 Credential=${config.credentials.accessKeyId}/${replica.config.region}/s3/aws4_request, SignedHeaders=host;x-amz-date;x-amz-content-sha256, Signature=${
+        generateSignature(config)
       }`,
     );
     const modifiedRequest = new Request(originalRequest.url, {

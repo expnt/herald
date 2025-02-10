@@ -1,8 +1,10 @@
-import { globalConfig } from "../config/mod.ts";
+import { Bucket } from "../buckets/mod.ts";
+import { globalConfig, S3Config } from "../config/mod.ts";
+import { SwiftConfig } from "../config/types.ts";
 import { getLogger } from "../utils/log.ts";
 import { getBucketFromTask } from "./mirror.ts";
 import { kv } from "./task_store.ts";
-import { MirrorTask } from "./types.ts";
+import { MirrorableCommands, MirrorTask } from "./types.ts";
 
 const logger = getLogger(import.meta);
 const TASK_TIMEOUT = 240000; // 240 seconds
@@ -45,8 +47,35 @@ async function setupWorkers() {
 
 let workers: Map<string, Worker>;
 
+export interface MirrorTaskMessage {
+  mainBucketConfig: {
+    _name: string;
+    _config: S3Config | SwiftConfig;
+    replicas: object[];
+    _typ: string;
+    _backend: string;
+  };
+  backupBucketConfig: {
+    _name: string;
+    _config: S3Config | SwiftConfig;
+    replicas: object[];
+    _typ: string;
+    _backend: string;
+  };
+  command: MirrorableCommands;
+  originalRequest: Record<string, unknown>;
+  nonce: string;
+}
+
 export function taskHandler() {
-  kv.listenQueue(async (task: MirrorTask) => {
+  kv.listenQueue(async (item: MirrorTaskMessage) => {
+    const task: MirrorTask = {
+      mainBucketConfig: Bucket.fromJSON(item.mainBucketConfig),
+      backupBucketConfig: Bucket.fromJSON(item.backupBucketConfig),
+      command: item.command,
+      originalRequest: item.originalRequest,
+      nonce: item.nonce,
+    };
     logger.info(`Dequeued task: ${task.command}`);
 
     const taskBucket = getBucketFromTask(task);
@@ -92,7 +121,7 @@ export function taskHandler() {
         setTimeout(() => reject(new Error("Task timeout")), TASK_TIMEOUT);
       });
 
-      worker.postMessage(task);
+      worker.postMessage(item);
       const _ = await Promise.race([
         processMessageBackFromWorker(),
         timeoutPromise,

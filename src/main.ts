@@ -5,7 +5,7 @@ import { getLogger, reportToSentry, setupLoggers } from "./utils/log.ts";
 import { resolveHandler } from "./backends/mod.ts";
 import { HTTPException } from "./types/http-exception.ts";
 import * as Sentry from "sentry";
-import { verifyServiceAccountToken } from "./auth/mod.ts";
+import { getAuthType, verifyServiceAccountToken } from "./auth/mod.ts";
 import { registerWorkers } from "./workers/mod.ts";
 import { registerSignalHandlers } from "./utils/signal_handlers.ts";
 
@@ -66,9 +66,13 @@ app.all("/*", async (c) => {
       message: errMessage,
     });
   }
-  const serviceAccountName = await verifyServiceAccountToken(
-    token,
-  );
+
+  const auth = getAuthType();
+  const serviceAccountName = auth === "service_account"
+    ? await verifyServiceAccountToken(
+      token,
+    )
+    : "none";
 
   const response = await resolveHandler(c, serviceAccountName);
   return response;

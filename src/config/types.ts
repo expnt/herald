@@ -121,6 +121,7 @@ export const envVarConfigSchema = z.object({
     "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt",
   ),
   config_file_path: z.string().default("herald.yaml"),
+  auth_type: z.enum(["service_account", "none"]).default("service_account"),
   service_account_token_path: z.string().default(
     "/var/run/secrets/kubernetes.io/serviceaccount/token",
   ),
