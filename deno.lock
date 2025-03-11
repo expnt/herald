@@ -4375,7 +4375,7 @@
     "https://deno.land/x/zod@v3.22.2/types.ts": "18cbe3d895f42977c43fa9411da214b06d0d682cf2f4c9dd26cc8c3737740d40",
     "https://esm.sh/@aws-sdk/client-s3@3.700.0?pin=v135": "c4e66ce2669ce810cd7f060e52e9702a37f02fc0912f69b1dc020a29b4d6e70f",
     "https://esm.sh/@aws-sdk/lib-storage@3.700.0?pin=v135": "20499413966c9d494f4bff63361359e095f174c4a41ee79da3a0fbeb62dc947f",
-    "https://esm.sh/jszip@3.7.1": "f3872a819b015715edb05f81d973b5cd05d3d213d8eb28293ca5471fe7a71773",
+    "https://esm.sh/jszip@3.7.1": "5161d6a228d844791a60ab58360bd3b76c4d3921b4a725616cd7403203519249",
     "https://esm.sh/v135/@aws-crypto/crc32@5.2.0/denonext/crc32.mjs": "6a9bc8418c01e2539665b528ccea843f1319a3b32d759fcbb1d4468156c25100",
     "https://esm.sh/v135/@aws-crypto/crc32c@5.2.0/denonext/crc32c.mjs": "1e8985997bd2c0807d349acaf192a54147d779e5349faf6507f51aa8becb85ca",
     "https://esm.sh/v135/@aws-crypto/sha1-browser@5.2.0/denonext/sha1-browser.mjs": "d80868d5524769e0334b50124d547ce9875fb05f9924acca4c42ed877b41ce7f",
@@ -4583,5 +4583,29 @@
     "https://raw.githubusercontent.com/metatypedev/ghjk/v0.2.1/utils/unarchive.ts": "f6d0e9e75f470eeef5aecd0089169f4350fc30ebfdc05466bb7b30042294d6d3",
     "https://raw.githubusercontent.com/metatypedev/ghjk/v0.2.1/utils/url.ts": "e1ada6fd30fc796b8918c88456ea1b5bbd87a07d0a0538b092b91fd2bb9b7623",
     "https://raw.githubusercontent.com/metatypedev/ghjk/v0.2.1/utils/worker.ts": "ac4caf72a36d2e4af4f4e92f2e0a95f9fc2324b568640f24c7c2ff6dc0c11d62"
+  },
+  "workspace": {
+    "dependencies": [
+      "jsr:@hono/hono@^4.6.11",
+      "jsr:@std/assert@1.0.8",
+      "jsr:@std/collections@1.0.9",
+      "jsr:@std/crypto@1.0.3",
+      "jsr:@std/fmt@1.0.3",
+      "jsr:@std/fs@1.0.6",
+      "jsr:@std/http@1.0.11",
+      "jsr:@std/io@0.225.0",
+      "jsr:@std/log@0.224.11",
+      "jsr:@std/path@1.0.1",
+      "jsr:@std/random@0.1.0",
+      "jsr:@std/testing@1.0.5",
+      "jsr:@std/yaml@1.0.5",
+      "jsr:@wok/djwt@3.0.2",
+      "npm:@aws-crypto/sha256-js@5.2.0",
+      "npm:@aws-sdk/client-s3@3.712.0",
+      "npm:@aws-sdk/lib-storage@3.712.0",
+      "npm:@smithy/signature-v4@4.2.3",
+      "npm:@smithy/types@3.7.1",
+      "npm:xml2js@0.6.2"
+    ]
   }
 }

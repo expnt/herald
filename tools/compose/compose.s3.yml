@@ -10,4 +10,4 @@ services:
       MINIO_REGION_NAME: local
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: password
-      MINIO_DEFAULT_BUCKETS: "test"
+      MINIO_DEFAULT_BUCKETS: "task-store"

@@ -107,7 +107,7 @@ export async function swiftResolver(
     case "POST":
       break;
     case "PUT":
-      if (objectKey && req.headers.get("x-amz-copy-source") !== undefined) {
+      if (objectKey && req.headers.get("x-amz-copy-source")) {
         return await handlers.copyObject(ctx, req, bucketConfig);
       }
       if (objectKey) {
