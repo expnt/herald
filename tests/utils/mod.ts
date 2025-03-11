@@ -1,4 +1,4 @@
-import { S3ClientConfig } from "aws-sdk/client-s3-esm";
+import { S3ClientConfig } from "aws-sdk/client-s3";
 import * as path from "std/path";
 
 export const testDir = path.join(Deno.cwd(), "tests/");

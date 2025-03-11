@@ -19,7 +19,7 @@ import {
   HeadObjectCommand,
   PutObjectCommand,
   S3ClientConfig,
-} from "aws-sdk/client-s3-esm";
+} from "aws-sdk/client-s3";
 import { createTempFile } from "../../utils/file.ts";
 import { assertEquals } from "std/assert";
 import { swiftMirrorBuckets } from "./mod.ts";
