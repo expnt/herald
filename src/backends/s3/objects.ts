@@ -325,7 +325,7 @@ export async function completeMultipartUpload(
       await prepareMirrorRequests(
         ctx,
         req,
-        bucketConfig as S3BucketConfig,
+        bucketConfig,
         "completeMultipartUpload",
       );
     }

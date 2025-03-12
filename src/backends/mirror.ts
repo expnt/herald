@@ -131,9 +131,9 @@ function generateSignature(_bucketConfig: S3Config): string {
 
 async function mirrorPutObject(
   ctx: HeraldContext,
+  originalRequest: Request,
   primary: Bucket,
   replica: Bucket,
-  originalRequest: Request,
 ): Promise<void> {
   if (primary.typ === "S3BucketConfig") {
     // get object from s3
@@ -281,8 +281,8 @@ async function mirrorPutObject(
  */
 async function mirrorDeleteObject(
   ctx: HeraldContext,
-  replica: Bucket,
   originalRequest: Request,
+  replica: Bucket,
 ): Promise<void> {
   const primaryBucket = bucketStore.buckets.find((bucket) =>
     bucket.bucketName === replica.bucketName
@@ -322,8 +322,8 @@ async function mirrorDeleteObject(
  */
 async function mirrorCopyObject(
   ctx: HeraldContext,
-  replica: Bucket,
   originalRequest: Request,
+  replica: Bucket,
 ): Promise<void> {
   const primaryBucket = bucketStore.buckets.find((bucket) =>
     bucket.bucketName === replica.bucketName
@@ -410,8 +410,8 @@ async function mirrorDeleteBucket(
 async function mirrorCompleteMultipartUpload(
   ctx: HeraldContext,
   originalRequest: Request,
-  primary: S3BucketConfig | SwiftBucketConfig,
-  replica: ReplicaS3Config | ReplicaSwiftConfig,
+  primary: Bucket,
+  replica: Bucket,
 ) {
   return await mirrorPutObject(ctx, originalRequest, primary, replica);
 }
