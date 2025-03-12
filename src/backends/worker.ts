@@ -92,7 +92,7 @@ async function onStart(
   logger: loggerUtils.Logger,
 ) {
   logger.info(`Worker started listening to tasks for bucket: ${name}`);
-  
+
   ctx = msg.data.ctx;
   const dbName = `${name}_${TASK_QUEUE_DB}`;
   const kv = await Deno.openKv(dbName);

@@ -1,4 +1,7 @@
-import { initializeTaskHandler, refreshWorkersContext } from "../backends/tasks.ts";
+import {
+  initializeTaskHandler,
+  refreshWorkersContext,
+} from "../backends/tasks.ts";
 import { HeraldContext } from "../types/mod.ts";
 import { getLogger } from "../utils/log.ts";
 
