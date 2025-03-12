@@ -550,7 +550,7 @@ export function createMultipartUpload(
 
   const uploadId = getRandomUUID();
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
-  logger.info(`Put Object Successful: Ok`);
+  logger.info(`Create Multipart Upload Successful: Ok`);
 
   const xmlResponseBody = `
     <CreateMultipartUploadResult>
@@ -703,7 +703,7 @@ export async function uploadPart(
   );
 
   if (response instanceof Error) {
-    logger.warn(`Put Object Failed: ${response.message}`);
+    logger.warn(`Upload Part Failed: ${response.message}`);
     return response;
   }
 
