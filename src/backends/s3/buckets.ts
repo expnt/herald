@@ -91,7 +91,7 @@ export async function routeQueryParamedRequest(
   ctx: HeraldContext,
   req: Request,
   bucketConfig: Bucket,
-  queryParams: string[],
+  queryParams: Set<string>,
 ) {
   const formattedParams = formatParams(queryParams);
   logger.info(`[S3 backend] Proxying Get Bucket ${formattedParams} Request...`);

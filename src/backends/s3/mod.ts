@@ -1,5 +1,7 @@
 import {
+  completeMultipartUpload,
   copyObject,
+  createMultipartUpload,
   deleteObject,
   getObject,
   headObject,
@@ -30,6 +32,8 @@ const handlers = {
   routeQueryParamedRequest,
   headBucket,
   copyObject,
+  createMultipartUpload,
+  completeMultipartUpload,
 };
 
 const logger = getLogger(import.meta);
@@ -39,7 +43,7 @@ export async function s3Resolver(
   bucketConfig: Bucket,
 ): Promise<Response | Error> {
   const { method, objectKey, queryParams } = extractRequestInfo(request);
-  const queryParamKeys = Object.keys(queryParams);
+  const queryParamKeys = new Set(Object.keys(queryParams));
 
   logger.debug(`Resolving S3 Handler for Request...`);
   switch (method) {
@@ -64,9 +68,20 @@ export async function s3Resolver(
         queryParamKeys,
       );
     case "POST":
-      logger.critical("POST Method Not Supported");
-      throw new HTTPException(405, {
-        message: "Method Not Allowed",
+      if (objectKey && queryParamKeys.has("uploads")) {
+        return handlers.createMultipartUpload(ctx, request, bucketConfig);
+      }
+
+      if (objectKey && queryParamKeys.has("uploadId")) {
+        return await handlers.completeMultipartUpload(
+          ctx,
+          request,
+          bucketConfig,
+        );
+      }
+
+      return new HTTPException(403, {
+        message: "Unsupported request",
       });
     case "PUT":
       if (objectKey && request.headers.get("x-amz-copy-source")) {

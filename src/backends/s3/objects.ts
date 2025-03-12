@@ -267,3 +267,69 @@ export async function headObject(
 
   return response;
 }
+
+export async function createMultipartUpload(
+  _ctx: HeraldContext,
+  req: Request,
+  bucketConfig: Bucket,
+) {
+  logger.info("[S3 backend] Proxying Create Multipart Upload Request...");
+
+  const response = await forwardRequestWithTimeouts(
+    req,
+    bucketConfig.config as S3Config,
+  );
+
+  if (response instanceof Error) {
+    logger.warn(`Create Multipart Upload Failed: ${response.message}`);
+    return response;
+  }
+
+  if (response.status !== 200) {
+    const errMessage = `Create Multipart Upload Failed: ${response.statusText}`;
+    logger.warn(errMessage);
+    reportToSentry(errMessage);
+  } else {
+    logger.info(`Create Multipart Upload Successful: ${response.statusText}`);
+  }
+
+  return response;
+}
+
+export async function completeMultipartUpload(
+  ctx: HeraldContext,
+  req: Request,
+  bucketConfig: Bucket,
+) {
+  logger.info("[S3 backend] Proxying Complete Multipart Upload Request...");
+
+  const mirrorOperation = bucketConfig.hasReplicas();
+  const response = await forwardRequestWithTimeouts(
+    req,
+    bucketConfig.config as S3Config,
+  );
+
+  if (response instanceof Error) {
+    logger.warn(`Complete Multipart Upload Failed: ${response.message}`);
+    return response;
+  }
+
+  if (response.status !== 200) {
+    const errMessage =
+      `Complete Multipart Upload Failed: ${response.statusText}`;
+    logger.warn(errMessage);
+    reportToSentry(errMessage);
+  } else {
+    logger.info(`Complete Multipart Upload Successful: ${response.statusText}`);
+    if (mirrorOperation) {
+      await prepareMirrorRequests(
+        ctx,
+        req,
+        bucketConfig as S3BucketConfig,
+        "completeMultipartUpload",
+      );
+    }
+  }
+
+  return response;
+}

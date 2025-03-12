@@ -15,6 +15,7 @@ import { Bucket } from "../../buckets/mod.ts";
 import { s3Resolver } from "../s3/mod.ts";
 import { swiftResolver } from "./mod.ts";
 import { HeraldContext } from "../../types/mod.ts";
+import { getRandomUUID } from "../../utils/crypto.ts";
 const logger = getLogger(import.meta);
 
 export async function putObject(
@@ -538,4 +539,181 @@ export async function copyObject(
   });
 
   return s3Response;
+}
+
+export function createMultipartUpload(
+  _ctx: HeraldContext,
+  req: Request,
+  _bucketConfig: Bucket,
+): Response | Error | HTTPException {
+  logger.info("[Swift backend] Proxying Create Multipart Upload Request...");
+
+  const uploadId = getRandomUUID();
+  const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
+  logger.info(`Put Object Successful: Ok`);
+
+  const xmlResponseBody = `
+    <CreateMultipartUploadResult>
+      <Bucket>${bucket}</Bucket>
+      <Key>${object}</Key>
+      <UploadId>${uploadId}</UploadId>
+    </CreateMultipartUploadResult>
+  `;
+
+  return new Response(xmlResponseBody, {
+    status: 200,
+    headers: new Headers({
+      "Content-Type": "application/xml",
+    }),
+  });
+}
+
+function createCompleteMultipartUploadResponse(
+  bucketName: string,
+  objectKey: string,
+  location: string,
+  eTag: string,
+): Response {
+  const xmlResponseBody = `
+    <CompleteMultipartUploadResult>
+      <Location>${location}</Location>
+      <Bucket>${bucketName}</Bucket>
+      <Key>${objectKey}</Key>
+      <ETag>"${eTag}"</ETag>
+    </CompleteMultipartUploadResult>
+  `;
+
+  return new Response(xmlResponseBody, {
+    status: 200,
+    headers: new Headers({
+      "Content-Type": "application/xml",
+    }),
+  });
+}
+
+export async function completeMultipartUpload(
+  ctx: HeraldContext,
+  req: Request,
+  bucketConfig: Bucket,
+): Promise<Response | Error | HTTPException> {
+  logger.info("[Swift backend] Proxying Complete Multipart Upload Request...");
+  const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
+  if (!bucket || !object) {
+    return new HTTPException(400, {
+      message: "Bucket information missing from the request",
+    });
+  }
+
+  const config: SwiftConfig = bucketConfig.config as SwiftConfig;
+  const mirrorOperation = bucketConfig.hasReplicas();
+
+  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const { storageUrl: swiftUrl, token: authToken } = res;
+  const headers = getSwiftRequestHeaders(authToken);
+  headers.append("X-Object-Manifest", `${bucket}/${object}/`);
+
+  const reqUrl = `${swiftUrl}/${bucket}/${object}`;
+
+  const fetchFunc = async () => {
+    return await fetch(reqUrl, {
+      method: "PUT",
+      headers: headers,
+      body: getBodyFromReq(req),
+    });
+  };
+  const response = await retryWithExponentialBackoff(
+    fetchFunc,
+  );
+
+  if (response instanceof Error) {
+    logger.warn(`Complete Multipart Upload Failed: ${response.message}`);
+    return response;
+  }
+
+  if (response.status !== 201) {
+    const errMessage =
+      `Complete Multipart Upload Failed: ${response.statusText}`;
+    logger.warn(errMessage);
+    reportToSentry(errMessage);
+  } else {
+    logger.info(`Complete Multipart Upload Successful: ${response.statusText}`);
+    if (mirrorOperation) {
+      await prepareMirrorRequests(
+        ctx,
+        req,
+        bucketConfig,
+        "completeMultipartUpload",
+      );
+    }
+  }
+
+  const etag = response.headers.get("eTag");
+  if (!etag) {
+    return new HTTPException(501, {
+      message: "Storage service error: Etag missing in the response headers",
+    });
+  }
+  const result = createCompleteMultipartUploadResponse(
+    bucket,
+    object,
+    config.region,
+    etag,
+  );
+
+  return result;
+}
+
+export async function uploadPart(
+  ctx: HeraldContext,
+  req: Request,
+  bucketConfig: Bucket,
+): Promise<Response | Error | HTTPException> {
+  logger.info("[Swift backend] Proxying Upload Part Request...");
+  const { bucket, objectKey: object, queryParams } = s3Utils.extractRequestInfo(
+    req,
+  );
+  if (!bucket) {
+    return new HTTPException(400, {
+      message: "Bucket information missing from the request",
+    });
+  }
+
+  const config: SwiftConfig = bucketConfig.config as SwiftConfig;
+  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const { storageUrl: swiftUrl, token: authToken } = res;
+  const headers = getSwiftRequestHeaders(authToken);
+
+  const partNumber = queryParams["partNumber"];
+  if (!partNumber) {
+    return new HTTPException(400, {
+      message: "Bad Request: partNumber is missing from request",
+    });
+  }
+
+  const reqUrl = `${swiftUrl}/${bucket}/${object}/${partNumber}`;
+  const fetchFunc = async () => {
+    return await fetch(reqUrl, {
+      method: "PUT",
+      headers: headers,
+      body: getBodyFromReq(req),
+    });
+  };
+  const response = await retryWithExponentialBackoff(
+    fetchFunc,
+  );
+
+  if (response instanceof Error) {
+    logger.warn(`Put Object Failed: ${response.message}`);
+    return response;
+  }
+
+  if (response.status !== 201) {
+    const errMessage = `Upload Part Failed: ${response.statusText}`;
+    logger.warn(errMessage);
+    reportToSentry(errMessage);
+  } else {
+    logger.info(`Upload Part Successful: ${response.statusText}`);
+  }
+
+  return response;
 }

@@ -1,11 +1,14 @@
 import {
+  completeMultipartUpload,
   copyObject,
+  createMultipartUpload,
   deleteObject,
   getObject,
   getObjectMeta,
   headObject,
   listObjects,
   putObject,
+  uploadPart,
 } from "./objects.ts";
 import {
   createBucket,
@@ -42,6 +45,9 @@ const handlers = {
   headBucket,
   headObject,
   copyObject,
+  createMultipartUpload,
+  completeMultipartUpload,
+  uploadPart,
 };
 
 const logger = getLogger(import.meta);
@@ -89,13 +95,11 @@ export async function swiftResolver(
       case "list-type":
         break;
       default:
-        logger.critical(`Unsupported query parameter: ${queryParam}`);
-        return new HTTPException(400, {
-          message: "Unsupported query parameter",
-        });
+        break;
     }
   }
 
+  const queryParamKeys = new Set(url.searchParams.keys());
   // Handle regular requests
   switch (method) {
     case "GET":
@@ -105,11 +109,27 @@ export async function swiftResolver(
 
       return await handlers.listObjects(ctx, req, bucketConfig);
     case "POST":
+      if (objectKey && queryParamKeys.has("uploads")) {
+        return await handlers.createMultipartUpload(ctx, req, bucketConfig);
+      }
+
+      if (objectKey && queryParamKeys.has("uploadId")) {
+        return await handlers.completeMultipartUpload(
+          ctx,
+          req,
+          bucketConfig,
+        );
+      }
       break;
     case "PUT":
       if (objectKey && req.headers.get("x-amz-copy-source")) {
         return await handlers.copyObject(ctx, req, bucketConfig);
       }
+
+      if (objectKey && queryParamKeys.has("partNumber")) {
+        return await handlers.uploadPart(ctx, req, bucketConfig);
+      }
+
       if (objectKey) {
         return await handlers.putObject(ctx, req, bucketConfig);
       }
