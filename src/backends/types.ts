@@ -1,9 +1,4 @@
-import {
-  ReplicaS3Config,
-  ReplicaSwiftConfig,
-  S3BucketConfig,
-  SwiftBucketConfig,
-} from "../config/types.ts";
+import { Bucket } from "../buckets/mod.ts";
 
 export type MirrorableCommands =
   | "putObject"
@@ -21,8 +16,8 @@ export interface WorkerEvent {
  * Interface representing a task to mirror a specific operation between two bucket configurations.
  */
 export interface MirrorTask {
-  mainBucketConfig: S3BucketConfig | SwiftBucketConfig;
-  backupBucketConfig: ReplicaS3Config | ReplicaSwiftConfig;
+  mainBucketConfig: Bucket;
+  backupBucketConfig: Bucket;
   command: MirrorableCommands;
   originalRequest: Record<string, unknown>;
   nonce: string;

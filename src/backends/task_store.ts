@@ -3,11 +3,12 @@ import {
   HeadObjectCommand,
   PutObjectCommand,
   S3Client,
-} from "aws-sdk/client-s3-esm";
+} from "aws-sdk/client-s3";
 import { getLogger, reportToSentry } from "../utils/log.ts";
 import { MirrorTask } from "./types.ts";
 import { S3Config } from "../config/mod.ts";
 import { GlobalConfig } from "../config/types.ts";
+import { TASK_QUEUE_DB } from "../constants/message.ts";
 
 const logger = getLogger(import.meta);
 
@@ -31,13 +32,23 @@ export class TaskStore {
 
   public static getInstance(
     remoteStorageConfig: S3Config,
+    buckets: string[],
   ): Promise<TaskStore> {
     async function inner() {
       const s3 = new S3Client(remoteStorageConfig);
-      const taskQueue = await Deno.openKv();
+      const taskQueues: [string, Deno.Kv][] = [];
+      for (const bucket of buckets) {
+        const kv = await Deno.openKv(`${bucket}_${TASK_QUEUE_DB}`);
+        taskQueues.push([bucket, kv]);
+      }
       const lockedStorages = new Map<string, number>();
 
-      const newInstance = new TaskStore(s3, taskQueue, lockedStorages);
+      const newInstance = new TaskStore(
+        s3,
+        taskQueues,
+        lockedStorages,
+        buckets,
+      );
       await newInstance.#syncFromRemote();
 
       return newInstance;
@@ -50,14 +61,15 @@ export class TaskStore {
 
   constructor(
     private s3: S3Client,
-    private _queue: Deno.Kv,
+    private _queues: [string, Deno.Kv][],
     private _lockedStorages: Map<string, number>,
+    private buckets: string[],
   ) {}
 
-  async #serializeQueue() {
+  async #serializeQueue(queue: Deno.Kv) {
     const entries = [];
     // Iterate over all entries in the store
-    for await (const entry of this._queue.list({ prefix: [] })) {
+    for await (const entry of queue.list({ prefix: [] })) {
       // Collect the key-value pairs
       entries.push({
         key: entry.key.join("/"), // Join key parts if necessary for string representation
@@ -78,9 +90,12 @@ export class TaskStore {
     return json;
   }
 
-  async #deserializeQueue(queueString: string): Promise<Deno.Kv> {
+  async #deserializeQueue(
+    queueString: string,
+    bucket: string,
+  ): Promise<Deno.Kv> {
     const entries = JSON.parse(queueString);
-    const newQueue = await Deno.openKv();
+    const newQueue = await Deno.openKv(this.#getDbName(bucket));
 
     for (const entry of entries) {
       const key = entry.key.split("/") as Deno.KvKey; // Split key parts if necessary
@@ -169,29 +184,35 @@ export class TaskStore {
     }
   }
 
-  async #saveQueueToRemote() {
-    const serializedQueue = await this.#serializeQueue();
-    try {
-      await this.#uploadToS3(serializedQueue, "queue.json");
-      logger.info("Saved task queue to remote storage");
-    } catch (error) {
-      const errMessage =
-        `Failed to save task queue to remote storage: ${error}`;
-      logger.critical(errMessage);
-      reportToSentry(errMessage);
+  #getQueuePath(bucket: string) {
+    return `${bucket}/queue.json`;
+  }
+
+  async #saveQueuesToRemote() {
+    for (const [bucket, queue] of this._queues) {
+      const serializedQueue = await this.#serializeQueue(queue);
+      try {
+        await this.#uploadToS3(serializedQueue, this.#getQueuePath(bucket));
+        logger.info("Saved task queue to remote storage");
+      } catch (error) {
+        const errMessage =
+          `Failed to save task queue to remote storage: ${error}`;
+        logger.critical(errMessage);
+        reportToSentry(errMessage);
+      }
     }
   }
 
-  async #fetchQueueFromRemote() {
-    const queueStr = await this.#getObject("queue.json");
+  async #fetchQueueFromRemote(bucket: string) {
+    const queueStr = await this.#getObject(this.#getQueuePath(bucket));
     if (queueStr === undefined) {
       logger.info("No task queue found in remote storage");
       logger.info("Creating a new task queue");
-      this.#saveQueueToRemote();
+      this.#saveQueuesToRemote();
       return;
     }
 
-    const remoteQueue = await this.#deserializeQueue(queueStr);
+    const remoteQueue = await this.#deserializeQueue(queueStr, bucket);
     return remoteQueue;
   }
 
@@ -228,20 +249,25 @@ export class TaskStore {
    */
   async syncToRemote() {
     await this.#saveLocksToRemote();
-    await this.#saveQueueToRemote();
+    await this.#saveQueuesToRemote();
   }
 
   async #syncQueueFromRemote() {
-    const fetchedQueue = await this.#fetchQueueFromRemote();
-    if (fetchedQueue === undefined) {
-      const errMessage = `Failed to fetch task queue from remote storage`;
-      logger.critical(errMessage);
-      reportToSentry(errMessage);
-      return;
+    const queues: [string, Deno.Kv][] = [];
+    for (const bucket of this.buckets) {
+      const fetchedQueue = await this.#fetchQueueFromRemote(
+        bucket,
+      );
+      if (fetchedQueue === undefined) {
+        const errMessage = `Failed to fetch task queue from remote storage`;
+        logger.critical(errMessage);
+        reportToSentry(errMessage);
+        return;
+      }
     }
 
-    logger.info(`Fetched task queue from remote storage ${name}`);
-    this._queue = fetchedQueue;
+    logger.info(`Fetched task queues from remote storage ${name}`);
+    this._queues = queues;
   }
 
   async #syncLockFromRemote() {
@@ -262,8 +288,8 @@ export class TaskStore {
     await this.#syncLockFromRemote();
   }
 
-  get taskQueue() {
-    return this._queue;
+  #getDbName(bucket: string) {
+    return `${bucket}_${TASK_QUEUE_DB}`;
   }
 
   get lockedStorages() {
@@ -272,7 +298,10 @@ export class TaskStore {
 }
 
 export const initTaskStore = async (config: GlobalConfig) => {
-  const taskStore = await TaskStore.getInstance(config.task_store_backend);
+  const taskStore = await TaskStore.getInstance(
+    config.task_store_backend,
+    Object.keys(config.buckets),
+  );
   // update the remote task queue store every 5 minutes
   setInterval(async () => {
     await taskStore.syncToRemote();

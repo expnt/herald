@@ -1,13 +1,13 @@
 import { getLogger, reportToSentry } from "../../utils/log.ts";
 import { HTTPException } from "../../types/http-exception.ts";
-import { getAuthTokenWithTimeouts, getSwiftRequestHeaders } from "./auth.ts";
+import { getSwiftRequestHeaders } from "./auth.ts";
 import {
   getBodyFromReq,
   retryWithExponentialBackoff,
 } from "../../utils/url.ts";
 import { formatRFC3339Date, toS3XmlContent } from "./utils/mod.ts";
 import { NoSuchBucketException } from "../../constants/errors.ts";
-import { SwiftBucketConfig, SwiftConfig } from "../../config/types.ts";
+import { SwiftConfig } from "../../config/types.ts";
 import { S3_COPY_SOURCE_HEADER } from "../../constants/headers.ts";
 import { s3Utils } from "../../utils/mod.ts";
 import { prepareMirrorRequests } from "../mirror.ts";
@@ -25,6 +25,7 @@ export async function putObject(
 ): Promise<Response | Error | HTTPException> {
   logger.info("[Swift backend] Proxying Put Object Request...");
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
+  const body = req.body;
   if (!bucket) {
     return new HTTPException(400, {
       message: "Bucket information missing from the request",
@@ -34,10 +35,9 @@ export async function putObject(
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
   const mirrorOperation = bucketConfig.hasReplicas();
 
-  const { storageUrl: swiftUrl, token: authToken } =
-    await getAuthTokenWithTimeouts(
-      config,
-    );
+  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+
+  const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
   const reqUrl = `${swiftUrl}/${bucket}/${object}`;
 
@@ -45,7 +45,7 @@ export async function putObject(
     return await fetch(reqUrl, {
       method: "PUT",
       headers: headers,
-      body: getBodyFromReq(req),
+      body: body,
     });
   };
   const response = await retryWithExponentialBackoff(
@@ -67,7 +67,7 @@ export async function putObject(
       await prepareMirrorRequests(
         ctx,
         req,
-        bucketConfig as SwiftBucketConfig,
+        bucketConfig,
         "putObject",
       );
     }
@@ -92,10 +92,9 @@ export async function getObject(
 
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
 
-  const { storageUrl: swiftUrl, token: authToken } =
-    await getAuthTokenWithTimeouts(
-      config,
-    );
+  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+
+  const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
   const reqUrl = `${swiftUrl}/${bucket}/${object}`;
 
@@ -109,9 +108,14 @@ export async function getObject(
 
   let response = await retryWithExponentialBackoff(
     fetchFunc,
+    bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
   );
 
   if (response instanceof Error && bucketConfig.hasReplicas()) {
+    logger.warn(
+      `Get Object Failed on Primary Bucket: ${bucketConfig.bucketName}`,
+    );
+    logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
         ? await s3Resolver(ctx, req, replica)
@@ -157,10 +161,9 @@ export async function deleteObject(
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
   const mirrorOperation = bucketConfig.hasReplicas();
 
-  const { storageUrl: swiftUrl, token: authToken } =
-    await getAuthTokenWithTimeouts(
-      config,
-    );
+  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+
+  const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
   const reqUrl = `${swiftUrl}/${bucket}/${object}`;
 
@@ -204,7 +207,7 @@ export async function deleteObject(
       await prepareMirrorRequests(
         ctx,
         req,
-        bucketConfig as SwiftBucketConfig,
+        bucketConfig,
         "deleteObject",
       );
     }
@@ -228,10 +231,9 @@ export async function listObjects(
   }
 
   const config = bucketConfig.config as SwiftConfig;
-  const { storageUrl: swiftUrl, token: authToken } =
-    await getAuthTokenWithTimeouts(
-      config,
-    );
+  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+
+  const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
 
   const params = new URLSearchParams();
@@ -257,9 +259,14 @@ export async function listObjects(
 
   let response = await retryWithExponentialBackoff(
     fetchFunc,
+    bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
   );
 
   if (response instanceof Error && bucketConfig.hasReplicas()) {
+    logger.warn(
+      `List Objects Failed on Primary Bucket: ${bucketConfig.bucketName}`,
+    );
+    logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
         ? await s3Resolver(ctx, req, replica)
@@ -318,10 +325,9 @@ export async function getObjectMeta(
   }
 
   const config = bucketConfig.config as SwiftConfig;
-  const { storageUrl: swiftUrl, token: authToken } =
-    await getAuthTokenWithTimeouts(
-      config,
-    );
+  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+
+  const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
   const reqUrl = `${swiftUrl}/${bucket}/${object}`;
 
@@ -335,9 +341,14 @@ export async function getObjectMeta(
 
   let response = await retryWithExponentialBackoff(
     fetchFunc,
+    bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
   );
 
   if (response instanceof Error && bucketConfig.hasReplicas()) {
+    logger.warn(
+      `Get Object Meta Failed on Primary Bucket: ${bucketConfig.bucketName}`,
+    );
+    logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
         ? await s3Resolver(ctx, req, replica)
@@ -381,8 +392,9 @@ export async function headObject(
   }
 
   const config = bucketConfig.config as SwiftConfig;
-  const { storageUrl: swiftUrl, token: authToken } =
-    await getAuthTokenWithTimeouts(config);
+  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+
+  const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
   const reqUrl = `${swiftUrl}/${bucket}/${objectKey}`;
 
@@ -395,9 +407,14 @@ export async function headObject(
 
   let response = await retryWithExponentialBackoff(
     fetchFunc,
+    bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
   );
 
   if (response instanceof Error && bucketConfig.hasReplicas()) {
+    logger.warn(
+      `Head Object Failed on Primary Bucket: ${bucketConfig.bucketName}`,
+    );
+    logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
         ? await s3Resolver(ctx, req, replica)
@@ -448,10 +465,9 @@ export async function copyObject(
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
   const mirrorOperation = bucketConfig.hasReplicas();
 
-  const { storageUrl: swiftUrl, token: authToken } =
-    await getAuthTokenWithTimeouts(
-      config,
-    );
+  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+
+  const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
   const copySource = `/${bucket}/${object}`;
   headers.set(S3_COPY_SOURCE_HEADER, copySource);
@@ -483,7 +499,7 @@ export async function copyObject(
       await prepareMirrorRequests(
         ctx,
         req,
-        bucketConfig as SwiftBucketConfig,
+        bucketConfig,
         "copyObject",
       );
     }
@@ -534,7 +550,7 @@ export function createMultipartUpload(
 
   const uploadId = getRandomUUID();
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
-  logger.info(`Put Object Successful: Ok`);
+  logger.info(`Create Multipart Upload Successful: Ok`);
 
   const xmlResponseBody = `
     <CreateMultipartUploadResult>
@@ -591,10 +607,8 @@ export async function completeMultipartUpload(
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
   const mirrorOperation = bucketConfig.hasReplicas();
 
-  const { storageUrl: swiftUrl, token: authToken } =
-    await getAuthTokenWithTimeouts(
-      config,
-    );
+  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
   headers.append("X-Object-Manifest", `${bucket}/${object}/`);
 
@@ -627,7 +641,7 @@ export async function completeMultipartUpload(
       await prepareMirrorRequests(
         ctx,
         req,
-        bucketConfig as SwiftBucketConfig,
+        bucketConfig,
         "completeMultipartUpload",
       );
     }
@@ -639,18 +653,18 @@ export async function completeMultipartUpload(
       message: "Storage service error: Etag missing in the response headers",
     });
   }
-  const res = createCompleteMultipartUploadResponse(
+  const result = createCompleteMultipartUploadResponse(
     bucket,
     object,
     config.region,
     etag,
   );
 
-  return res;
+  return result;
 }
 
 export async function uploadPart(
-  _ctx: HeraldContext,
+  ctx: HeraldContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error | HTTPException> {
@@ -665,10 +679,8 @@ export async function uploadPart(
   }
 
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
-  const { storageUrl: swiftUrl, token: authToken } =
-    await getAuthTokenWithTimeouts(
-      config,
-    );
+  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
 
   const partNumber = queryParams["partNumber"];
@@ -691,7 +703,7 @@ export async function uploadPart(
   );
 
   if (response instanceof Error) {
-    logger.warn(`Put Object Failed: ${response.message}`);
+    logger.warn(`Upload Part Failed: ${response.message}`);
     return response;
   }
 

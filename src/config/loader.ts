@@ -21,8 +21,6 @@ import { bucketStore, globalConfig } from "./mod.ts";
 import { red } from "std/fmt/colors";
 import { Bucket } from "../buckets/mod.ts";
 
-// const logger = getLogger(import.meta, "INFO");
-
 export class ConfigError extends Error {
   // deno-lint-ignore no-explicit-any
   constructor(public issues: any) {

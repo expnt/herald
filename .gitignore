@@ -84,3 +84,6 @@ venv/
 bucket_differences.json
 *.crt
 token
+*.db
+*.db-shm
+*.db-wal

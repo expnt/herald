@@ -59,6 +59,7 @@ export function isContentLengthNonZero(request: Request): boolean {
 export async function forwardRequestWithTimeouts(
   request: Request,
   config: S3Config,
+  retries = 3,
 ) {
   const forwardRequest = async () => {
     const redirect = getRedirectUrl(request.url, config.endpoint);
@@ -125,6 +126,7 @@ export async function forwardRequestWithTimeouts(
 
   const result = await retryWithExponentialBackoff(
     forwardRequest,
+    retries,
     100,
     10000,
   );

@@ -1,16 +1,13 @@
 import { globalConfig } from "../config/mod.ts";
 import { HeraldContext } from "../types/mod.ts";
 import { getLogger } from "../utils/log.ts";
-import { getBucketFromTask } from "./mirror.ts";
-import { MirrorTask } from "./types.ts";
 
 const logger = getLogger(import.meta);
-const TASK_TIMEOUT = 240000; // 240 seconds
 
 async function createNewWorker(bucket: string) {
   const worker = new Worker(new URL("./worker.ts", import.meta.url).href, {
     type: "module",
-    name: `bucket ${bucket} kv worker`,
+    name: bucket,
   });
   // Hack to get around the fact that the worker is not yet ready to receive messages
   const workerCreation = () => {
@@ -45,73 +42,25 @@ async function setupWorkers() {
 
 let workers: Map<string, Worker>;
 
-export function taskHandler(ctx: HeraldContext) {
-  const taskStore = ctx.taskStore;
-  const kv = taskStore.taskQueue;
-  kv.listenQueue(async (task: MirrorTask) => {
-    logger.info(`Dequeued task: ${task.command}`);
+export function startWorkers(ctx: HeraldContext) {
+  for (const [_, worker] of workers) {
+    worker.postMessage({
+      ctx: JSON.parse(JSON.stringify(ctx)),
+      type: "Start",
+    });
+  }
+}
 
-    const taskBucket = getBucketFromTask(task);
-    const worker = workers.get(taskBucket);
-    if (!worker) {
-      logger.info(`Worker for bucket ${taskBucket} busy`);
-      logger.info(
-        `Re-enqueueing task: ${task.command} to process when worker is available`,
-      );
-      // FIXME: this will cause for the order of tasks for a bucket to be lost
-      setTimeout(() => {
-        kv.enqueue(task);
-      }, 10000); // Re-enqueue task after 10 seconds
-      return;
-    }
-    workers.delete(taskBucket);
-
-    const processMessageBackFromWorker = () => {
-      return new Promise((resolve, reject) => {
-        worker.onmessage = (evt: MessageEvent<string>) => {
-          const res = evt.data;
-          if (res === "Task completed") {
-            workers.set(taskBucket, worker);
-            logger.info(`Task completed: ${task.command}`);
-          }
-          resolve(res);
-        };
-        worker.onmessageerror = (evt) => {
-          workers.set(taskBucket, worker);
-          logger.error(`Task failed: ${evt.data}`);
-          reject(evt.data);
-        };
-        worker.onerror = (err) => {
-          workers.set(taskBucket, worker);
-          logger.error(`Task failed: ${err}`);
-          reject(err);
-        };
-      });
-    };
-
-    try {
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error("Task timeout")), TASK_TIMEOUT);
-      });
-
-      worker.postMessage(task);
-      const _ = await Promise.race([
-        processMessageBackFromWorker(),
-        timeoutPromise,
-      ]);
-
-      workers.set(taskBucket, worker);
-      logger.info(`Task completed: ${task.command}`);
-    } catch (error) {
-      logger.error(`Task failed: ${(error as Error).message}`);
-      worker.terminate(); // Clean up failed worker
-      // Create new worker for the bucket
-      workers.set(taskBucket, await createNewWorker(taskBucket));
-    }
-  });
+export function refreshWorkersContext(ctx: HeraldContext) {
+  for (const [_, worker] of workers) {
+    worker.postMessage({
+      ctx: JSON.parse(JSON.stringify(ctx)),
+      type: "UpdateContext",
+    });
+  }
 }
 
 export async function initializeTaskHandler(ctx: HeraldContext) {
   workers = await setupWorkers();
-  taskHandler(ctx);
+  startWorkers(ctx);
 }

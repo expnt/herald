@@ -6,13 +6,13 @@ import {
   ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
-} from "aws-sdk/client-s3-esm";
-import * as path from "std/path";
+} from "aws-sdk/client-s3";
+import * as path from "std/path/";
 import { assert, assertEquals } from "std/assert";
 import { loggingMiddleware, testConfig } from "../../utils/mod.ts";
 import { deleteBucketIfExists, setupBucket } from "../../../utils/s3.ts";
 import { proxyUrl } from "../../../src/config/mod.ts";
-import { Upload } from "aws-sdk/lib-storage-esm";
+import { Upload } from "aws-sdk/lib-storage";
 import { createTempFile, createTempStream } from "../../../utils/file.ts";
 
 const containerName = "swift-test";

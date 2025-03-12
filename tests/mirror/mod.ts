@@ -1,4 +1,4 @@
-import { S3ClientConfig } from "aws-sdk/client-s3-esm";
+import { S3ClientConfig } from "aws-sdk/client-s3";
 
 export const s3MirrorConfigs: S3ClientConfig[] = [
   {

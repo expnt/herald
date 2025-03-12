@@ -1,5 +1,5 @@
 import { assertEquals } from "std/assert";
-import * as path from "std/path";
+import * as path from "std/path/";
 import {
   CreateBucketCommand,
   DeleteBucketCommand,
@@ -8,11 +8,11 @@ import {
   ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
-} from "aws-sdk/client-s3-esm";
+} from "aws-sdk/client-s3";
 import { createTempFile, createTempStream } from "../../../utils/file.ts";
 import { assert } from "std/assert";
 import { getS3Client, setupBucket } from "../../../utils/s3.ts";
-import { Upload } from "aws-sdk/lib-storage-esm";
+import { Upload } from "aws-sdk/lib-storage";
 
 const filePath = await createTempFile(1); // 1MB
 

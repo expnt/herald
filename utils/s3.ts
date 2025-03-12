@@ -6,7 +6,7 @@ import {
   S3Client,
   S3ClientConfig,
   ServiceOutputTypes,
-} from "aws-sdk/client-s3-esm";
+} from "aws-sdk/client-s3";
 import { assert, assertEquals } from "std/assert";
 
 export function getS3Client(config: S3ClientConfig) {
