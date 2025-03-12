@@ -118,9 +118,6 @@ export async function getAuthTokenWithTimeouts(config: SwiftConfig): Promise<{
     }
 
     logger.info("Authorization Token and Storage URL retrieved Successfully");
-    logger.debug(
-      `Retrieved token ${token} and storage url ${storageUrl}`,
-    );
 
     return { storageUrl, token };
   };

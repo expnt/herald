@@ -1,5 +1,5 @@
 import { LevelName, Logger } from "std/log";
-import { basename, dirname, extname } from "std/path";
+import { basename, dirname, extname } from "std/path/";
 import * as log from "std/log";
 import { envVarsConfig } from "../config/mod.ts";
 import { magenta } from "std/fmt/colors";

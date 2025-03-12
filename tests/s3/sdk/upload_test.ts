@@ -1,5 +1,5 @@
 import { assertEquals } from "std/assert";
-import * as path from "std/path";
+import * as path from "std/path/";
 import {
   CreateBucketCommand,
   DeleteBucketCommand,

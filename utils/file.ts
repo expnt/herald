@@ -1,5 +1,5 @@
 import { writeAll } from "std/io";
-import { basename } from "std/path";
+import { basename } from "std/path/";
 
 /**
  * Creates a temporary file of the specified size in megabytes.

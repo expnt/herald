@@ -1,3 +1,4 @@
+import { initKeystoneStore } from "./backends/swift/keystone_token_store.ts";
 import { Hono } from "@hono/hono";
 import { configInit, envVarsConfig, globalConfig } from "./config/mod.ts";
 import { getLogger, reportToSentry, setupLoggers } from "./utils/log.ts";
@@ -45,6 +46,7 @@ self.addEventListener("unhandledrejection", (event: PromiseRejectionEvent) => {
 
 const ctx: HeraldContext = {
   taskStore: await initTaskStore(globalConfig),
+  keystoneStore: await initKeystoneStore(globalConfig),
 };
 
 const app = new Hono();

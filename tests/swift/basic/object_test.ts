@@ -7,7 +7,7 @@ import {
   PutObjectCommand,
   S3Client,
 } from "aws-sdk/client-s3";
-import * as path from "std/path";
+import * as path from "std/path/";
 import { assert, assertEquals } from "std/assert";
 import { loggingMiddleware, testConfig } from "../../utils/mod.ts";
 import { deleteBucketIfExists, setupBucket } from "../../../utils/s3.ts";

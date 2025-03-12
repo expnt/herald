@@ -2,7 +2,7 @@ import { getLogger, setupLoggers } from "../utils/log.ts";
 import { processTask } from "./mirror.ts";
 import { MirrorableCommands, MirrorTask } from "./types.ts";
 import { configInit, S3Config } from "../config/mod.ts";
-import { inWorker } from "../utils/mod.ts";
+import { inWorker, loggerUtils } from "../utils/mod.ts";
 import { HeraldContext } from "../types/mod.ts";
 import { TASK_QUEUE_DB } from "../constants/message.ts";
 import { TASK_TIMEOUT } from "../constants/time.ts";
@@ -46,17 +46,54 @@ function convertMessageToTask(
   };
 }
 
-interface StartMessage {
+interface UpdateContextMessage {
   ctx: HeraldContext;
+  type: "UpdateContext";
 }
 
-self.onmessage = onMsg;
-self.postMessage(`Worker started ${self.name}`);
+interface StartMessage {
+  ctx: HeraldContext;
+  type: "Start";
+}
 
-async function onMsg(msg: MessageEvent<StartMessage>) {
+let ctx: HeraldContext;
+
+self.postMessage(`Worker started ${self.name}`);
+self.onmessage = onMsg;
+
+async function onMsg(event: MessageEvent) {
+  const message = event.data;
   const logger = getLogger(import.meta);
+
+  logger.info(`Handling message on worker of type: ${message.type}`);
+
+  switch (message.type) {
+    case "UpdateContext":
+      onUpdateContext(event, logger);
+      break;
+    case "Start":
+      await onStart(event, logger);
+      break;
+    default:
+      throw new Error("Unknown message type:", message.type);
+  }
+}
+
+function onUpdateContext(
+  msg: MessageEvent<UpdateContextMessage>,
+  logger: loggerUtils.Logger,
+) {
+  ctx = msg.data.ctx;
+  logger.info("Updated worker's herald context");
+}
+
+async function onStart(
+  msg: MessageEvent<StartMessage>,
+  logger: loggerUtils.Logger,
+) {
   logger.info(`Worker started listening to tasks for bucket: ${name}`);
-  const ctx = msg.data.ctx;
+  
+  ctx = msg.data.ctx;
   const dbName = `${name}_${TASK_QUEUE_DB}`;
   const kv = await Deno.openKv(dbName);
   kv.listenQueue(async (item: MirrorTaskMessage) => {

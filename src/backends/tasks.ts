@@ -44,7 +44,19 @@ let workers: Map<string, Worker>;
 
 export function startWorkers(ctx: HeraldContext) {
   for (const [_, worker] of workers) {
-    worker.postMessage(JSON.parse(JSON.stringify(ctx)));
+    worker.postMessage({
+      ctx: JSON.parse(JSON.stringify(ctx)),
+      type: "Start",
+    });
+  }
+}
+
+export function refreshWorkersContext(ctx: HeraldContext) {
+  for (const [_, worker] of workers) {
+    worker.postMessage({
+      ctx: JSON.parse(JSON.stringify(ctx)),
+      type: "UpdateContext",
+    });
   }
 }
 

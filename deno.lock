@@ -6,6 +6,7 @@
     "jsr:@hono/hono@^4.6.11": "4.6.15",
     "jsr:@std/assert@0.221": "0.221.0",
     "jsr:@std/assert@1.0.8": "1.0.8",
+    "jsr:@std/assert@^1.0.8": "1.0.8",
     "jsr:@std/bytes@0.221": "0.221.0",
     "jsr:@std/bytes@^1.0.2": "1.0.4",
     "jsr:@std/cli@^1.0.6": "1.0.9",
@@ -17,6 +18,7 @@
     "jsr:@std/fmt@^1.0.3": "1.0.3",
     "jsr:@std/fs@0.221.0": "0.221.0",
     "jsr:@std/fs@1.0.6": "1.0.6",
+    "jsr:@std/fs@^1.0.5": "1.0.6",
     "jsr:@std/fs@^1.0.6": "1.0.6",
     "jsr:@std/html@^1.0.3": "1.0.3",
     "jsr:@std/http@1.0.11": "1.0.11",
@@ -36,6 +38,7 @@
     "jsr:@std/random@0.1.0": "0.1.0",
     "jsr:@std/streams@0.221.0": "0.221.0",
     "jsr:@std/streams@^1.0.8": "1.0.8",
+    "jsr:@std/testing@1.0.5": "1.0.5",
     "jsr:@std/yaml@1.0.5": "1.0.5",
     "jsr:@wok/djwt@3.0.2": "3.0.2",
     "npm:@aws-crypto/sha256-js@5.2.0": "5.2.0",
@@ -183,6 +186,15 @@
     },
     "@std/streams@1.0.8": {
       "integrity": "b41332d93d2cf6a82fe4ac2153b930adf1a859392931e2a19d9fabfb6f154fb3"
+    },
+    "@std/testing@1.0.5": {
+      "integrity": "6e693cbec94c81a1ad3df668685c7ba8e20742bb10305bc7137faa5cf16d2ec4",
+      "dependencies": [
+        "jsr:@std/assert@^1.0.8",
+        "jsr:@std/fs@^1.0.5",
+        "jsr:@std/internal",
+        "jsr:@std/path@^1.0.8"
+      ]
     },
     "@std/yaml@1.0.5": {
       "integrity": "71ba3d334305ee2149391931508b2c293a8490f94a337eef3a09cade1a2a2742"
@@ -4029,7 +4041,24 @@
     }
   },
   "redirects": {
-    "https://deno.land/std/log/mod.ts": "https://deno.land/std@0.224.0/log/mod.ts"
+    "https://deno.land/std/log/mod.ts": "https://deno.land/std@0.224.0/log/mod.ts",
+    "https://esm.sh/@types/core-util-is@~1.0.1/index.d.ts": "https://esm.sh/@types/core-util-is@1.0.1/index.d.ts",
+    "https://esm.sh/@types/immediate@~3.2.2/index.d.ts": "https://esm.sh/@types/immediate@3.2.2/index.d.ts",
+    "https://esm.sh/@types/pako@~1.0.7/index.d.ts": "https://esm.sh/@types/pako@1.0.7/index.d.ts",
+    "https://esm.sh/@types/readable-stream@~2.3.15/index.d.ts": "https://esm.sh/@types/readable-stream@2.3.15/index.d.ts",
+    "https://esm.sh/@types/util-deprecate@~1.0.4/index.d.ts": "https://esm.sh/@types/util-deprecate@1.0.4/index.d.ts",
+    "https://esm.sh/core-util-is@~1.0.0?target=denonext": "https://esm.sh/core-util-is@1.0.3?target=denonext",
+    "https://esm.sh/immediate@~3.0.5?target=denonext": "https://esm.sh/immediate@3.0.6?target=denonext",
+    "https://esm.sh/isarray@~1.0.0?target=denonext": "https://esm.sh/isarray@1.0.0?target=denonext",
+    "https://esm.sh/lie@~3.3.0?target=denonext": "https://esm.sh/lie@3.3.0?target=denonext",
+    "https://esm.sh/pako@~1.0.2?target=denonext": "https://esm.sh/pako@1.0.11?target=denonext",
+    "https://esm.sh/process-nextick-args@~2.0.0?target=denonext": "https://esm.sh/process-nextick-args@2.0.1?target=denonext",
+    "https://esm.sh/readable-stream@~2.3.6?target=denonext": "https://esm.sh/readable-stream@2.3.8?target=denonext",
+    "https://esm.sh/safe-buffer@~5.1.0?target=denonext": "https://esm.sh/safe-buffer@5.1.2?target=denonext",
+    "https://esm.sh/safe-buffer@~5.1.1?target=denonext": "https://esm.sh/safe-buffer@5.1.2?target=denonext",
+    "https://esm.sh/set-immediate-shim@~1.0.1?target=denonext": "https://esm.sh/set-immediate-shim@1.0.1?target=denonext",
+    "https://esm.sh/string_decoder@~1.1.1?target=denonext": "https://esm.sh/string_decoder@1.1.1?target=denonext",
+    "https://esm.sh/util-deprecate@~1.0.1?target=denonext": "https://esm.sh/util-deprecate@1.0.2?target=denonext"
   },
   "remote": {
     "https://deno.land/std@0.116.0/_util/assert.ts": "2f868145a042a11d5ad0a3c748dcf580add8a0dbc0e876eaa0026303a5488f58",
@@ -4375,7 +4404,30 @@
     "https://deno.land/x/zod@v3.22.2/types.ts": "18cbe3d895f42977c43fa9411da214b06d0d682cf2f4c9dd26cc8c3737740d40",
     "https://esm.sh/@aws-sdk/client-s3@3.700.0?pin=v135": "c4e66ce2669ce810cd7f060e52e9702a37f02fc0912f69b1dc020a29b4d6e70f",
     "https://esm.sh/@aws-sdk/lib-storage@3.700.0?pin=v135": "20499413966c9d494f4bff63361359e095f174c4a41ee79da3a0fbeb62dc947f",
+    "https://esm.sh/core-util-is@1.0.3/denonext/core-util-is.mjs": "cfcf1ae63d56751cbe4b3b90b90b7eea577c5380c4adc272ddea4b7db2bdbbf2",
+    "https://esm.sh/core-util-is@1.0.3?target=denonext": "6c72958f8a1c8f42016b48c984a0f3d799ea1e0cd321f499fec0bf8db916c17f",
+    "https://esm.sh/immediate@3.0.6/denonext/immediate.mjs": "7148ba33cb905f7aca49affbacfa6a8257cd6b89e8c3c7c728d2d0387b4cce29",
+    "https://esm.sh/immediate@3.0.6?target=denonext": "fba8d9ddb37f19ff27c0b1c5b4486ab82805114b14959379d92ca05d6351c5d3",
+    "https://esm.sh/isarray@1.0.0/denonext/isarray.mjs": "0f26133cd58fc8580f99bbfd81f6290718328dc2a683c313c36f6b1e8c174edc",
+    "https://esm.sh/isarray@1.0.0?target=denonext": "00e227f6d016cb5a5f832f6f2de91dd8ab092c7ac830c551bfcf0f63284d89e6",
     "https://esm.sh/jszip@3.7.1": "5161d6a228d844791a60ab58360bd3b76c4d3921b4a725616cd7403203519249",
+    "https://esm.sh/jszip@3.7.1/denonext/jszip.mjs": "c012f515eb73de7f7576f4a4756c206b0a98cb7ef698ee7f5bb85a1f07eb3eba",
+    "https://esm.sh/lie@3.3.0/denonext/lie.mjs": "20db2fef139e87d467b7cf24a9e53053e96460fefedde5910f925b1d0ddc0cba",
+    "https://esm.sh/lie@3.3.0?target=denonext": "74a2c724bd2fef30c46c612632dfd2ee37394f1a4540eb112e0df2ef98df0434",
+    "https://esm.sh/pako@1.0.11/denonext/pako.mjs": "c74e4cf6d33272fd034f6b17390a1bf1122d8bb28f861b6e82d9a1536b3f3105",
+    "https://esm.sh/pako@1.0.11?target=denonext": "bc43f66ed245d58d468bf9867b3e9080c5b0590b4c14038ea308954490e0b2ea",
+    "https://esm.sh/process-nextick-args@2.0.1/denonext/process-nextick-args.mjs": "adffdd507c6571957aaab9d3f0a2aa54febdda1b4d546a57967fd2299505339e",
+    "https://esm.sh/process-nextick-args@2.0.1?target=denonext": "b80260031d83086964facc0efc6e2cc8fd878d9ce14dfcf6999e508a4d8d13d0",
+    "https://esm.sh/readable-stream@2.3.8/denonext/readable-stream.mjs": "738c1c2f90f84663b7bf1a4151d280079e6eab3ae3b2a5b5c759af02364b5ea4",
+    "https://esm.sh/readable-stream@2.3.8?target=denonext": "a8d158c470101e7518fdf293728d4cb8b2ab2cac73140940c8a9ee5542194e13",
+    "https://esm.sh/safe-buffer@5.1.2/denonext/safe-buffer.mjs": "848e2c2dafb98ea738399526e4396607872d1118acf8eb56eecd2a5f3be75568",
+    "https://esm.sh/safe-buffer@5.1.2?target=denonext": "3126988c629e3dc2d6126b26f654aceae10ad989622a21cb2a73ee72603f7df8",
+    "https://esm.sh/set-immediate-shim@1.0.1/denonext/set-immediate-shim.mjs": "a0fc9b90f281a6541c474dbf55184ef3a9360248f53cb3fa9479480cd24cdd40",
+    "https://esm.sh/set-immediate-shim@1.0.1?target=denonext": "8d30997d25a26dbcd4d79b613e6f400af85194f8e18e8e7014bc5fe3c9ffd429",
+    "https://esm.sh/string_decoder@1.1.1/denonext/string_decoder.mjs": "494e5a7fae95d5326e8aee93b4adfde75e389eea7a54bc1feea8549e786da032",
+    "https://esm.sh/string_decoder@1.1.1?target=denonext": "092c97b62b99368a40fa044c402188472658bc71529415f73c16f66c05aaf6bf",
+    "https://esm.sh/util-deprecate@1.0.2/denonext/util-deprecate.mjs": "083639894972cb68837eef26346c43bdd01357977149e0a4493f76192a4008b8",
+    "https://esm.sh/util-deprecate@1.0.2?target=denonext": "859f4df8ba771a4c33143185d3db6a7edb824fab1ed4f9a4b96ac0e6bc3ef1a4",
     "https://esm.sh/v135/@aws-crypto/crc32@5.2.0/denonext/crc32.mjs": "6a9bc8418c01e2539665b528ccea843f1319a3b32d759fcbb1d4468156c25100",
     "https://esm.sh/v135/@aws-crypto/crc32c@5.2.0/denonext/crc32c.mjs": "1e8985997bd2c0807d349acaf192a54147d779e5349faf6507f51aa8becb85ca",
     "https://esm.sh/v135/@aws-crypto/sha1-browser@5.2.0/denonext/sha1-browser.mjs": "d80868d5524769e0334b50124d547ce9875fb05f9924acca4c42ed877b41ce7f",
