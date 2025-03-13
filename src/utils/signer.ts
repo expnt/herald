@@ -16,6 +16,7 @@ function getV4Signer(config: S3Config) {
     credentials: config.credentials,
     service: "s3", // TODO: get from config
     sha256: Sha256,
+    applyChecksum: true,
   });
 
   return signer;

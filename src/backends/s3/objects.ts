@@ -7,6 +7,7 @@ import { Bucket } from "../../buckets/mod.ts";
 import { swiftResolver } from "../swift/mod.ts";
 import { s3Resolver } from "./mod.ts";
 import { HeraldContext } from "../../types/mod.ts";
+import { extractRequestInfo } from "../../utils/s3.ts";
 
 const logger = getLogger(import.meta);
 
@@ -128,7 +129,8 @@ export async function putObject(
     reportToSentry(errMessage);
   } else {
     logger.info(`Put Object Successful: ${response.statusText}`);
-    if (mirrorOperation) {
+    const { queryParams } = extractRequestInfo(req);
+    if (mirrorOperation && !queryParams["uploadId"]) {
       await prepareMirrorRequests(
         ctx,
         req,
