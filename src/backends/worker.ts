@@ -8,6 +8,7 @@ import { TASK_QUEUE_DB } from "../constants/message.ts";
 import { TASK_TIMEOUT } from "../constants/time.ts";
 import { Bucket } from "../buckets/mod.ts";
 import { SwiftConfig } from "../config/types.ts";
+import { KeystoneTokenStore } from "./swift/keystone_token_store.ts";
 
 if (inWorker()) {
   await configInit();
@@ -46,13 +47,30 @@ function convertMessageToTask(
   };
 }
 
+interface SerializedSwiftAuthMeta {
+  configAuthMetas: [string, object][];
+  configs: object[];
+}
+
+function prepareWorkerContext(
+  ctx: HeraldContext,
+  serialized: SerializedSwiftAuthMeta,
+) {
+  const keystoneStore = KeystoneTokenStore.fromSerializable(serialized);
+  ctx.keystoneStore = keystoneStore;
+
+  return ctx;
+}
+
 interface UpdateContextMessage {
   ctx: HeraldContext;
+  serializedSwiftAuthMeta: SerializedSwiftAuthMeta;
   type: "UpdateContext";
 }
 
 interface StartMessage {
   ctx: HeraldContext;
+  serializedSwiftAuthMeta: SerializedSwiftAuthMeta;
   type: "Start";
 }
 
@@ -83,7 +101,7 @@ function onUpdateContext(
   msg: MessageEvent<UpdateContextMessage>,
   logger: loggerUtils.Logger,
 ) {
-  ctx = msg.data.ctx;
+  ctx = prepareWorkerContext(msg.data.ctx, msg.data.serializedSwiftAuthMeta);
   logger.info("Updated worker's herald context");
 }
 
@@ -93,7 +111,7 @@ async function onStart(
 ) {
   logger.info(`Worker started listening to tasks for bucket: ${name}`);
 
-  ctx = msg.data.ctx;
+  ctx = prepareWorkerContext(msg.data.ctx, msg.data.serializedSwiftAuthMeta);
   const dbName = `${name}_${TASK_QUEUE_DB}`;
   const kv = await Deno.openKv(dbName);
   kv.listenQueue(async (item: MirrorTaskMessage) => {

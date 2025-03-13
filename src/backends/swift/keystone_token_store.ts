@@ -31,6 +31,27 @@ export class KeystoneTokenStore {
     );
   }
 
+  // Convert to a format that can be passed to the worker
+  public toSerializable(): {
+    configAuthMetas: [string, SwiftAuthMeta][];
+    configs: SwiftConfig[];
+  } {
+    return {
+      configAuthMetas: Array.from(this.configAuthMetas.entries()), // Convert Map to array
+      configs: this.configs, // Arrays are already serializable
+    };
+  }
+
+  // Reconstruct from the serialized format
+  public static fromSerializable(
+    data: { configAuthMetas: [string, object][]; configs: object[] },
+  ): KeystoneTokenStore {
+    return new KeystoneTokenStore(
+      new Map(data.configAuthMetas as [string, SwiftAuthMeta][]),
+      data.configs as SwiftConfig[],
+    );
+  }
+
   static #getConfigKey(config: SwiftConfig): string {
     // assumed this is enough as a key
     return `${config.auth_url}-${config.region}`;

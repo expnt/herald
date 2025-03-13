@@ -46,6 +46,7 @@ export function startWorkers(ctx: HeraldContext) {
   for (const [_, worker] of workers) {
     worker.postMessage({
       ctx: JSON.parse(JSON.stringify(ctx)),
+      serializedSwiftAuthMeta: ctx.keystoneStore.toSerializable(),
       type: "Start",
     });
   }
@@ -55,6 +56,7 @@ export function refreshWorkersContext(ctx: HeraldContext) {
   for (const [_, worker] of workers) {
     worker.postMessage({
       ctx: JSON.parse(JSON.stringify(ctx)),
+      serializedSwiftAuthMeta: ctx.keystoneStore.toSerializable(),
       type: "UpdateContext",
     });
   }
