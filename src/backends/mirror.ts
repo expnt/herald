@@ -262,6 +262,10 @@ async function mirrorPutObject(
       );
     }
     const replicaBucket = primaryBucket.getReplica(replica.name)!;
+    putToS3Request.headers.set(
+      "x-amz-content-sha256",
+      "UNSIGNED-PAYLOAD",
+    );
     await s3.putObject(ctx, putToS3Request, replicaBucket);
   } else {
     const putToSwiftRequest = new Request(originalRequest.url, {
