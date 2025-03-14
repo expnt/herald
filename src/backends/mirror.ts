@@ -235,7 +235,6 @@ async function mirrorPutObject(
     return;
   }
 
-  // console.log("&&&&&&&&&&", response);
   // this path means primary is swift
   if (replica.typ === "ReplicaS3Config") {
     // put object to s3
@@ -263,7 +262,10 @@ async function mirrorPutObject(
       );
     }
     const replicaBucket = primaryBucket.getReplica(replica.name)!;
-    // console.log("*******", putToS3Request);
+    putToS3Request.headers.set(
+      "x-amz-content-sha256",
+      "UNSIGNED-PAYLOAD",
+    );
     await s3.putObject(ctx, putToS3Request, replicaBucket);
   } else {
     const putToSwiftRequest = new Request(originalRequest.url, {
