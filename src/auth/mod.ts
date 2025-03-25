@@ -37,9 +37,15 @@ interface KubeJWK {
 const logger = getLogger(import.meta);
 
 export async function verifyServiceAccountToken(
-  token: string,
+  token: string | undefined,
 ): Promise<string> {
   logger.info("Verifying service account token...");
+  if (!token) {
+    const errMessage = "No token provided";
+    throw new HTTPException(401, {
+      message: errMessage,
+    });
+  }
   const extractedToken = token.split(" ")[1];
   const payload = await verifyToken(extractedToken);
 
@@ -65,6 +71,7 @@ const cryptoKeys: Map<string, CryptoKey> = new Map();
 async function updateKeyCache() {
   logger.info("Updating KubeJWK Cache...");
   const jwks = await getKeys();
+
   for (const key of jwks) {
     const cryptoKey = await crypto.subtle.importKey(
       "jwk",
@@ -78,10 +85,10 @@ async function updateKeyCache() {
 }
 
 async function verifyToken(token: string): Promise<DecodedToken> {
-  logger.info("Verifying token...");
   if (cryptoKeys.size === 0 || Date.now() > expirationTime) {
     await updateKeyCache();
   }
+
   let header: { kid?: string };
   try {
     header = decode(token)[0] as { kid?: string };
@@ -104,6 +111,7 @@ async function verifyToken(token: string): Promise<DecodedToken> {
     throw new HTTPException(401, { message });
   }
 
+  logger.info("Verifying token...");
   const verified = await verify(token, cryptoKey);
   return verified as DecodedToken;
 }

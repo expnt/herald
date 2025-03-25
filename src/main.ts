@@ -70,12 +70,6 @@ app.all("/*", async (c) => {
   }
 
   const token = c.req.header("Authorization");
-  if (!token) {
-    const errMessage = "No token provided";
-    throw new HTTPException(401, {
-      message: errMessage,
-    });
-  }
 
   const auth = getAuthType();
   const serviceAccountName = auth === "service_account"

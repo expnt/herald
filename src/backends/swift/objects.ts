@@ -13,7 +13,12 @@ import { s3Utils } from "../../utils/mod.ts";
 import { prepareMirrorRequests } from "../mirror.ts";
 import { Bucket } from "../../buckets/mod.ts";
 import { s3Resolver } from "../s3/mod.ts";
-import { swiftResolver } from "./mod.ts";
+import {
+  convertSwiftDeleteToS3Response,
+  convertSwiftGetToS3Response,
+  convertSwiftToS3Response,
+  swiftResolver,
+} from "./mod.ts";
 import { HeraldContext } from "../../types/mod.ts";
 import { getRandomUUID } from "../../utils/crypto.ts";
 const logger = getLogger(import.meta);
@@ -83,7 +88,9 @@ export async function getObject(
 ): Promise<Response | Error | HTTPException> {
   logger.info("[Swift backend] Proxying Get Object Request...");
 
-  const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
+  const { bucket, objectKey: object, queryParams } = s3Utils.extractRequestInfo(
+    req,
+  );
   if (!bucket) {
     return new HTTPException(400, {
       message: "Bucket information missing from the request",
@@ -141,7 +148,7 @@ export async function getObject(
     logger.info(`Get Object Successful: ${response.statusText}`);
   }
 
-  return response;
+  return convertSwiftGetToS3Response(response, queryParams);
 }
 
 export async function deleteObject(
@@ -213,7 +220,7 @@ export async function deleteObject(
     }
   }
 
-  return response;
+  return convertSwiftDeleteToS3Response(response);
 }
 
 export async function listObjects(
@@ -469,8 +476,13 @@ export async function copyObject(
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
-  const copySource = `/${bucket}/${object}`;
-  headers.set(S3_COPY_SOURCE_HEADER, copySource);
+  const copySource = req.headers.get(S3_COPY_SOURCE_HEADER);
+  if (!copySource) {
+    throw new HTTPException(400, {
+      message: `Invalid Request: ${S3_COPY_SOURCE_HEADER} missing from request`,
+    });
+  }
+  headers.set("X-Copy-From", copySource);
   const reqUrl = `${swiftUrl}/${bucket}/${object}`;
 
   const fetchFunc = async () => {
@@ -533,7 +545,7 @@ export async function copyObject(
     `;
 
   const s3Response = new Response(s3ResponseBody, {
-    status: response.status,
+    status: 200,
     statusText: response.statusText,
     headers: s3ResponseHeaders,
   });
@@ -610,7 +622,7 @@ export async function completeMultipartUpload(
   const res = ctx.keystoneStore.getConfigAuthMeta(config);
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
-  headers.append("X-Object-Manifest", `${bucket}/${object}/`);
+  headers.append("X-Object-Manifest", `${bucket}/${object}`);
 
   const reqUrl = `${swiftUrl}/${bucket}/${object}`;
 
@@ -618,7 +630,6 @@ export async function completeMultipartUpload(
     return await fetch(reqUrl, {
       method: "PUT",
       headers: headers,
-      body: getBodyFromReq(req),
     });
   };
   const response = await retryWithExponentialBackoff(
@@ -653,6 +664,7 @@ export async function completeMultipartUpload(
       message: "Storage service error: Etag missing in the response headers",
     });
   }
+
   const result = createCompleteMultipartUploadResponse(
     bucket,
     object,
@@ -715,5 +727,5 @@ export async function uploadPart(
     logger.info(`Upload Part Successful: ${response.statusText}`);
   }
 
-  return response;
+  return convertSwiftToS3Response(response);
 }
