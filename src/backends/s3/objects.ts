@@ -168,7 +168,7 @@ export async function deleteObject(
     logger.warn(`Delete Object Failed: ${response.statusText}`);
     reportToSentry(errMesage);
   } else {
-    logger.info(`Delete Object Successfull: ${response.statusText}`);
+    logger.info(`Delete Object Successful: ${response.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
         ctx,
@@ -207,7 +207,7 @@ export async function copyObject(
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`Copy Object Successfull: ${response.statusText}`);
+    logger.info(`Copy Object Successful: ${response.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
         ctx,
@@ -264,7 +264,7 @@ export async function headObject(
     const errMessage = `Head Object Failed: ${response.statusText}`;
     logger.warn(errMessage);
   } else {
-    logger.info(`Head Object Successfull: ${response.statusText}`);
+    logger.info(`Head Object Successful: ${response.statusText}`);
   }
 
   return response;
@@ -331,6 +331,82 @@ export async function completeMultipartUpload(
         "completeMultipartUpload",
       );
     }
+  }
+
+  return response;
+}
+
+export async function listParts(
+  ctx: HeraldContext,
+  req: Request,
+  bucketConfig: Bucket,
+): Promise<Response | Error> {
+  logger.info("[S3 backend] Proxying List Parts Request...");
+
+  let response = await forwardRequestWithTimeouts(
+    req,
+    bucketConfig.config as S3Config,
+    bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
+  );
+
+  if (response instanceof Error && bucketConfig.hasReplicas()) {
+    logger.warn(
+      `List Parts Failed on Primary Bucket: ${bucketConfig.bucketName}`,
+    );
+    logger.warn("Trying on Replicas...");
+    for (const replica of bucketConfig.replicas) {
+      const res = replica.typ === "ReplicaS3Config"
+        ? await s3Resolver(ctx, req, replica)
+        : await swiftResolver(ctx, req, replica);
+      if (res instanceof Error) {
+        logger.warn(`List Parts Failed on Replica: ${replica.name}`);
+        continue;
+      }
+      response = res;
+    }
+  }
+
+  if (response instanceof Error) {
+    logger.warn(`List Parts Failed: ${response.message}`);
+    return response;
+  }
+
+  if (response.status !== 200) {
+    const errMessage = `List Parts Failed: ${response.statusText}`;
+    logger.warn(errMessage);
+    reportToSentry(errMessage);
+  } else {
+    logger.info(`List Parts Successful: ${response.statusText}`);
+  }
+
+  return response;
+}
+
+export async function abortMultipartUpload(
+  _ctx: HeraldContext,
+  req: Request,
+  bucketConfig: Bucket,
+): Promise<Response | Error> {
+  logger.info("[S3 backend] Proxying Abort Multipart Upload Request...");
+
+  const config: S3Config = bucketConfig.config as S3Config;
+
+  const response = await forwardRequestWithTimeouts(
+    req,
+    config,
+  );
+
+  if (response instanceof Error) {
+    logger.warn(`Delete Object Failed: ${response.message}`);
+    return response;
+  }
+
+  if (response.status != 204) {
+    const errMesage = `Abort Multipart Upload Failed: ${response.statusText}`;
+    logger.warn(`Abort Multipart Upload Failed: ${response.statusText}`);
+    reportToSentry(errMesage);
+  } else {
+    logger.info(`Abort Multipart Upload Successful: ${response.statusText}`);
   }
 
   return response;
