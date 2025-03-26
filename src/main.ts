@@ -69,7 +69,7 @@ app.all("/*", async (c) => {
     return c.text("Proxy is running...", 200);
   }
 
-  const token = c.req.header("Authorization");
+  const token = c.req.header("Authorization") ?? null;
 
   const auth = getAuthType();
   const serviceAccountName = auth === "service_account"

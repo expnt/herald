@@ -59,7 +59,7 @@ Deno.test(async function copyObject(t) {
     const copyCommand = new CopyObjectCommand({
       Bucket: containerName,
       Key: destPath,
-      CopySource: `/${containerName}/movie.mov`,
+      CopySource: `/${containerName}/${key}`,
     });
     const copyRes = await s3.send(copyCommand);
     checkCopyObject(copyRes);

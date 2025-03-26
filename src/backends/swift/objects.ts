@@ -14,9 +14,9 @@ import { prepareMirrorRequests } from "../mirror.ts";
 import { Bucket } from "../../buckets/mod.ts";
 import { s3Resolver } from "../s3/mod.ts";
 import {
-  convertSwiftDeleteToS3Response,
-  convertSwiftGetToS3Response,
-  convertSwiftToS3Response,
+  convertSwiftDeleteObjectToS3Response,
+  convertSwiftGetObjectToS3Response,
+  convertSwiftUploadPartToS3Response,
   swiftResolver,
 } from "./mod.ts";
 import { HeraldContext } from "../../types/mod.ts";
@@ -148,7 +148,7 @@ export async function getObject(
     logger.info(`Get Object Successful: ${response.statusText}`);
   }
 
-  return convertSwiftGetToS3Response(response, queryParams);
+  return convertSwiftGetObjectToS3Response(response, queryParams);
 }
 
 export async function deleteObject(
@@ -220,7 +220,7 @@ export async function deleteObject(
     }
   }
 
-  return convertSwiftDeleteToS3Response(response);
+  return convertSwiftDeleteObjectToS3Response(response);
 }
 
 export async function listObjects(
@@ -544,6 +544,7 @@ export async function copyObject(
     </CopyObjectResult>
     `;
 
+  // https://docs.aws.amazon.com/AmazonS3/latest/API/API_CopyObject.html#API_CopyObject_ResponseSyntax
   const s3Response = new Response(s3ResponseBody, {
     status: 200,
     statusText: response.statusText,
@@ -580,6 +581,7 @@ export function createMultipartUpload(
   });
 }
 
+// https://docs.aws.amazon.com/AmazonS3/latest/API/API_CreateMultipartUpload.html#API_CreateMultipartUpload_ResponseSyntax
 function createCompleteMultipartUploadResponse(
   bucketName: string,
   objectKey: string,
@@ -727,5 +729,5 @@ export async function uploadPart(
     logger.info(`Upload Part Successful: ${response.statusText}`);
   }
 
-  return convertSwiftToS3Response(response);
+  return convertSwiftUploadPartToS3Response(response);
 }

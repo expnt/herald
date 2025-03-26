@@ -37,7 +37,7 @@ interface KubeJWK {
 const logger = getLogger(import.meta);
 
 export async function verifyServiceAccountToken(
-  token: string | undefined,
+  token: string | null,
 ): Promise<string> {
   logger.info("Verifying service account token...");
   if (!token) {

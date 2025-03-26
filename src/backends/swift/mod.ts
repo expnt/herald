@@ -155,7 +155,7 @@ export async function swiftResolver(
   return new HTTPException(405, { message: "Method Not Allowed" });
 }
 
-export function convertSwiftGetToS3Response(
+export function convertSwiftGetObjectToS3Response(
   swiftResponse: Response,
   queryParams: Record<string, string[]>,
 ) {
@@ -195,12 +195,13 @@ export function convertSwiftGetToS3Response(
 
   // Return the new S3-like response
   return new Response(swiftResponse.body, {
+    // https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html#API_GetObject_ResponseSyntax
     status: 200, // Success in S3 is indicated by HTTP 200
     headers: s3ResponseHeaders,
   });
 }
 
-export function convertSwiftDeleteToS3Response(swiftResponse: Response) {
+export function convertSwiftDeleteObjectToS3Response(swiftResponse: Response) {
   // Check the status of the Swift response
   if (!swiftResponse.ok) {
     // If the response is not successful, return a corresponding error
@@ -212,13 +213,14 @@ export function convertSwiftDeleteToS3Response(swiftResponse: Response) {
   // Construct the S3-compliant response
   // S3 expects a 204 status code for a successful delete operation
   const s3Response = new Response(null, {
+    // https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObject.html#API_DeleteObject_ResponseSyntax
     status: 204, // No Content, which matches the success status of S3 and Swift DELETE response
   });
 
   return s3Response;
 }
 
-export function convertSwiftToS3Response(swiftResponse: Response) {
+export function convertSwiftUploadPartToS3Response(swiftResponse: Response) {
   // Check the status of the Swift response
   if (!swiftResponse.ok) {
     // If the response is not OK, return a corresponding error
@@ -238,6 +240,7 @@ export function convertSwiftToS3Response(swiftResponse: Response) {
 
   // Creating a new Response object for the S3 response
   const s3Response = new Response(null, {
+    // https://docs.aws.amazon.com/AmazonS3/latest/API/API_UploadPart.html#API_UploadPart_ResponseSyntax
     status: 200, // Uploaded parts typically respond with HTTP 200 in S3 when successful
     headers: s3ResponseHeaders,
   });
