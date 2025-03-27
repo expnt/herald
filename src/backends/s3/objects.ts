@@ -1,5 +1,5 @@
 import { Context } from "@hono/hono";
-import { forwardRequestWithTimeouts } from "../../utils/url.ts";
+import { forwardS3RequestToS3WithTimeouts } from "../../utils/url.ts";
 import { getLogger, reportToSentry } from "../../utils/log.ts";
 import { S3Config } from "../../config/mod.ts";
 import { prepareMirrorRequests } from "../mirror.ts";
@@ -18,7 +18,7 @@ export async function getObject(
 ) {
   logger.info("[S3 backend] Proxying Get Object Request...");
 
-  let response = await forwardRequestWithTimeouts(
+  let response = await forwardS3RequestToS3WithTimeouts(
     req,
     bucketConfig.config as S3Config,
     bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
@@ -64,7 +64,7 @@ export async function listObjects(
 ) {
   logger.info("[S3 backend] Proxying List Objects Request...");
 
-  let response = await forwardRequestWithTimeouts(
+  let response = await forwardS3RequestToS3WithTimeouts(
     req,
     bucketConfig.config as S3Config,
     bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
@@ -113,7 +113,7 @@ export async function putObject(
   const config: S3Config = bucketConfig.config as S3Config;
   const mirrorOperation = bucketConfig.hasReplicas();
 
-  const response = await forwardRequestWithTimeouts(
+  const response = await forwardS3RequestToS3WithTimeouts(
     req,
     config,
   );
@@ -153,7 +153,7 @@ export async function deleteObject(
   const config: S3Config = bucketConfig.config as S3Config;
   const mirrorOperation = bucketConfig.hasReplicas();
 
-  const response = await forwardRequestWithTimeouts(
+  const response = await forwardS3RequestToS3WithTimeouts(
     req,
     config,
   );
@@ -192,7 +192,7 @@ export async function copyObject(
   const config: S3Config = bucketConfig.config as S3Config;
   const mirrorOperation = bucketConfig.hasReplicas();
 
-  const response = await forwardRequestWithTimeouts(
+  const response = await forwardS3RequestToS3WithTimeouts(
     req,
     config,
   );
@@ -232,7 +232,7 @@ export async function headObject(
 ) {
   logger.info("[S3 backend] Proxying Head Object Request...");
 
-  let response = await forwardRequestWithTimeouts(
+  let response = await forwardS3RequestToS3WithTimeouts(
     req,
     bucketConfig.config as S3Config,
     bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
@@ -277,7 +277,7 @@ export async function createMultipartUpload(
 ) {
   logger.info("[S3 backend] Proxying Create Multipart Upload Request...");
 
-  const response = await forwardRequestWithTimeouts(
+  const response = await forwardS3RequestToS3WithTimeouts(
     req,
     bucketConfig.config as S3Config,
   );
@@ -306,7 +306,7 @@ export async function completeMultipartUpload(
   logger.info("[S3 backend] Proxying Complete Multipart Upload Request...");
 
   const mirrorOperation = bucketConfig.hasReplicas();
-  const response = await forwardRequestWithTimeouts(
+  const response = await forwardS3RequestToS3WithTimeouts(
     req,
     bucketConfig.config as S3Config,
   );
@@ -343,7 +343,7 @@ export async function listParts(
 ): Promise<Response | Error> {
   logger.info("[S3 backend] Proxying List Parts Request...");
 
-  let response = await forwardRequestWithTimeouts(
+  let response = await forwardS3RequestToS3WithTimeouts(
     req,
     bucketConfig.config as S3Config,
     bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
@@ -391,7 +391,7 @@ export async function abortMultipartUpload(
 
   const config: S3Config = bucketConfig.config as S3Config;
 
-  const response = await forwardRequestWithTimeouts(
+  const response = await forwardS3RequestToS3WithTimeouts(
     req,
     config,
   );
