@@ -11,8 +11,8 @@ export const urlFormatStyle = z.enum(["VirtualHosted", "Path"]);
 export type URLFormatStyle = z.infer<typeof urlFormatStyle>;
 
 export const requestMeta = z.object({
-  bucket: z.string().nullable().optional(),
-  objectKey: z.string().nullable().optional(),
+  bucket: z.string().nullable(),
+  objectKey: z.string().nullable(),
   method: HttpMethod,
   urlFormat: urlFormatStyle,
   queryParams: z.record(z.array(z.string())),

@@ -5,7 +5,11 @@ import {
   getBodyFromReq,
   retryWithExponentialBackoff,
 } from "../../utils/url.ts";
-import { formatRFC3339Date, toS3XmlContent } from "./utils/mod.ts";
+import {
+  formatRFC3339Date,
+  toS3ListPartXmlContent,
+  toS3XmlContent,
+} from "./utils/mod.ts";
 import { NoSuchBucketException } from "../../constants/errors.ts";
 import { SwiftConfig } from "../../config/types.ts";
 import { S3_COPY_SOURCE_HEADER } from "../../constants/headers.ts";
@@ -182,22 +186,9 @@ export async function deleteObject(
     });
   };
 
-  let response = await retryWithExponentialBackoff(
+  const response = await retryWithExponentialBackoff(
     fetchFunc,
   );
-
-  if (response instanceof Error && bucketConfig.hasReplicas()) {
-    for (const replica of bucketConfig.replicas) {
-      const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
-      if (res instanceof Error) {
-        logger.warn(`Delete Object Failed on Replica: ${replica.name}`);
-        continue;
-      }
-      response = res;
-    }
-  }
 
   if (response instanceof Error) {
     logger.warn(`Delete Object Failed: ${response.message}`);
@@ -730,4 +721,146 @@ export async function uploadPart(
   }
 
   return convertSwiftUploadPartToS3Response(response);
+}
+
+export async function listParts(
+  ctx: HeraldContext,
+  req: Request,
+  bucketConfig: Bucket,
+): Promise<Response | Error | HTTPException> {
+  logger.info("[Swift backend] Proxying ListParts Request...");
+
+  const { bucket, queryParams: query, objectKey } = s3Utils.extractRequestInfo(
+    req,
+  );
+  if (!bucket || !objectKey) {
+    return new HTTPException(400, {
+      message: "Bucket or Object information missing from the request",
+    });
+  }
+
+  const config = bucketConfig.config as SwiftConfig;
+  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+
+  const { storageUrl: swiftUrl, token: authToken } = res;
+  const headers = getSwiftRequestHeaders(authToken);
+
+  const params = new URLSearchParams();
+  params.append("prefix", objectKey);
+  if (query.delimiter) params.append("delimiter", "/");
+  if (query["part-number-marker"]) {
+    params.append("marker", query["part-number-marker"][0]);
+  }
+  if (query["max-parts"]) params.append("limit", query["max-parts"][0]);
+
+  headers.delete("Accept");
+  headers.set("Accept", "application/json");
+
+  const reqUrl = `${swiftUrl}/${bucket}?${params.toString()}`;
+
+  const fetchFunc = async () => {
+    return await fetch(reqUrl, {
+      method: "GET",
+      headers: headers,
+    });
+  };
+
+  let response = await retryWithExponentialBackoff(
+    fetchFunc,
+    bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
+  );
+
+  if (response instanceof Error && bucketConfig.hasReplicas()) {
+    logger.warn(
+      `ListParts Failed on Primary Bucket: ${bucketConfig.bucketName}`,
+    );
+    logger.warn("Trying on Replicas...");
+    for (const replica of bucketConfig.replicas) {
+      const res = replica.typ === "ReplicaS3Config"
+        ? await s3Resolver(ctx, req, replica)
+        : await swiftResolver(ctx, req, replica);
+      if (res instanceof Error) {
+        logger.warn(
+          `ListParts Failed on Replica: ${replica.name}`,
+        );
+        continue;
+      }
+      response = res;
+    }
+  }
+
+  if (response instanceof Error) {
+    logger.warn(`ListParts Failed: ${response.message}`);
+    return response;
+  }
+
+  if (response.status === 404) {
+    logger.warn(`ListParts Failed: ${response.statusText}`);
+    throw NoSuchBucketException();
+  } else {
+    logger.info(`ListParts Successful: ${response.statusText}`);
+  }
+
+  const uploadId = query["uploadId"][0] ?? null;
+  const maxKeys = query["max-parts"] ? Number(query["max-parts"][0]) : null;
+  const partNumberMarker = query["part-number-marker"]
+    ? parseInt(query["part-number-marker"][0])
+    : null;
+  const formattedResponse = await toS3ListPartXmlContent(
+    response,
+    bucket,
+    objectKey,
+    uploadId,
+    partNumberMarker,
+    maxKeys ?? null,
+  );
+  return formattedResponse;
+}
+
+export async function abortMultipartUpload(
+  ctx: HeraldContext,
+  req: Request,
+  bucketConfig: Bucket,
+): Promise<Response | Error | HTTPException> {
+  logger.info("[Swift backend] Proxying AbortMultipartUpload Request...");
+
+  const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
+  if (!bucket) {
+    return new HTTPException(400, {
+      message: "Bucket information missing from the request",
+    });
+  }
+
+  const config: SwiftConfig = bucketConfig.config as SwiftConfig;
+  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+
+  const { storageUrl: swiftUrl, token: authToken } = res;
+  const headers = getSwiftRequestHeaders(authToken);
+  const reqUrl = `${swiftUrl}/${bucket}/${object}`;
+
+  const fetchFunc = async () => {
+    return await fetch(reqUrl, {
+      method: "DELETE",
+      headers: headers,
+    });
+  };
+
+  const response = await retryWithExponentialBackoff(
+    fetchFunc,
+  );
+
+  if (response instanceof Error) {
+    logger.warn(`AbortMultipartUpload Failed: ${response.message}`);
+    return response;
+  }
+
+  if (response.status !== 204) {
+    const errMessage = `AbortMultipartUpload Failed: ${response.statusText}`;
+    logger.warn(errMessage);
+    reportToSentry(errMessage);
+  } else {
+    logger.info(`AbortMultipartUpload Successful: ${response.statusText}`);
+  }
+
+  return response;
 }
