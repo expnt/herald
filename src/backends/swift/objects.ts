@@ -536,6 +536,7 @@ export async function copyObject(
     `;
 
   // https://docs.aws.amazon.com/AmazonS3/latest/API/API_CopyObject.html#API_CopyObject_ResponseSyntax
+  // https://docs.aws.amazon.com/AmazonS3/latest/API/API_CopyObject.html#API_CopyObject_ResponseSyntax
   const s3Response = new Response(s3ResponseBody, {
     status: 200,
     statusText: response.statusText,
@@ -572,6 +573,7 @@ export function createMultipartUpload(
   });
 }
 
+// https://docs.aws.amazon.com/AmazonS3/latest/API/API_CreateMultipartUpload.html#API_CreateMultipartUpload_ResponseSyntax
 // https://docs.aws.amazon.com/AmazonS3/latest/API/API_CreateMultipartUpload.html#API_CreateMultipartUpload_ResponseSyntax
 function createCompleteMultipartUploadResponse(
   bucketName: string,
@@ -615,6 +617,7 @@ export async function completeMultipartUpload(
   const res = ctx.keystoneStore.getConfigAuthMeta(config);
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
+  headers.append("X-Object-Manifest", `${bucket}/${object}`);
   headers.append("X-Object-Manifest", `${bucket}/${object}`);
 
   const reqUrl = `${swiftUrl}/${bucket}/${object}`;
