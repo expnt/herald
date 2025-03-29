@@ -24,6 +24,9 @@ jobs:
         with:
           node-version: '16'
 
+      - name: Install Commitizen
+        run: npm install commitizen
+
       - name: Bump and Get Version
         id: version
         run: |
