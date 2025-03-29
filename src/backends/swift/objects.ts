@@ -618,7 +618,6 @@ export async function completeMultipartUpload(
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
   headers.append("X-Object-Manifest", `${bucket}/${object}`);
-  headers.append("X-Object-Manifest", `${bucket}/${object}`);
 
   const reqUrl = `${swiftUrl}/${bucket}/${object}`;
 
