@@ -67,9 +67,10 @@ jobs:
         uses: docker/build-push-action@v2
         with:
           context: .
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/herald:${{ needs.bump-version.outputs.version }}
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
           push: true
+          tags: ghcr.io/${{ github.repository_owner }}/herald:${{ needs.bump-version.outputs.version }}
 
   delete-test-releases:
     if: github.event.pull_request.merged == true && github.base_ref == 'release-test'
