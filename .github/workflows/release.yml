@@ -24,9 +24,6 @@ jobs:
         with:
           node-version: '16'
 
-      - name: Install Dependencies
-        run: npm install
-
       - name: Bump and Get Version
         id: version
         run: |
