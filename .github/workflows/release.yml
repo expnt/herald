@@ -22,6 +22,8 @@ jobs:
     if: "${{ !startsWith(github.event.head_commit.message, 'bump:') }}"
     runs-on: ubuntu-latest
     name: "Bump version and create changelog with commitizen"
+    outputs:
+      version: ${{ steps.cz.outputs.version }}
     steps:
       - name: Check out
         uses: actions/checkout@v3
@@ -35,24 +37,21 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Print Version
         run: echo "Bumped to version ${{ steps.cz.outputs.version }}"
-      - name: Print Version
-        run: echo "Bumped to version ${{ env.REVISION }}"
+
 
   create-release:
     needs: bump-version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Print Version
-        run: echo "Bumped to version ${{ env.REVISION }}"
       - name: Create Release
         if: github.ref == 'refs/pull' || github.ref == 'refs/heads/main'
         uses: actions/create-release@v1
         with:
-          tag_name: ${{ env.REVISION }}${{ github.ref != 'refs/heads/main' && '-test' || '' }}
-          release_name: Release ${{ env.REVISION }}${{ github.ref != 'refs/heads/main' && ' (Test)' || '' }}
+          tag_name: ${{ needs.bump-version.outputs.version }}${{ github.ref != 'refs/heads/main' && '-test' || '' }}
+          release_name: Release ${{ needs.bump-version.outputs.version }}${{ github.ref != 'refs/heads/main' && ' (Test)' || '' }}
           body: |
-            Changelog for version ${{ env.REVISION }}
+            Changelog for version ${{ needs.bump-version.outputs.version }}
           draft: false
           prerelease: ${{ github.ref != 'refs/heads/main' }}
         env:
@@ -69,7 +68,7 @@ jobs:
         with:
           context: .
           tags: |
-            ghcr.io/${{ github.repository_owner }}/herald:${{ env.REVISION }}
+            ghcr.io/${{ github.repository_owner }}/herald:${{ needs.bump-version.outputs.version }}
           push: true
 
   delete-test-releases:
