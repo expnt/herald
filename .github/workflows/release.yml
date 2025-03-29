@@ -38,22 +38,31 @@ jobs:
       - name: Print Version
         run: echo "Bumped to version ${{ steps.cz.outputs.version }}"
 
-
   create-release:
     needs: bump-version
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'release-test') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Create Release
-        if: github.ref == 'refs/pull' || github.ref == 'refs/heads/main'
-        uses: actions/create-release@v1
+      - name: Set Release Tag
+        id: set-tag
+        run: |
+          tag="${{ needs.bump-version.outputs.version }}"
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.pull_request.base.ref }}" = "release-test" ]; then
+            tag="${tag}-test"
+          fi
+          echo "tag=$tag" >> $GITHUB_OUTPUT
+      - name: Release
+        uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ needs.bump-version.outputs.version }}${{ github.ref != 'refs/heads/main' && '-test' || '' }}
-          release_name: Release ${{ needs.bump-version.outputs.version }}${{ github.ref != 'refs/heads/main' && ' (Test)' || '' }}
-          body: |
-            Changelog for version ${{ needs.bump-version.outputs.version }}
-          draft: false
-          prerelease: ${{ github.ref != 'refs/heads/main' }}
+          body_path: "Changelog.md"
+          tag_name: ${{ steps.set-tag.outputs.tag }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Remove Test Release
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'release-test' }}
+        run: |
+          gh release delete "${{ steps.set-tag.outputs.tag }}" -y
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -76,16 +85,3 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/herald:${{ needs.bump-version.outputs.version }}
-
-  delete-test-releases:
-    if: github.event.pull_request.merged == true && github.base_ref == 'release-test'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Delete Test Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          releases=$(gh api repos/${{ github.repository_owner }}/herald/releases --paginate)
-          echo "$releases" | jq '.[] | select(.tag_name | contains("-test")) | .id' | while read release_id; do
-            gh api --method DELETE "repos/${{ github.repository_owner }}/herald/releases/$release_id"
-          done
