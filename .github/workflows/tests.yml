@@ -97,3 +97,49 @@ jobs:
             platforms: linux/amd64,linux/arm64
             push: true
             tags: ghcr.io/${{ github.repository_owner }}/herald:${{ env.TAG }}
+
+  test-full:
+    needs: [changes]
+    if: ${{ needs.changes.outputs.full == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.tmate_enabled) && github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Install Script
+        run: curl -fsSL "https://raw.github.com/metatypedev/ghjk/$GHJK_VERSION/install.sh" -o install.sh
+      - name: Execute Install Script
+        run: yes | bash install.sh
+      - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: echo "BASH_ENV=$HOME/.local/share/ghjk/env.sh" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Install tofu
+        run: |
+          curl --proto '=https' --tlsv1.2 -fsSL https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh
+          chmod +x install-opentofu.sh
+          ./install-opentofu.sh --install-method deb
+          rm -f install-opentofu.sh
+      - uses: denoland/setup-deno@v1
+        with:
+          deno-version: 2.2.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - name: setup start-server-and-test
+        run: npm install -g start-server-and-test
+      - name: load herald.yaml file
+        run: |
+          rm -rf herald.yaml
+          echo "${{ secrets.HERALD_CONFIG }}" > herald.yaml
+      - shell: bash
+        env:
+          AUTH_TYPE: "none"
+          LOG_LEVEL: "DEBUG"
+          ENV: "DEV"
+        run: |
+          ghjk x dev-compose all
+
+          deno install
+
+          # ghjk x setup-auth
+          npx start-server-and-test 'deno run -A --unstable-kv src/main.ts' http://0.0.0.0:8000/ 'deno test -A'
