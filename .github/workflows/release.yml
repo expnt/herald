@@ -35,13 +35,16 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Print Version
         run: echo "Bumped to version ${{ steps.cz.outputs.version }}"
+      - name: Print Version
+        run: echo "Bumped to version ${{ env.REVISION }}"
 
   create-release:
     needs: bump-version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
+      - name: Print Version
+        run: echo "Bumped to version ${{ env.REVISION }}"
       - name: Create Release
         if: github.ref == 'refs/pull' || github.ref == 'refs/heads/main'
         uses: actions/create-release@v1
