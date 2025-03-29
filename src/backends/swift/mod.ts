@@ -1,4 +1,5 @@
 import {
+  abortMultipartUpload,
   completeMultipartUpload,
   copyObject,
   createMultipartUpload,
@@ -48,6 +49,7 @@ const handlers = {
   createMultipartUpload,
   completeMultipartUpload,
   uploadPart,
+  abortMultipartUpload,
 };
 
 const logger = getLogger(import.meta);
@@ -136,6 +138,9 @@ export async function swiftResolver(
 
       return await handlers.createBucket(ctx, req, bucketConfig);
     case "DELETE":
+      if (objectKey && queryParamKeys.has("uploadId")) {
+        return await handlers.abortMultipartUpload(ctx, req, bucketConfig);
+      }
       if (objectKey) {
         return await handlers.deleteObject(ctx, req, bucketConfig);
       }

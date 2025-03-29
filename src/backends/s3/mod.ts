@@ -1,4 +1,5 @@
 import {
+  abortMultipartUpload,
   completeMultipartUpload,
   copyObject,
   createMultipartUpload,
@@ -34,6 +35,7 @@ const handlers = {
   copyObject,
   createMultipartUpload,
   completeMultipartUpload,
+  abortMultipartUpload,
 };
 
 const logger = getLogger(import.meta);
@@ -94,6 +96,9 @@ export async function s3Resolver(
 
       return await handlers.createBucket(ctx, request, bucketConfig);
     case "DELETE":
+      if (objectKey && queryParamKeys.has("uploadId")) {
+        return await handlers.abortMultipartUpload(ctx, request, bucketConfig);
+      }
       if (objectKey) {
         return await handlers.deleteObject(ctx, request, bucketConfig);
       }

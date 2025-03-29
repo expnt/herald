@@ -29,6 +29,16 @@ function getS3Object(item: SwiftObject) {
   };
 }
 
+function getS3Part(item: SwiftObject) {
+  return {
+    PartNumber: item.name,
+    LastModified: formatRFC3339Date(item.last_modified),
+    ETag: item.hash,
+    Size: item.bytes,
+    StorageClass: "STANDARD",
+  };
+}
+
 interface Folder {
   subdir: string;
 }
@@ -88,6 +98,53 @@ export async function toS3XmlContent(
         : (commonPrefixes.length !== 0
           ? commonPrefixes[commonPrefixes.length - 1]
           : null),
+    },
+  };
+
+  const xmlBuilder = new xml2js.Builder();
+  const formattedXml = xmlBuilder.buildObject(s3FormattedBody);
+
+  return new Response(formattedXml, {
+    headers: {
+      "Content-Type": "application/xml",
+    },
+  });
+}
+
+export async function toS3ListPartXmlContent(
+  swiftResponse: Response,
+  bucket: string,
+  object: string,
+  uploadId: string | null,
+  partNumberMarker: number | null,
+  maxKeys: number | null,
+): Promise<Response> {
+  const swiftBody = await swiftResponse.json();
+
+  // Transforming Swift's JSON response to S3's XML format
+  const parts = [];
+  for (const item of swiftBody) {
+    if (!item.name) {
+      continue;
+    }
+    parts.push(getS3Part(item));
+  }
+
+  maxKeys = maxKeys ?? parts.length;
+  const s3FormattedBody = {
+    ListPartsResult: {
+      Bucket: bucket,
+      Key: object,
+      MaxParts: maxKeys,
+      UploadId: uploadId,
+      PartNumberMarker: partNumberMarker,
+      NextPartNumberMarker: (partNumberMarker ?? 0) + maxKeys,
+      IsTruncated: swiftBody.length === maxKeys,
+      ...parts.map((part) => ({
+        Part: {
+          part,
+        },
+      })),
     },
   };
 

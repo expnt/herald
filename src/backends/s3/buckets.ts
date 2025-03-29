@@ -1,4 +1,7 @@
-import { formatParams, forwardRequestWithTimeouts } from "../../utils/url.ts";
+import {
+  formatParams,
+  forwardS3RequestToS3WithTimeouts,
+} from "../../utils/url.ts";
 import { getLogger, reportToSentry } from "../../utils/log.ts";
 import { S3Config } from "../../config/mod.ts";
 import { prepareMirrorRequests } from "../mirror.ts";
@@ -19,7 +22,7 @@ export async function createBucket(
   const config: S3Config = bucketConfig.config as S3Config;
   const mirrorOperation = bucketConfig.hasReplicas();
 
-  const response = await forwardRequestWithTimeouts(
+  const response = await forwardS3RequestToS3WithTimeouts(
     req,
     config,
   );
@@ -58,7 +61,7 @@ export async function deleteBucket(
   const config: S3Config = bucketConfig.config as S3Config;
   const mirrorOperation = bucketConfig.hasReplicas();
 
-  const response = await forwardRequestWithTimeouts(
+  const response = await forwardS3RequestToS3WithTimeouts(
     req,
     config,
   );
@@ -96,7 +99,7 @@ export async function routeQueryParamedRequest(
   const formattedParams = formatParams(queryParams);
   logger.info(`[S3 backend] Proxying Get Bucket ${formattedParams} Request...`);
 
-  let response = await forwardRequestWithTimeouts(
+  let response = await forwardS3RequestToS3WithTimeouts(
     req,
     bucketConfig.config as S3Config,
     bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
@@ -147,7 +150,7 @@ export async function headBucket(
 ): Promise<Response | Error> {
   logger.info(`[S3 backend] Proxying Head Bucket Request...`);
 
-  let response = await forwardRequestWithTimeouts(
+  let response = await forwardS3RequestToS3WithTimeouts(
     req,
     bucketConfig.config as S3Config,
     bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,

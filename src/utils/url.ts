@@ -56,7 +56,7 @@ export function isContentLengthNonZero(request: Request): boolean {
  * @param request - The request to be forwarded.
  * @returns A promise that resolves to the response of the forwarded request.
  */
-export async function forwardRequestWithTimeouts(
+export async function forwardS3RequestToS3WithTimeouts(
   request: Request,
   config: S3Config,
   retries = 3,
@@ -103,6 +103,19 @@ export async function forwardRequestWithTimeouts(
     for (const key of toBeRemovedHeaders) {
       headers.delete(key);
     }
+
+    const toBeRemovedQueryParams = [
+      "X-Amz-Algorithm",
+      "X-Amz-Credential",
+      "X-Amz-Date",
+      "X-Amz-Expires",
+      "X-Amz-SignedHeaders",
+      "X-Amz-Signature",
+    ];
+
+    toBeRemovedQueryParams.forEach((param) => {
+      redirect.searchParams.delete(param);
+    });
 
     const forwardReq = new Request(redirect, {
       method: request.method,

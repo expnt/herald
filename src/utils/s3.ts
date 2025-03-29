@@ -129,8 +129,8 @@ function getUrlFormat(request: Request): URLFormatStyle {
  * @returns {RequestMeta} The extracted request metadata.
  */
 export function extractRequestInfo(request: Request): RequestMeta {
-  const bucketName = extractBucketName(request);
-  const objectKey = extractObjectKey(request);
+  const bucketName = extractBucketName(request) ?? null;
+  const objectKey = extractObjectKey(request) ?? null;
   const urlFormat = getUrlFormat(request);
   const method = extractMethod(request);
   const url = new URL(request.url);
