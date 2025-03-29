@@ -62,7 +62,9 @@ jobs:
       - name: Remove Test Release
         if: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'release-test' }}
         run: |
+          echo "Deleting test release and tag: ${{ steps.set-tag.outputs.tag }}"
           gh release delete "${{ steps.set-tag.outputs.tag }}" -y
+          git push origin :refs/tags/${{ steps.set-tag.outputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
