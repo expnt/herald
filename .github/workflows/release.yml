@@ -30,7 +30,7 @@ jobs:
       - name: Bump and Get Version
         id: version
         run: |
-          npx cz bump --yes
+          npx cz bump
           NEW_VERSION=$(npx cz version -p)
           echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
 
