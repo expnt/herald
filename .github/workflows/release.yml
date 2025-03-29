@@ -22,7 +22,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: "16"
 
       - name: Install Commitizen
         run: npm install commitizen
@@ -30,6 +30,8 @@ jobs:
       - name: Bump and Get Version
         id: version
         run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
           npx cz bump
           NEW_VERSION=$(npx cz version -p)
           echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
