@@ -13,37 +13,28 @@ on:
       - synchronize
       - ready_for_review
 
+concurrency:
+  group: main
+  cancel-in-progress: true
+
 jobs:
   bump-version:
+    if: "${{ !startsWith(github.event.head_commit.message, 'bump:') }}"
     runs-on: ubuntu-latest
+    name: "Bump version and create changelog with commitizen"
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
+      - name: Check out
+        uses: actions/checkout@v3
         with:
-          node-version: "16"
-
-      - name: Install Commitizen
-        run: npm install commitizen
-
-      - name: Bump and Get Version
-        id: version
-        run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          npx cz bump
-          NEW_VERSION=$(npx cz version -p)
-          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
-
-      - name: Commit and Push Changes
-        if: github.ref == 'refs/heads/main'
-        run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git add .cz.yaml
-          git commit -m "ci: bump version to ${{ env.NEW_VERSION }}"
-          git push origin main
+          fetch-depth: 0
+          token: "${{ secrets.GITHUB_TOKEN }}"
+      - id: cz
+        name: Create bump and changelog
+        uses: commitizen-tools/commitizen-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Print Version
+        run: echo "Bumped to version ${{ steps.cz.outputs.version }}"
 
   create-release:
     needs: bump-version
@@ -55,10 +46,10 @@ jobs:
         if: github.ref == 'refs/pull' || github.ref == 'refs/heads/main'
         uses: actions/create-release@v1
         with:
-          tag_name: ${{ env.NEW_VERSION }}${{ github.ref != 'refs/heads/main' && '-test' || '' }}
-          release_name: Release ${{ env.NEW_VERSION }}${{ github.ref != 'refs/heads/main' && ' (Test)' || '' }}
+          tag_name: ${{ env.REVISION }}${{ github.ref != 'refs/heads/main' && '-test' || '' }}
+          release_name: Release ${{ env.REVISION }}${{ github.ref != 'refs/heads/main' && ' (Test)' || '' }}
           body: |
-            Changelog for version ${{ env.NEW_VERSION }}
+            Changelog for version ${{ env.REVISION }}
           draft: false
           prerelease: ${{ github.ref != 'refs/heads/main' }}
         env:
@@ -75,7 +66,7 @@ jobs:
         with:
           context: .
           tags: |
-            ghcr.io/${{ github.repository_owner }}/herald:${{ env.NEW_VERSION }}
+            ghcr.io/${{ github.repository_owner }}/herald:${{ env.REVISION }}
           push: true
 
   delete-test-releases:
