@@ -111,6 +111,10 @@ jobs:
           LOG_LEVEL: "DEBUG"
           ENV: "DEV"
         run: |
+
+          command_path=$(which ghjk)
+          cat $command_path
+
           ghjk x dev-compose all
 
           deno install
