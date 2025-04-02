@@ -21,7 +21,7 @@ on:
       - ready_for_review
 
 env:
-  DENO_VERSION: 2.2.3
+  DENO_V: 2.2.3
   GHJK_VERSION: "v0.2.1"
   GHJK_ENV: "ci"
 
@@ -54,7 +54,7 @@ jobs:
           python-version: "3.x"
       - uses: denoland/setup-deno@v1
         with:
-          deno-version: ${{ env.DENO_VERSION }}
+          deno-version: ${{ env.DENO_V }}
       - name: Install tofu
         run: |
           curl --proto '=https' --tlsv1.2 -fsSL https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh
@@ -80,7 +80,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: denoland/setup-deno@v1
         with:
-          deno-version: ${{ env.DENO_VERSION }}
+          deno-version: ${{ env.DENO_V }}
       - name: Download Install Script
         run: curl -fsSL "https://raw.github.com/metatypedev/ghjk/$GHJK_VERSION/install.sh" -o install.sh
       - name: Execute Install Script
