@@ -43,7 +43,6 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.x'
-    # - uses: metatypedev/setup-ghjk@318209a9d215f70716a4ac89dbeb9653a2deb8bc
     - name: Download Install Script
       run: curl -fsSL "https://raw.github.com/metatypedev/ghjk/$GHJK_VERSION/install.sh" -o install.sh
     - name: Execute Install Script
