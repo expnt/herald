@@ -1,15 +1,6 @@
 name: test suite
 run-name: test suite for ${{ github.event.pull_request.title || github.ref }}
 on:
-  workflow_dispatch:
-    inputs:
-      tmate_enabled:
-        type: boolean
-        description: |
-          Run the build with tmate debugging enabled (https://github.com/marketplace/actions/debugging-with-tmate).
-          This disables all but the test-full jobs.
-        required: false
-        default: false
   push:
     branches:
       - main
@@ -19,6 +10,11 @@ on:
       - reopened
       - synchronize
       - ready_for_review
+
+env:
+  DENO_VERSION:
+  GHJK_VERSION: "v0.2.1"
+  GHJK_ENV: "ci"
 
 jobs:
   changes:
@@ -47,7 +43,13 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.x'
-    - uses: metatypedev/setup-ghjk@318209a9d215f70716a4ac89dbeb9653a2deb8bc
+    # - uses: metatypedev/setup-ghjk@318209a9d215f70716a4ac89dbeb9653a2deb8bc
+    - name: Download Install Script
+      run: curl -fsSL "https://raw.github.com/metatypedev/ghjk/$GHJK_VERSION/install.sh" -o install.sh
+    - name: Execute Install Script
+      run: yes | bash install.sh
+    - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+    - run: echo "BASH_ENV=$HOME/.local/share/ghjk/env.sh" >> "$GITHUB_ENV"
     - name: Install tofu
       run: |
         curl --proto '=https' --tlsv1.2 -fsSL https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh
@@ -69,17 +71,17 @@ jobs:
 
   test-full:
     needs: [changes]
-    if: ${{ needs.changes.outputs.full == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.tmate_enabled) && github.event.pull_request.draft == false }}
+    if: ${{ needs.changes.outputs.full == 'true' && github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # - name: Download Install Script
-      #   run: curl -fsSL "https://raw.github.com/metatypedev/ghjk/$GHJK_VERSION/install.sh" -o install.sh
-      # - name: Execute Install Script
-      #   run: yes | bash install.sh
-      # - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      # - run: echo "BASH_ENV=$HOME/.local/share/ghjk/env.sh" >> "$GITHUB_ENV"
-      - uses: metatypedev/setup-ghjk@318209a9d215f70716a4ac89dbeb9653a2deb8bc
+      - name: Download Install Script
+        run: curl -fsSL "https://raw.github.com/metatypedev/ghjk/$GHJK_VERSION/install.sh" -o install.sh
+      - name: Execute Install Script
+        run: yes | bash install.sh
+      - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: echo "BASH_ENV=$HOME/.local/share/ghjk/env.sh" >> "$GITHUB_ENV"
+      # - uses: metatypedev/setup-ghjk@318209a9d215f70716a4ac89dbeb9653a2deb8bc
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
