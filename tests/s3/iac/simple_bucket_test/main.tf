@@ -1,7 +1,7 @@
 # https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket_object
 
 resource "aws_s3_bucket" "example" {
-  bucket = "iac-s3"
+  bucket = "s3-test"
 }
 
 resource "aws_s3_bucket_object" "object" {
