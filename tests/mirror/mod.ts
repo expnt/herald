@@ -36,7 +36,7 @@ export const s3MirrorBuckets = [
   "s3-mirror-test",
 ];
 
-export const SYNC_WAIT = 20000;
+export const SYNC_WAIT = 10000;
 export const s3_docker_container = "compose-minio-1";
 
 export const swiftMirrorConfigs: S3ClientConfig[] = [

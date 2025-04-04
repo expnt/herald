@@ -550,15 +550,28 @@ export async function headBucket(
 
   if (response instanceof Error) {
     logger.warn(`Head bucket Failed: ${response.message}`);
-    return response;
-  }
+    const errorXml = `<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>${response.name}</Code>
+  <Message>${response.message}.</Message>
+</Error>`;
 
-  if (response.status >= 300) {
-    logger.warn(`Head bucket Failed: ${response.statusText}`);
-    return new HTTPException(response.status, { message: response.statusText });
+    return new Response(errorXml, {
+      status: 500,
+      headers: {
+        "Content-Type": "application/xml",
+      },
+    });
   }
 
   logger.info(`Head bucket Successful: ${response.statusText}`);
+
+  if (response.status >= 300) {
+    return new Response(null, {
+      status: response.status,
+      headers: response.headers,
+    });
+  }
 
   // Create a new response with only the headers
   const headResponse = new Response(null, {

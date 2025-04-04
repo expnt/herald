@@ -120,7 +120,18 @@ export async function putObject(
 
   if (response instanceof Error) {
     logger.warn(`Put Object Failed: ${response.message}`);
-    return response;
+    const errorXml = `<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>${response.name}</Code>
+  <Message>Failed to connect to S3 storage: ${response.message}. Please try again later.</Message>
+</Error>`;
+
+    return new Response(errorXml, {
+      status: 500,
+      headers: {
+        "Content-Type": "application/xml",
+      },
+    });
   }
 
   if (response.status != 200) {
@@ -160,7 +171,18 @@ export async function deleteObject(
 
   if (response instanceof Error) {
     logger.warn(`Delete Object Failed: ${response.message}`);
-    return response;
+    const errorXml = `<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>${response.name}</Code>
+  <Message>Failed to connect to S3 storage: ${response.message}. Please try again later.</Message>
+</Error>`;
+
+    return new Response(errorXml, {
+      status: 500,
+      headers: {
+        "Content-Type": "application/xml",
+      },
+    });
   }
 
   if (response.status != 204) {
@@ -199,7 +221,18 @@ export async function copyObject(
 
   if (response instanceof Error) {
     logger.warn(`Copy Object Failed: ${response.message}`);
-    return response;
+    const errorXml = `<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>${response.name}</Code>
+  <Message>Failed to connect to S3 storage: ${response.message}. Please try again later.</Message>
+</Error>`;
+
+    return new Response(errorXml, {
+      status: 500,
+      headers: {
+        "Content-Type": "application/xml",
+      },
+    });
   }
 
   if (response.status != 200) {
