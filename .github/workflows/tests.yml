@@ -1,6 +1,7 @@
 name: test suite
 run-name: test suite for ${{ github.event.pull_request.title || github.ref }}
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -102,10 +103,7 @@ jobs:
           LOG_LEVEL: "DEBUG"
           ENV: "DEV"
         run: |
-
-          command_path=$(which ghjk)
-          cat $command_path
-
+          # run all tests
           ghjk x dev-compose all
 
           deno install
