@@ -81,8 +81,13 @@ const testSuccessfulCreateBucketAndDeleteBucket = async (
       const headBucket = new HeadBucketCommand({
         Bucket: bucket,
       });
-      const res = await s3.send(headBucket);
-      assertEquals(res.$metadata.httpStatusCode, 404);
+
+      try {
+        const res = await s3.send(headBucket);
+        assertEquals(res.$metadata.httpStatusCode, 404);
+      } catch (err) {
+        assertEquals((err as Error).name, "NotFound");
+      }
     }
   });
 

@@ -293,7 +293,7 @@ export async function headObject(
     return response;
   }
 
-  if (response.status != 200) {
+  if (response.status != 200 && response.status !== 404) {
     const errMessage = `Head Object Failed: ${response.statusText}`;
     logger.warn(errMessage);
   } else {

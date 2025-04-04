@@ -208,7 +208,7 @@ export async function headBucket(
     });
   }
 
-  if (response.status != 200) {
+  if (response.status !== 200 && response.status !== 404) {
     const errMessage = `Head Bucket Failed: ${response.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
