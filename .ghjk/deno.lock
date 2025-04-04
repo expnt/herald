@@ -394,7 +394,7 @@
     "https://deno.land/x/foras@v2.1.4/wasm/pkg/foras.wasm.js": "2df8522df7243b0f05b1d188e220629cd5d2c92080a5f1407e15396fc35bebb3",
     "https://deno.land/x/json_hash@0.2.0/canon.ts": "ce7c07abd871cd7f0eb1280ad9f58f6382f02f84a217898ce977cf35ad315877",
     "https://deno.land/x/jszip@0.11.0/mod.ts": "5661ddc18e9ac9c07e3c5d2483bc912a7022b6af0d784bb7b05035973e640ba1",
-    "https://esm.sh/jszip@3.7.1": "f3872a819b015715edb05f81d973b5cd05d3d213d8eb28293ca5471fe7a71773",
+    "https://esm.sh/jszip@3.7.1": "5161d6a228d844791a60ab58360bd3b76c4d3921b4a725616cd7403203519249",
     "https://esm.sh/v135/jszip@3.7.1/denonext/jszip.mjs": "d31d7f9e0de9c6db3c07ca93f7301b756273d4dccb41b600461978fc313504c9",
     "https://raw.githubusercontent.com/metatypedev/ghjk/b702292/deps/cli.ts": "aac025f9372ad413b9c2663dc7f61affd597820d9448f010a510d541df3b56ea",
     "https://raw.githubusercontent.com/metatypedev/ghjk/b702292/deps/common.ts": "f775710b66a9099b98651cd3831906466e9b83ef98f2e5c080fd59ee801c28d4",
