@@ -37,6 +37,7 @@ OpenTofu will perform the following actions:
       [32m+[0m[0m bucket_key_enabled     = (known after apply)
       [32m+[0m[0m checksum_crc32         = (known after apply)
       [32m+[0m[0m checksum_crc32c        = (known after apply)
+      [32m+[0m[0m checksum_crc64nvme     = (known after apply)
       [32m+[0m[0m checksum_sha1          = (known after apply)
       [32m+[0m[0m checksum_sha256        = (known after apply)
       [32m+[0m[0m content_type           = (known after apply)
@@ -53,18 +54,7 @@ OpenTofu will perform the following actions:
     }
 
 [1mPlan:[0m 2 to add, 0 to change, 0 to destroy.
-[0m[33m╷[0m[0m
-[33m│[0m [0m[1m[33mWarning: [0m[0m[1mAWS account ID not found for provider[0m
-[33m│[0m [0m
-[33m│[0m [0m[0m  with provider["registry.opentofu.org/hashicorp/aws"],
-[33m│[0m [0m  on versions.tf line 3, in provider "aws":
-[33m│[0m [0m   3: provider "aws" [4m{[0m[0m
-[33m│[0m [0m
-[33m│[0m [0mSee
-[33m│[0m [0mhttps://registry.terraform.io/providers/hashicorp/aws/latest/docs#skip_requesting_account_id
-[33m│[0m [0mfor implications.
-[33m╵[0m[0m
-[90m
+[0m[90m
 ─────────────────────────────────────────────────────────────────────────────[0m
 
 Note: You didn't use the -out option to save this plan, so OpenTofu can't

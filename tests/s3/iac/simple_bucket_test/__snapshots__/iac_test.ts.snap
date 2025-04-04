@@ -13,7 +13,7 @@ OpenTofu will perform the following actions:
       [32m+[0m[0m acceleration_status         = (known after apply)
       [32m+[0m[0m acl                         = (known after apply)
       [32m+[0m[0m arn                         = (known after apply)
-      [32m+[0m[0m bucket                      = "iac-s3"
+      [32m+[0m[0m bucket                      = "s3-test"
       [32m+[0m[0m bucket_domain_name          = (known after apply)
       [32m+[0m[0m bucket_prefix               = (known after apply)
       [32m+[0m[0m bucket_regional_domain_name = (known after apply)
@@ -33,7 +33,7 @@ OpenTofu will perform the following actions:
 [0m  [32m+[0m[0m resource "aws_s3_bucket_object" "object" {
       [32m+[0m[0m acl                    = "private"
       [32m+[0m[0m arn                    = (known after apply)
-      [32m+[0m[0m bucket                 = "iac-s3"
+      [32m+[0m[0m bucket                 = "s3-test"
       [32m+[0m[0m bucket_key_enabled     = (known after apply)
       [32m+[0m[0m content_type           = (known after apply)
       [32m+[0m[0m etag                   = "8898a737c3b4c5486d32ec2a31dbd86c"
@@ -67,20 +67,9 @@ OpenTofu will perform the following actions:
 [33m│[0m [0m  on main.tf line 8, in resource "aws_s3_bucket_object" "object":
 [33m│[0m [0m   8:   bucket = [4maws_s3_bucket.example.bucket[0m[0m
 [33m│[0m [0m
-[33m│[0m [0mUse the aws_s3_object resource instead
+[33m│[0m [0mbucket is deprecated. Use the aws_s3_object resource instead.
 [33m│[0m [0m
 [33m│[0m [0m(and 2 more similar warnings elsewhere)
-[33m╵[0m[0m
-[33m╷[0m[0m
-[33m│[0m [0m[1m[33mWarning: [0m[0m[1mAWS account ID not found for provider[0m
-[33m│[0m [0m
-[33m│[0m [0m[0m  with provider["registry.opentofu.org/hashicorp/aws"],
-[33m│[0m [0m  on versions.tf line 3, in provider "aws":
-[33m│[0m [0m   3: provider "aws" [4m{[0m[0m
-[33m│[0m [0m
-[33m│[0m [0mSee
-[33m│[0m [0mhttps://registry.terraform.io/providers/hashicorp/aws/latest/docs#skip_requesting_account_id
-[33m│[0m [0mfor implications.
 [33m╵[0m[0m
 [90m
 ─────────────────────────────────────────────────────────────────────────────[0m
