@@ -95,15 +95,16 @@ jobs:
           node-version: 18
       - name: setup start-server-and-test
         run: npm install -g start-server-and-test
-      - name: load herald.yaml file
-        run: |
-          rm -rf herald.yaml
-          echo "${{ secrets.HERALD_CONFIG }}" > herald.yaml
       - shell: bash
         env:
           AUTH_TYPE: "none"
           LOG_LEVEL: "DEBUG"
           ENV: "DEV"
+          S3_ACCESS_KEY: ${{ secrets.S3_ACCESS_KEY }}
+          S3_SECRET_KEY: ${{ secrets.S3_SECRET_KEY }}
+          OPENSTACK_USERNAME: ${{ secrets.OPENSTACK_USERNAME }}
+          OPENSTACK_PASSWORD: ${{ secrets.OPENSTACK_PASSWORD }}
+          OPENSTACK_PROJECT: ${{ secrets.OPENSTACK_PROJECT }}
         run: |
           # run all tests
           ghjk x dev-compose all
