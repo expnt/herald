@@ -123,6 +123,13 @@ function validateProtocol(config: GlobalConfig) {
 
     const protocol = backendDefinition.protocol;
     if (protocol === "s3") {
+      // deno-lint-ignore no-console
+      console.log(
+        "*****",
+        Deno.inspect(
+          (bucketConfig as S3BucketConfig).config.credentials.accessKeyId,
+        ),
+      );
       configOrExit(s3BucketConfigSchema, {}, [
         bucketConfig,
       ]);
