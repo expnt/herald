@@ -141,5 +141,3 @@ env("main")
   ...stdDeps(),
     installs.python,
 );
-
-env("ci").inherit(["main",]);
