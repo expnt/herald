@@ -1,7 +1,6 @@
 import {
   CreateBucketCommand,
   DeleteObjectCommand,
-  GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
   S3ClientConfig,
@@ -9,7 +8,6 @@ import {
 import {
   checkCreateBucket,
   checkDeleteObject,
-  checkHeadObject,
   checkPutObject,
   deleteBucketIfExists,
   getS3Client,
@@ -95,7 +93,7 @@ const testSuccessfulDeleteObject = async (
       const config = configs[i];
       const s3 = getS3Client(config);
 
-      const getObject = new GetObjectCommand({
+      const getObject = new HeadObjectCommand({
         Bucket: bucket,
         Key: key,
       });
@@ -184,7 +182,7 @@ const testFailedDeleteObject = async (
       const deleteRes = await s3.send(deleteCommand);
       checkDeleteObject(deleteRes);
     } catch (error) {
-      if ((error as Error).name === "BadResource") {
+      if ((error as Error).name === "TypeError") {
         // correct path
       } else {
         throw error;
@@ -200,6 +198,10 @@ const testFailedDeleteObject = async (
     await startDockerContainer(storageService);
   });
 
+  await t.step("Wait for service to restart", async () => {
+    await new Promise((r) => setTimeout(r, 7000));
+  });
+
   await t.step("Check object existence in primary and replicas", async () => {
     const key = "put-object-mirror-test";
     for (let i = 0; i < 3; i++) {
@@ -207,17 +209,17 @@ const testFailedDeleteObject = async (
       const config = configs[i];
       const s3 = getS3Client(config);
 
-      const getObject = new HeadObjectCommand({
+      const headObject = new HeadObjectCommand({
         Bucket: bucket,
         Key: key,
       });
-      const res = await s3.send(getObject);
-      checkHeadObject(res);
+      const res = await s3.send(headObject);
+      // the object shouldn't be deleted from any of the storages
+      assertEquals(200, res.$metadata.httpStatusCode);
     }
   });
 
   // cleanup
-
   await t.step(async function cleanup() {
     await deleteBucketIfExists(s3, primaryBucket);
   });

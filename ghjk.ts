@@ -1,7 +1,7 @@
 import { file, ports, stdDeps } from "./tools/deps.ts";
 
 // constants
-const DENO_VERSION = "2.1.4";
+const DENO_VERSION = "2.2.3";
 const PYTHON_VERSION = "3.9.19";
 
 // installs
@@ -140,4 +140,4 @@ env("main")
 ).allowedBuildDeps(
   ...stdDeps(),
     installs.python,
-)
+);

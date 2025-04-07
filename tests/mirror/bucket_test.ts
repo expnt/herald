@@ -78,15 +78,15 @@ const testSuccessfulCreateBucketAndDeleteBucket = async (
       const config = configs[i];
       const s3 = getS3Client(config);
 
+      const headBucket = new HeadBucketCommand({
+        Bucket: bucket,
+      });
+
       try {
-        const headBucket = new HeadBucketCommand({
-          Bucket: bucket,
-        });
         const res = await s3.send(headBucket);
         assertEquals(res.$metadata.httpStatusCode, 404);
-      } catch (error) {
-        // this means the error is 404
-        assertEquals((error as Error).name, "NotFound");
+      } catch (err) {
+        assertEquals((err as Error).name, "NotFound");
       }
     }
   });
@@ -153,6 +153,10 @@ const testFailedCreateBucket = async (
 
   await t.step("restart storage service", async () => {
     await startDockerContainer(storageService);
+  });
+
+  await t.step("Wait for service to restart", async () => {
+    await new Promise((r) => setTimeout(r, 7000));
   });
 
   await t.step(
@@ -244,7 +248,7 @@ const testFailedDeleteBucket = async (
       const deleteRes = await s3.send(deleteBucket);
       assertEquals(deleteRes.$metadata.httpStatusCode, 204);
     } catch (error) {
-      if ((error as Error).name === "BadResource") {
+      if ((error as Error).name === "TypeError") {
         // correct path
       } else {
         throw error;
@@ -258,6 +262,10 @@ const testFailedDeleteBucket = async (
 
   await t.step("restart storage service", async () => {
     await startDockerContainer(storageService);
+  });
+
+  await t.step("Wait for service to restart", async () => {
+    await new Promise((r) => setTimeout(r, 7000));
   });
 
   await t.step(

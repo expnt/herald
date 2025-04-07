@@ -1,0 +1,89 @@
+name: Release Management
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - release-test
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+concurrency:
+  group: main
+  cancel-in-progress: true
+
+jobs:
+  bump-version:
+    if: "${{ !startsWith(github.event.head_commit.message, 'bump:') }}"
+    runs-on: ubuntu-latest
+    name: "Bump version and create changelog with commitizen"
+    outputs:
+      version: ${{ steps.cz.outputs.version }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: "${{ secrets.GITHUB_TOKEN }}"
+      - id: cz
+        name: Create bump and changelog
+        uses: commitizen-tools/commitizen-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Print Version
+        run: echo "Bumped to version ${{ steps.cz.outputs.version }}"
+
+  create-release:
+    needs: bump-version
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'release-test') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set Release Tag
+        id: set-tag
+        run: |
+          tag="${{ needs.bump-version.outputs.version }}"
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.pull_request.base.ref }}" = "release-test" ]; then
+            tag="${tag}-test"
+          fi
+          echo "tag=$tag" >> $GITHUB_OUTPUT
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          body_path: "Changelog.md"
+          tag_name: ${{ steps.set-tag.outputs.tag }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Remove Test Release
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'release-test' }}
+        run: |
+          echo "Deleting test release and tag: ${{ steps.set-tag.outputs.tag }}"
+          gh release delete "${{ steps.set-tag.outputs.tag }}" -y
+          git push origin :refs/tags/${{ steps.set-tag.outputs.tag }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-docker:
+    needs: [bump-version, create-release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Docker Build and Push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/herald:${{ needs.bump-version.outputs.version }}

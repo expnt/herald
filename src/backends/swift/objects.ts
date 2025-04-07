@@ -439,12 +439,13 @@ export async function headObject(
     return response;
   }
 
-  if (response.status >= 300) {
-    logger.warn(`Head object Failed: ${response.statusText}`);
-    throw new HTTPException(response.status, { message: response.statusText });
-  }
-
   logger.info(`Head object Successful: ${response.statusText}`);
+  if (response.status >= 300) {
+    return new Response(null, {
+      status: response.status,
+      headers: response.headers,
+    });
+  }
 
   // Create a new response with only the headers
   const headResponse = new Response(null, {

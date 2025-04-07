@@ -5,8 +5,8 @@
     "ports": {
       "version": "0",
       "configResolutions": {
-        "bciqjoiy67soflr46oqoknxpoy2m2qfr5n7x5kc6ed5ptprrbscmvoxy": {
-          "version": "v2.1.4",
+        "bciqhmlbhsaq4rf6jgtvb6n3ckyyz6zxmlrodgpgmbicthonvynggzda": {
+          "version": "v2.2.3",
           "buildDepConfigs": {},
           "portRef": "deno_ghrel@0.1.0",
           "specifiedVersion": true
@@ -24,7 +24,7 @@
                   "specifiedVersion": false
                 },
                 "zstd_aa": {
-                  "version": "v1.5.6,",
+                  "version": "v1.5.7,",
                   "buildDepConfigs": {},
                   "portRef": "zstd_aa@0.1.0",
                   "specifiedVersion": false
@@ -49,7 +49,7 @@
               "specifiedVersion": false
             },
             "zstd_aa": {
-              "version": "v1.5.6,",
+              "version": "v1.5.7,",
               "buildDepConfigs": {},
               "portRef": "zstd_aa@0.1.0",
               "specifiedVersion": false
@@ -66,7 +66,7 @@
           "specifiedVersion": false
         },
         "bciqe6fwheayositrdk7rkr2ngdr4wizldakex23tgivss7w6z7g3q3y": {
-          "version": "v1.5.6,",
+          "version": "v1.5.7,",
           "buildDepConfigs": {},
           "portRef": "zstd_aa@0.1.0",
           "specifiedVersion": false
@@ -88,7 +88,7 @@
           "sets": {
             "ghjkEnvProvInstSet___main": {
               "installs": [
-                "bciqpiohtg4dgbyzvast2i5c2uun7s3e7f3iconu6re32dflfhmihmay",
+                "bciqf7bx6igpppca7ks4fqjkivfqiacuyncmyln2tyw6fl4edl6mhs3q",
                 "bciqdtuhf425g6prb5fyupbcokttmkill6wyqk7bkphx3ueltl5mvu4q"
               ],
               "allowedBuildDeps": "bciqobhqmhpz3cphjnwec64vhpqkptbfmzhj5biicmcba5qpblmhq3ta"
@@ -170,8 +170,8 @@
       }
     ],
     "blackboard": {
-      "bciqpiohtg4dgbyzvast2i5c2uun7s3e7f3iconu6re32dflfhmihmay": {
-        "version": "2.1.4",
+      "bciqf7bx6igpppca7ks4fqjkivfqiacuyncmyln2tyw6fl4edl6mhs3q": {
+        "version": "2.2.3",
         "port": {
           "ty": "denoWorker@v1",
           "name": "deno_ghrel",

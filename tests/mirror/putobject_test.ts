@@ -15,7 +15,6 @@ import {
 } from "../../utils/s3.ts";
 import {
   CreateBucketCommand,
-  GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
   S3ClientConfig,
@@ -154,6 +153,10 @@ const testFailedPutObject = async (
     await startDockerContainer(storageService);
   });
 
+  await t.step("Wait for service to restart", async () => {
+    await new Promise((r) => setTimeout(r, 7000));
+  });
+
   await t.step("Check object in primary and replicas", async () => {
     // check in primary and replicas for the object, it shouldn't be there
     // ensure consistency
@@ -162,16 +165,19 @@ const testFailedPutObject = async (
       const config = configs[i];
       const s3 = getS3Client(config);
 
-      const getObject = new GetObjectCommand({
+      const headObject = new HeadObjectCommand({
         Bucket: bucket,
         Key: key,
       });
       try {
-        const res = await s3.send(getObject);
+        const res = await s3.send(headObject);
         // the object shouldn't be inside any of the storages
         assertEquals(404, res.$metadata.httpStatusCode);
       } catch (error) {
-        if ((error as Error).name === "NoSuchKey") {
+        if (
+          (error as Error).name === "NoSuchKey" ||
+          (error as Error).name === "NotFound"
+        ) {
           // correct path
         } else {
           throw error;
