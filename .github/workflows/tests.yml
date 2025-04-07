@@ -100,6 +100,11 @@ jobs:
           AUTH_TYPE: "none"
           LOG_LEVEL: "DEBUG"
           ENV: "DEV"
+          S3_ACCESS_KEY: ${{ secrets.S3_ACCESS_KEY }}
+          S3_SECRET_KEY: ${{ secrets.S3_SECRET_KEY }}
+          OPENSTACK_USERNAME: ${{ secrets.OPENSTACK_USERNAME }}
+          OPENSTACK_PASSWORD: ${{ secrets.OPENSTACK_PASSWORD }}
+          OPENSTACK_PROJECT: ${{ secrets.OPENSTACK_PROJECT }}
         run: |
           # run all tests
           ghjk x dev-compose all
