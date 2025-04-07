@@ -12,10 +12,14 @@ on:
       - synchronize
       - ready_for_review
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   DENO_V: 2.2.3
   GHJK_VERSION: "v0.2.1"
-  # GHJK_ENV: "ci"
+  GHJK_ENV: "ci"
 
 jobs:
   changes:
@@ -72,6 +76,12 @@ jobs:
         with:
           deno-version: ${{ env.DENO_V }}
       - uses: metatypedev/setup-ghjk@318209a9d215f70716a4ac89dbeb9653a2deb8bc
+      # - name: Download Install Script
+      #   run: curl -fsSL "https://raw.github.com/metatypedev/ghjk/$GHJK_VERSION/install.sh" -o install.sh
+      # - name: Execute Install Script
+      #   run: yes | bash install.sh
+      # - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      # - run: echo "BASH_ENV=$HOME/.local/share/ghjk/env.sh" >> "$GITHUB_ENV"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"

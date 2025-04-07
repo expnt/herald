@@ -140,4 +140,6 @@ env("main")
 ).allowedBuildDeps(
   ...stdDeps(),
     installs.python,
-)
+);
+
+env("ci").inherit(["main",]);
