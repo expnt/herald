@@ -38,24 +38,14 @@
 
 ## Overview
 
-The herald project is a proxy which sits on top of storage services that addresses the challenge of managing scalable cloud storage solutions by allowing you to connect with different types of object storages (S3, Swift) using the S3 protocol. The development was inspired due to some bugs in the OpenStack S3 proxy for the swift object storage service. The proxy includes other essential features besides fixing some of the bugs. It supports mirroring across different cloud storage providers, kubernetes friendly authentication scheme and others.
-
----
+Herald is an S3 proxy that allows communication to multiple storage services with different communication protocols using the S3 protocol. For instance, you can use herald to connect to an OpenStack swift storage service as you would to S3 storage services like AWS S3 and MinIO. While OpenStack has its own middleware to accept requests in S3 protocol, herald addresses some issues you will face using that S3 middleware. Currently, herald supports two types of backends(storage providers): S3 and OpenStack Swift. A comprehensive list of herald's features and capabilities are listed below.
 
 ## Features
 
-|     |      Feature      | Summary                                                                                                                                                                                                                                                                             |
-| :-- | :---------------: | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ⚙️  | **Architecture**  | <ul><li>Employs Deno for a lightweight and efficient runtime environment.</li></ul>                           |
-| 🔩  | **Code Quality**  | <ul><li>Codebase primarily in TypeScript, ensuring strong typing and modern JavaScript features.</li><li>Linting and formatting rules defined in `deno.jsonc` to maintain consistency.</li><li>Regular updates and dependency management facilitated by `dependabot.yml`.</li></ul> |                    |
-| 🔌  | **Integrations**  | <ul><li>Seamless integration with cloud storage backends like MinIO and Swift.</li><li>Supports CI/CD pipelines using GitHub Actions.</li><li>Infrastructure management via Terraform.</li></ul>                                                                                    |
-| 🧩  |  **Modularity**   | <ul><li>Highly modular with distinct configuration files for different services.</li><li>Uses Docker Compose for orchestrating multi-container applications.</li><li>Task orchestration and management through `deno.jsonc`.</li></ul>                                              |
-| 🧪  |    **Testing**    | <ul><li>Testing configurations outlined in `tests.yml`.</li><li>Automated testing integrated into CI/CD workflows.</li><li>Focus on maintaining high code quality through continuous testing.</li></ul>                                                                             |
-| ⚡️ |  **Performance**  | <ul><li>Optimized for containerized deployment to enhance performance.</li></ul>                                               |
-| 🛡️  |   **Security**    | <ul><li>Access control and service account management in `herald.yaml`.</li><li>Secure deployment practices using Docker and Terraform.</li><li>Regular dependency updates to mitigate vulnerabilities.</li></ul>                                                                   |
-| 📦  | **Dependencies**  | <ul><li>Managed through `deno.jsonc` and `import_map.json` for streamlined development.</li><li>Container dependencies defined in Dockerfile and docker-compose.yml.</li><li>Automated dependency updates with Dependabot.</li></ul>                                                |                                                          |
-
----
+- Multi Backend Compatibility: interacting with multiple storage backends using a single protocol. You can use the S3 protocol to communicate with storage services that don't necessarily support an S3 protocol natively. Herald supports S3 and OpenStack Swift Storage backends as of right now.
+- Kubernetes Native Authentication: herald supports authentication using a service account provisioned by the Kubernetes server. You can register services in your cluster that can access herald and the resources managed by herald to allow a robust authentication pipeline easy to manage.
+- Mirroring: a multi-backend commit is another handy feature in herald that allows you to mirror any operations you make to your storage services through herald. You can have a primary storage configured with replicas. The primary and replicas will be in sync and during times of unavailability, herald will use the replicas to fetch data. For write operations, after the operation has been completed, it will be mirrored to a replica storage. The mirroring is done using transactional tasks, stored in a message/task queue, which ensures the replicas are in sync. For read operations, the operation will be forwarded to replica storages if the primary is unavailable. The mirroring operations are done using web workers to avoid the impact on performance.
+- IaC Support: Herald supports IaC tech stacks that use the S3 protocol to provision resources such as Terraform and OpenTofu.
 
 ##  Project Structure
 
