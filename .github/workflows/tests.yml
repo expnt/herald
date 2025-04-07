@@ -15,7 +15,7 @@ on:
 env:
   DENO_V: 2.2.3
   GHJK_VERSION: "v0.2.1"
-  GHJK_ENV: "ci"
+  # GHJK_ENV: "ci"
 
 jobs:
   changes:
