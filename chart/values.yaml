@@ -1,0 +1,120 @@
+
+name: herald
+namespace: herald
+
+replicaCount: 1
+
+heraldConfig:
+  port: 8000
+  temp_dir: "./tmp"
+  task_store_backend:
+    endpoint: http://minio.herald:9000
+    region: local
+    forcePathStyle: true
+    bucket: s3-test
+    credentials:
+      accessKeyId: "fromEnv:S3_ACCESS_KEY"
+      secretAccessKey: "fromEnv:S3_SECRET_KEY"
+  backends:
+    minio_s3:
+      protocol: s3
+    openstack_swift:
+      protocol: swift
+  service_accounts: []
+  buckets:
+    s3-test:
+      backend: minio_s3
+      config:
+        endpoint: http://minio.herald:9000
+        region: local
+        forcePathStyle: true
+        bucket: s3-test
+        credentials:
+          accessKeyId: "fromEnv:S3_ACCESS_KEY"
+          secretAccessKey: "fromEnv:S3_SECRET_KEY"
+  replicas: []
+
+image:
+  repository: ghcr.io/expnt/herald
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: false
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+deploymentAnnotations: {}
+podSecurityContext: {}
+
+securityContext: {}
+resources: {}
+
+extraEnvFrom: {}
+extraEnv:
+  - name: CONFIG_FILE_PATH
+    value: "/etc/herald/herald-config.yaml"
+  - name: AUTH_TYPE
+    value: "none"
+  - name: SENTRY_DSN
+    value: ""
+  - name: S3_ACCESS_KEY
+    value: "minio"
+  - name: S3_SECRET_KEY
+    value: "password"
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: ""
+  annotations: {}
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+    # - secretName: web-tls
+    #   hosts:
+    #     - chart-example.local
+
+volumeMounts:
+  - name: herald
+    mountPath: /etc/herald/
+    readOnly: true
+
+volumes:
+  - name: herald
+    configMap:
+      name: herald
+
+helmhookjob:
+  enabled: false
+
+  annotations: {}
+
+  imagePullSecrets: []
+
+  image:
+    repository: alpine
+    # Overrides the image tag whose default is the chart appVersion.
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  command: null
+
+  extraEnvFrom: {}
+
+  extraEnv: []
+
+  resources: {}

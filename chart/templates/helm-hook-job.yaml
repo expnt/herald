@@ -1,0 +1,33 @@
+{{- if .Values.helmhookjob.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "herald.fullname" . }}
+  {{- with .Values.helmhookjob.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  template:
+    spec:
+      {{- with .Values.helmhookjob.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      restartPolicy: Never
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.helmhookjob.image.repository }}:{{ .Values.helmhookjob.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.helmhookjob.image.pullPolicy }}
+          command: {{ .Values.helmhookjob.command | toJson }}
+          envFrom:
+            {{- with .Values.helmhookjob.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            {{- with .Values.helmhookjob.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.helmhookjob.resources | nindent 12 }}
+{{- end }}
