@@ -1,7 +1,6 @@
 import {
   CreateBucketCommand,
   DeleteObjectCommand,
-  GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
   S3ClientConfig,
@@ -94,7 +93,7 @@ const testSuccessfulDeleteObject = async (
       const config = configs[i];
       const s3 = getS3Client(config);
 
-      const getObject = new GetObjectCommand({
+      const getObject = new HeadObjectCommand({
         Bucket: bucket,
         Key: key,
       });

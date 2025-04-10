@@ -5,14 +5,22 @@ const backendSchema = z.object({
 });
 export type Backend = z.infer<typeof backendSchema>;
 
+const loadFromEnv = (key: string, fallback: string): string => {
+  return Deno.env.get(key) ?? fallback;
+};
+
 export const s3ConfigSchema = z.object({
   endpoint: z.string(),
   region: z.string(),
   bucket: z.string(),
   forcePathStyle: z.boolean(),
   credentials: z.object({
-    accessKeyId: z.string(),
-    secretAccessKey: z.string(),
+    accessKeyId: z.string().transform((key) =>
+      key.startsWith("fromEnv:") ? loadFromEnv(key.substring(8), key) : key
+    ),
+    secretAccessKey: z.string().transform((key) =>
+      key.startsWith("fromEnv:") ? loadFromEnv(key.substring(8), key) : key
+    ),
   }),
   typ: z.literal("S3Config").default("S3Config"),
 });
@@ -23,9 +31,15 @@ export const swiftConfigSchema = z.object({
   container: z.string(),
   region: z.string(),
   credentials: z.object({
-    username: z.string(),
-    password: z.string(),
-    project_name: z.string(),
+    username: z.string().transform((key) =>
+      key.startsWith("fromEnv:") ? loadFromEnv(key.substring(8), key) : key
+    ),
+    password: z.string().transform((key) =>
+      key.startsWith("fromEnv:") ? loadFromEnv(key.substring(8), key) : key
+    ),
+    project_name: z.string().transform((key) =>
+      key.startsWith("fromEnv:") ? loadFromEnv(key.substring(8), key) : key
+    ),
     user_domain_name: z.string(),
     project_domain_name: z.string(),
   }),
