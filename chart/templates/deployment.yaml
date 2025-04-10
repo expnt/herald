@@ -34,7 +34,10 @@ spec:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
++            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           ports:
+            - name: http
             - containerPort: 8000
           envFrom:
             {{- with .Values.extraEnvFrom }}
@@ -56,6 +59,9 @@ spec:
             httpGet:
               path: /health-check
               port: http
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+
       volumes:
         {{- with .Values.volumes }}
         {{- toYaml . | nindent 8 }}
