@@ -30,12 +30,14 @@ jobs:
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
 
-      - id: version
-        name: Get version
-        run: |
-          VERSION=$(cz version -p)
-          echo "Version from commitizen: $VERSION"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      - name: Get current version (without bumping or pushing)
+        id: version
+        uses: commitizen-tools/commitizen-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          push: false
+          dry_run: true
+          changelog: false
 
   prepare-release-pr:
     name: Create Release Branch and PR
