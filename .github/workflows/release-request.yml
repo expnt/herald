@@ -56,6 +56,12 @@ jobs:
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
 
+      - name: Create release branch first
+        run: |
+          VERSION=${{ steps.cz.outputs.version }}
+          BRANCH_NAME="release-v$VERSION"
+          git checkout -b $BRANCH_NAME
+
       - name: Bump version (no push)
         id: cz
         uses: commitizen-tools/commitizen-action@master
@@ -64,19 +70,11 @@ jobs:
           git_name: ${{ github.actor }}
           git_email: ${{ github.actor }}@users.noreply.github.com
           push: false
+          changelog: true
 
-      - name: Create release branch and commit
+      - name: Push release branch
         run: |
-          VERSION=${{ steps.cz.outputs.version }}
-          BRANCH_NAME="release-v$VERSION"
-          git checkout -b $BRANCH_NAME
-
-          sudo chown -R $USER:$USER .
-          chmod -R u+rw .
-
-          git add .
-          git commit -m "bump: release $VERSION"
-          git push origin $BRANCH_NAME
+          git push origin HEAD
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
