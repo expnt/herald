@@ -65,6 +65,7 @@ jobs:
           push: false
           dry_run: true
           changelog: false
+          bump: true
 
       - name: Create release branch first
         run: |
