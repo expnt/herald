@@ -56,9 +56,20 @@ jobs:
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
 
+
+      - name: Bump version (no push)
+        id: version
+        uses: commitizen-tools/commitizen-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          git_name: ${{ github.actor }}
+          git_email: ${{ github.actor }}@users.noreply.github.com
+          push: false
+          changelog: true
+
       - name: Create release branch first
         run: |
-          VERSION=${{ needs.check-version.outputs.version }}
+          VERSION=${{ steps.version.outputs.version }}
           BRANCH_NAME="release-v$VERSION"
           git checkout -b $BRANCH_NAME
 
