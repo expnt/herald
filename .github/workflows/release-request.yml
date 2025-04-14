@@ -56,23 +56,25 @@ jobs:
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
 
-      - name: Run Commitizen bump (detached HEAD is fine here)
+      - name: Create release branch first
+        run: |
+          VERSION=${{ needs.check-version.outputs.version }}
+          BRANCH_NAME="release-v$VERSION"
+          git checkout -b $BRANCH_NAME
+
+      - name: Bump version (no push)
         id: cz
         uses: commitizen-tools/commitizen-action@master
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          changelog: true
+          git_name: ${{ github.actor }}
+          git_email: ${{ github.actor }}@users.noreply.github.com
           push: false
-          dry_run: false
+          changelog: true
 
-      - name: Create release branch and push commit
+      - name: Push release branch
         run: |
-          VERSION=${{ steps.cz.outputs.version }}
-          BRANCH_NAME="release-v$VERSION"
-
-          echo "Creating branch '$BRANCH_NAME' from HEAD (cz bump commit)"
-          git switch -c $BRANCH_NAME
-          git push origin $BRANCH_NAME
+          git push origin HEAD
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
