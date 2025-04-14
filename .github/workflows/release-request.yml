@@ -28,7 +28,7 @@ jobs:
       - id: version
         name: Get version
         run: |
-          VERSION=$(cz version)
+          VERSION=$(cz version -p)
           echo "Version from commitizen: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
