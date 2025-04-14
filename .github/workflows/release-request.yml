@@ -57,15 +57,22 @@ jobs:
           git config user.email "${{ github.actor }}@users.noreply.github.com"
 
 
-      - name: Get version (dry run)
-        id: cz_version
-        uses: commitizen-tools/commitizen-action@master
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          push: false
-          dry_run: true
-          changelog: false
-          bump: true
+          - name: Get bumped version manually
+          id: cz_version
+          run: |
+            OUTPUT=$(cz bump --yes --dry-run)
+            echo "$OUTPUT"
+
+            # extract line like: "tag to create: 0.1.0"
+            VERSION=$(echo "$OUTPUT" | grep "tag to create:" | awk '{ print $4 }')
+
+            if [[ -z "$VERSION" ]]; then
+              echo "❌ No bump version detected."
+              echo "version=" >> $GITHUB_OUTPUT
+            else
+              echo "✅ Detected bump version: $VERSION"
+              echo "version=$VERSION" >> $GITHUB_OUTPUT
+            fi
 
       - name: Create release branch first
         run: |
