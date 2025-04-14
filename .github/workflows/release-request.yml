@@ -25,6 +25,11 @@ jobs:
       - name: Install Commitizen
         run: npm install -g commitizen
 
+      - name: Configure Git
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+
       - id: version
         name: Get version
         run: |
