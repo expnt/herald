@@ -56,14 +56,14 @@ jobs:
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
 
-          - name: Run Commitizen bump (detached HEAD is fine here)
-          id: cz
-          uses: commitizen-tools/commitizen-action@master
-          with:
-            github_token: ${{ secrets.GITHUB_TOKEN }}
-            changelog: true
-            push: false
-            dry_run: false
+      - name: Run Commitizen bump (detached HEAD is fine here)
+        id: cz
+        uses: commitizen-tools/commitizen-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          changelog: true
+          push: false
+          dry_run: false
 
       - name: Create release branch and push commit
         run: |
