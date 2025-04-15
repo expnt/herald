@@ -56,29 +56,9 @@ jobs:
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
 
-      - name: Install Commitizen CLI
-        run: npm install -g commitizen
-
-      - name: Get bumped version manually
-        id: cz_version
-        run: |
-          OUTPUT=$(cz bump --yes --dry-run)
-          echo "$OUTPUT"
-
-          # extract line like: "tag to create: 0.1.0"
-          VERSION=$(echo "$OUTPUT" | grep "tag to create:" | awk '{ print $4 }')
-
-          if [[ -z "$VERSION" ]]; then
-            echo "❌ No bump version detected."
-            echo "version=" >> $GITHUB_OUTPUT
-          else
-            echo "✅ Detected bump version: $VERSION"
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
-          fi
-
       - name: Create release branch first
         run: |
-          VERSION=${{ steps.cz_version.outputs.version }}
+          VERSION=${{ needs.check-version.outputs.version }}
           BRANCH_NAME="release-v$VERSION"
           git checkout -b $BRANCH_NAME
 
@@ -102,7 +82,7 @@ jobs:
           title: "Release ${{ steps.cz.outputs.version }}"
           body: "Automated PR for version bump to ${{ steps.cz.outputs.version }}"
           base: main
-          branch: "release-v${{ steps.cz.outputs.version }}"
+          branch: "release-v${{ needs.check-version.outputs.version }}"
           labels: release
 
   finalize-release:
