@@ -71,6 +71,7 @@ jobs:
           git_email: ${{ github.actor }}@users.noreply.github.com
           push: false
           changelog: true
+          dry_run: false
 
       - name: Push release branch
         run: |
