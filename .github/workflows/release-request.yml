@@ -56,6 +56,9 @@ jobs:
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
 
+      - name: Install Commitizen CLI
+        run: npm install -g commitizen
+
       - name: Get bumped version manually
         id: cz_version
         run: |
