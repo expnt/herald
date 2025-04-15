@@ -56,31 +56,25 @@ jobs:
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
 
-      - name: Create release branch first
-        run: |
-          VERSION=${{ needs.check-version.outputs.version }}
-          BRANCH_NAME="release-v$VERSION"
-          git checkout -b $BRANCH_NAME
-
-      - name: Bump version (no push)
+      - name: Bump version using Commitizen
         id: cz
         uses: commitizen-tools/commitizen-action@master
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           git_name: ${{ github.actor }}
-          git_email: ${{ github.actor }}@users.noreply.github.com
+          git_email: ${{ github.actor }}@users.noreply.github.com }
           push: false
           changelog: true
           dry_run: false
 
-      - name: Push release branch
+      - name: Create release branch
         run: |
-          sudo chown -R $USER:$USER .
-          chmod -R u+rw .
+          VERSION=${{ steps.cz.outputs.version }}
+          BRANCH_NAME="release-v$VERSION"
+          git checkout -b $BRANCH_NAME
 
-          git add .
-          git commit -m "bump: ${{ steps.cz.outputs.version }}"
-          git push origin HEAD
+      - name: Push release branch
+        run: git push origin HEAD
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
@@ -88,7 +82,7 @@ jobs:
           title: "Release ${{ steps.cz.outputs.version }}"
           body: "Automated PR for version bump to ${{ steps.cz.outputs.version }}"
           base: main
-          branch: "release-v${{ needs.check-version.outputs.version }}"
+          branch: "release-v${{ steps.cz.outputs.version }}"
           labels: release
 
   finalize-release:
