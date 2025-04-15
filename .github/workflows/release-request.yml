@@ -69,13 +69,13 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           git_name: ${{ github.actor }}
           git_email: ${{ github.actor }}@users.noreply.github.com
-          push: true
+          push: false
           changelog: true
           dry_run: false
 
-      # - name: Push release branch
-      #   run: |
-      #     git push origin HEAD
+      - name: Push release branch
+        run: |
+          git push origin HEAD
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
