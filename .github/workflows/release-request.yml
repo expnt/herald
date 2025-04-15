@@ -75,6 +75,9 @@ jobs:
 
       - name: Push release branch
         run: |
+          sudo chown -R $USER:$USER .
+          chmod -R u+rw .
+
           git add .
           git commit -m "bump: ${{ steps.cz.outputs.version }}"
           git push origin HEAD
