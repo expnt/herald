@@ -64,13 +64,13 @@ jobs:
           dry_run: false
 
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v5
+        uses: peter-evans/create-pull-request@v7
         with:
           title: "Release ${{ steps.cz.outputs.version }}"
           body: "Automated PR for version bump to ${{ steps.cz.outputs.version }}"
-          base: main
           branch: "release-v${{ steps.cz.outputs.version }}"
           labels: release
+          delete-branch: true
 
   finalize-release:
     name: Finalize Release
