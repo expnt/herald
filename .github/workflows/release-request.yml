@@ -10,9 +10,6 @@ on:
     branches:
       - release-test
 
-permissions:
-  pull-requests: write
-
 jobs:
   check-version:
     name: Check Commitizen Version
@@ -44,6 +41,9 @@ jobs:
     needs: check-version
     if: ${{ needs.check-version.outputs.version != '' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
