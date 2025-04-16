@@ -39,7 +39,7 @@ jobs:
   prepare-release-pr:
     name: Create Release Branch and PR
     needs: check-version
-    if: ${{ needs.check-version.outputs.version != '' }}
+    if: ${{ needs.check-version.outputs.version != '' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -50,7 +50,6 @@ jobs:
         with:
           fetch-depth: 0
           ref: main
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Bump version using Commitizen
         id: cz
@@ -69,7 +68,6 @@ jobs:
           title: "Release ${{ steps.cz.outputs.version }}"
           body: "Automated PR for version bump to ${{ steps.cz.outputs.version }}"
           branch: "release-v${{ steps.cz.outputs.version }}"
-          labels: release
           delete-branch: true
 
   finalize-release:
