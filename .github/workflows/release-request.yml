@@ -7,6 +7,9 @@ on:
       - main
       - release-test
 
+permissions:
+  pull-requests: write
+
 jobs:
   check-version:
     name: Check Commitizen Version
