@@ -82,6 +82,11 @@ jobs:
           fetch-depth: 0
           ref: main
 
+      - name: Configure Git
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+
       - name: Install Commitizen CLI
         run: npm install -g commitizen
 
