@@ -76,6 +76,9 @@ jobs:
     outputs:
       version: ${{ steps.check.outputs.version }}
     steps:
+      - name: Install Commitizen CLI
+        run: npm install -g commitizen
+
       - name: Check if GitHub release already exists
         id: check
         run: |
