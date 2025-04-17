@@ -87,13 +87,19 @@ jobs:
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
 
-      - name: Install Commitizen CLI
-        run: npm install -g commitizen
+      - name: Get current version (without bumping or pushing)
+        id: version
+        uses: commitizen-tools/commitizen-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          push: false
+          dry_run: true
+          changelog: false
 
       - name: Check if GitHub release already exists
         id: check
         run: |
-          VERSION=$(cz version -p)
+          VERSION=${{ steps.version.outputs.version }}
           echo "Detected version: $VERSION"
 
           RELEASE_EXISTS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
@@ -107,7 +113,6 @@ jobs:
             echo "Release v$VERSION does not exist yet."
             echo "release=$VERSION" >> $GITHUB_OUTPUT
           fi
-
 
   finalize-release:
     name: Finalize Release
