@@ -76,6 +76,12 @@ jobs:
     outputs:
       version: ${{ steps.check.outputs.version }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
       - name: Install Commitizen CLI
         run: npm install -g commitizen
 
