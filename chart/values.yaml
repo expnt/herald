@@ -36,7 +36,7 @@ heraldConfig:
 
 image:
   repository: ghcr.io/expnt/herald
-  tag: "latest"
+  tag: "v0.1.0"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
