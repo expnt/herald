@@ -87,14 +87,11 @@ jobs:
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
 
-      - name: Get current version (without bumping or pushing)
+      - name: Get current version
         id: version
-        uses: commitizen-tools/commitizen-action@master
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          push: false
-          dry_run: true
-          changelog: false
+        run: |
+          VERSION=$(yq '.version' .cz.yaml)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Check if GitHub release already exists
         id: check
