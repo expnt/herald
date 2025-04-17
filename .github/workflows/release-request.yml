@@ -129,7 +129,7 @@ jobs:
         with:
           tag_name: "v${{ needs.check-release.outputs.release }}"
           name: "Release v${{ needs.check-release.outputs.release }}"
-          body_path: "Changelog.md"
+          body_path: "CHANGELOG.md"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
