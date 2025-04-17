@@ -106,9 +106,11 @@ jobs:
           if [[ "$RELEASE_EXISTS" == "v$VERSION" ]]; then
             echo "Release v$VERSION already exists."
             echo "release=" >> $GITHUB_OUTPUT
+            VERSION=""
           else
             echo "Release v$VERSION does not exist yet."
             echo "release=$VERSION" >> $GITHUB_OUTPUT
+            VERSION=${{ steps.version.outputs.version }}
           fi
 
   finalize-release:
@@ -141,6 +143,7 @@ jobs:
   build-docker:
     name: Build and Push Docker
     needs: check-release
+    if: ${{ needs.check-release.outputs.version != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
