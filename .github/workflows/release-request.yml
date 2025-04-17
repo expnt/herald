@@ -74,7 +74,7 @@ jobs:
     runs-on: ubuntu-latest
     # if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     outputs:
-      version: ${{ steps.check.outputs.version }}
+      version: ${{ steps.check.outputs.ver }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -106,13 +106,13 @@ jobs:
           if [[ "$RELEASE_EXISTS" == "v$VERSION" ]]; then
             echo "Release v$VERSION already exists."
             echo "release=" >> $GITHUB_OUTPUT
-            VERSION=""
+            VER=""
           else
             echo "Release v$VERSION does not exist yet."
             echo "release=$VERSION" >> $GITHUB_OUTPUT
-            VERSION=${{ steps.version.outputs.version }}
+            VER=${{ steps.version.outputs.version }}
           fi
-
+          echo $VER
   finalize-release:
     name: Finalize Release
     needs: check-release
