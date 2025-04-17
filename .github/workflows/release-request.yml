@@ -6,6 +6,9 @@ on:
     branches:
       - main
       - release-test
+  pull_request:
+    branches:
+      - release-test
 
 jobs:
   check-version:
@@ -36,15 +39,17 @@ jobs:
   prepare-release-pr:
     name: Create Release Branch and PR
     needs: check-version
-    if: ${{ needs.check-version.outputs.version != '' }}
+    if: ${{ needs.check-version.outputs.version != '' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: main
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Bump version using Commitizen
         id: cz
@@ -63,15 +68,52 @@ jobs:
           title: "Release ${{ steps.cz.outputs.version }}"
           body: "Automated PR for version bump to ${{ steps.cz.outputs.version }}"
           branch: "release-v${{ steps.cz.outputs.version }}"
-          labels: release
           delete-branch: true
 
+  check-release:
+    runs-on: ubuntu-latest
+    # if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    outputs:
+      release: ${{ steps.check.outputs.release }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Configure Git
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+
+      - name: Get current version
+        id: version
+        run: |
+          VERSION=$(yq '.commitizen.version' .cz.yaml)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check if GitHub release already exists
+        id: check
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          echo "Detected version: $VERSION"
+
+          RELEASE_EXISTS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/${{ github.repository }}/releases/tags/v$VERSION \
+            | jq -r '.tag_name // empty')
+
+          if [[ "$RELEASE_EXISTS" == "v$VERSION" ]]; then
+            echo "Release v$VERSION already exists."
+            echo "release=" >> $GITHUB_OUTPUT
+          else
+            echo "Release v$VERSION does not exist yet."
+            echo "release=$VERSION" >> $GITHUB_OUTPUT
+          fi
   finalize-release:
     name: Finalize Release
-    if: >
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.merged == true &&
-      startsWith(github.event.pull_request.head.ref, 'release-v')
+    needs: check-release
+    if: ${{ needs.check-release.outputs.release != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -79,32 +121,26 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get version from cz
-        id: version
-        run: |
-          VERSION=$(cz version)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
       - name: Tag and Push
         run: |
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
-          git tag -a "v${{ steps.version.outputs.version }}" -m "Release v${{ steps.version.outputs.version }}"
-          git push origin "v${{ steps.version.outputs.version }}"
+          git tag -a "v${{ needs.check-release.outputs.release }}" -m "Release v${{ needs.check-release.outputs.release }}"
+          git push origin "v${{ needs.check-release.outputs.release }}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: "v${{ steps.version.outputs.version }}"
-          name: "Release v${{ steps.version.outputs.version }}"
+          tag_name: "v${{ needs.check-release.outputs.release }}"
+          name: "Release v${{ needs.check-release.outputs.release }}"
           body_path: "Changelog.md"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-docker:
     name: Build and Push Docker
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.merged == true }}
-    needs: finalize-release
+    needs: check-release
+    if: ${{ needs.check-release.outputs.release != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -124,4 +160,4 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/herald:v${{ needs.finalize-release.outputs.version }}
+          tags: ghcr.io/${{ github.repository_owner }}/herald:v${{ needs.check-release.outputs.release }}
