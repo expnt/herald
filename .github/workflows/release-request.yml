@@ -90,7 +90,7 @@ jobs:
       - name: Get current version
         id: version
         run: |
-          VERSION=$(yq '.version' .cz.yaml)
+          VERSION=$(yq '.commitizen.version' .cz.yaml)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Check if GitHub release already exists
