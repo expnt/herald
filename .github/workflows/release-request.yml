@@ -5,10 +5,6 @@ on:
   push:
     branches:
       - main
-      - release-test
-  pull_request:
-    branches:
-      - release-test
 
 jobs:
   check-version:
