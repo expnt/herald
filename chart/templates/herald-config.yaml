@@ -4,7 +4,7 @@ metadata:
   name: {{ .Chart.Name }}
   namespace: {{ .Values.namespace }}
 data:
-  herald-config.yaml: |
+  herald-config.yaml:
     {{- with .Values.heraldConfig }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
