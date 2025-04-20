@@ -70,6 +70,8 @@ extraEnv:
   - name: S3_SECRET_KEY
     value: "password"
 
+containerPort: 8000
+
 service:
   type: ClusterIP
   port: 80
