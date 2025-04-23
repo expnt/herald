@@ -4,6 +4,7 @@ import { signRequestV4 } from "./signer.ts";
 import { AUTH_HEADER, HOST_HEADER } from "../constants/headers.ts";
 import { s3ReqParams } from "../constants/query-params.ts";
 import { ReplicaConfig } from "../config/types.ts";
+import { TIMEOUT } from "../constants/time.ts";
 
 const logger = getLogger(import.meta);
 
@@ -173,7 +174,12 @@ export async function retryWithExponentialBackoff<T>(
 
   while (attempt < retries) {
     try {
-      return await fn();
+      return await Promise.race([
+        fn(),
+        new Promise<T>((_, reject) =>
+          setTimeout(() => reject(new Error("Operation timed out")), TIMEOUT)
+        ),
+      ]);
     } catch (error) {
       if (attempt >= retries - 1) {
         logger.critical(error);
