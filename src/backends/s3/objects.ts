@@ -1,5 +1,5 @@
 import { Context } from "@hono/hono";
-import { forwardRequestWithTimeouts } from "../../utils/url.ts";
+import { forwardS3RequestToS3WithTimeouts } from "../../utils/url.ts";
 import { getLogger, reportToSentry } from "../../utils/log.ts";
 import { S3Config } from "../../config/mod.ts";
 import { prepareMirrorRequests } from "../mirror.ts";
@@ -18,7 +18,7 @@ export async function getObject(
 ) {
   logger.info("[S3 backend] Proxying Get Object Request...");
 
-  let response = await forwardRequestWithTimeouts(
+  let response = await forwardS3RequestToS3WithTimeouts(
     req,
     bucketConfig.config as S3Config,
     bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
@@ -64,7 +64,7 @@ export async function listObjects(
 ) {
   logger.info("[S3 backend] Proxying List Objects Request...");
 
-  let response = await forwardRequestWithTimeouts(
+  let response = await forwardS3RequestToS3WithTimeouts(
     req,
     bucketConfig.config as S3Config,
     bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
@@ -113,7 +113,7 @@ export async function putObject(
   const config: S3Config = bucketConfig.config as S3Config;
   const mirrorOperation = bucketConfig.hasReplicas();
 
-  const response = await forwardRequestWithTimeouts(
+  const response = await forwardS3RequestToS3WithTimeouts(
     req,
     config,
   );
@@ -164,7 +164,7 @@ export async function deleteObject(
   const config: S3Config = bucketConfig.config as S3Config;
   const mirrorOperation = bucketConfig.hasReplicas();
 
-  const response = await forwardRequestWithTimeouts(
+  const response = await forwardS3RequestToS3WithTimeouts(
     req,
     config,
   );
@@ -190,7 +190,7 @@ export async function deleteObject(
     logger.warn(`Delete Object Failed: ${response.statusText}`);
     reportToSentry(errMesage);
   } else {
-    logger.info(`Delete Object Successfull: ${response.statusText}`);
+    logger.info(`Delete Object Successful: ${response.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
         ctx,
@@ -214,7 +214,7 @@ export async function copyObject(
   const config: S3Config = bucketConfig.config as S3Config;
   const mirrorOperation = bucketConfig.hasReplicas();
 
-  const response = await forwardRequestWithTimeouts(
+  const response = await forwardS3RequestToS3WithTimeouts(
     req,
     config,
   );
@@ -240,7 +240,7 @@ export async function copyObject(
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`Copy Object Successfull: ${response.statusText}`);
+    logger.info(`Copy Object Successful: ${response.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
         ctx,
@@ -265,7 +265,7 @@ export async function headObject(
 ) {
   logger.info("[S3 backend] Proxying Head Object Request...");
 
-  let response = await forwardRequestWithTimeouts(
+  let response = await forwardS3RequestToS3WithTimeouts(
     req,
     bucketConfig.config as S3Config,
     bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
@@ -297,7 +297,7 @@ export async function headObject(
     const errMessage = `Head Object Failed: ${response.statusText}`;
     logger.warn(errMessage);
   } else {
-    logger.info(`Head Object Successfull: ${response.statusText}`);
+    logger.info(`Head Object Successful: ${response.statusText}`);
   }
 
   return response;
@@ -310,7 +310,7 @@ export async function createMultipartUpload(
 ) {
   logger.info("[S3 backend] Proxying Create Multipart Upload Request...");
 
-  const response = await forwardRequestWithTimeouts(
+  const response = await forwardS3RequestToS3WithTimeouts(
     req,
     bucketConfig.config as S3Config,
   );
@@ -339,7 +339,7 @@ export async function completeMultipartUpload(
   logger.info("[S3 backend] Proxying Complete Multipart Upload Request...");
 
   const mirrorOperation = bucketConfig.hasReplicas();
-  const response = await forwardRequestWithTimeouts(
+  const response = await forwardS3RequestToS3WithTimeouts(
     req,
     bucketConfig.config as S3Config,
   );
@@ -364,6 +364,82 @@ export async function completeMultipartUpload(
         "completeMultipartUpload",
       );
     }
+  }
+
+  return response;
+}
+
+export async function listParts(
+  ctx: HeraldContext,
+  req: Request,
+  bucketConfig: Bucket,
+): Promise<Response | Error> {
+  logger.info("[S3 backend] Proxying List Parts Request...");
+
+  let response = await forwardS3RequestToS3WithTimeouts(
+    req,
+    bucketConfig.config as S3Config,
+    bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
+  );
+
+  if (response instanceof Error && bucketConfig.hasReplicas()) {
+    logger.warn(
+      `List Parts Failed on Primary Bucket: ${bucketConfig.bucketName}`,
+    );
+    logger.warn("Trying on Replicas...");
+    for (const replica of bucketConfig.replicas) {
+      const res = replica.typ === "ReplicaS3Config"
+        ? await s3Resolver(ctx, req, replica)
+        : await swiftResolver(ctx, req, replica);
+      if (res instanceof Error) {
+        logger.warn(`List Parts Failed on Replica: ${replica.name}`);
+        continue;
+      }
+      response = res;
+    }
+  }
+
+  if (response instanceof Error) {
+    logger.warn(`List Parts Failed: ${response.message}`);
+    return response;
+  }
+
+  if (response.status !== 200) {
+    const errMessage = `List Parts Failed: ${response.statusText}`;
+    logger.warn(errMessage);
+    reportToSentry(errMessage);
+  } else {
+    logger.info(`List Parts Successful: ${response.statusText}`);
+  }
+
+  return response;
+}
+
+export async function abortMultipartUpload(
+  _ctx: HeraldContext,
+  req: Request,
+  bucketConfig: Bucket,
+): Promise<Response | Error> {
+  logger.info("[S3 backend] Proxying Abort Multipart Upload Request...");
+
+  const config: S3Config = bucketConfig.config as S3Config;
+
+  const response = await forwardS3RequestToS3WithTimeouts(
+    req,
+    config,
+  );
+
+  if (response instanceof Error) {
+    logger.warn(`Delete Object Failed: ${response.message}`);
+    return response;
+  }
+
+  if (response.status != 204) {
+    const errMesage = `Abort Multipart Upload Failed: ${response.statusText}`;
+    logger.warn(`Abort Multipart Upload Failed: ${response.statusText}`);
+    reportToSentry(errMesage);
+  } else {
+    logger.info(`Abort Multipart Upload Successful: ${response.statusText}`);
   }
 
   return response;

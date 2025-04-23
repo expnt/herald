@@ -4,6 +4,7 @@ import { signRequestV4 } from "./signer.ts";
 import { AUTH_HEADER, HOST_HEADER } from "../constants/headers.ts";
 import { s3ReqParams } from "../constants/query-params.ts";
 import { ReplicaConfig } from "../config/types.ts";
+import { TIMEOUT } from "../constants/time.ts";
 
 const logger = getLogger(import.meta);
 
@@ -56,7 +57,7 @@ export function isContentLengthNonZero(request: Request): boolean {
  * @param request - The request to be forwarded.
  * @returns A promise that resolves to the response of the forwarded request.
  */
-export async function forwardRequestWithTimeouts(
+export async function forwardS3RequestToS3WithTimeouts(
   request: Request,
   config: S3Config,
   retries = 3,
@@ -103,6 +104,19 @@ export async function forwardRequestWithTimeouts(
     for (const key of toBeRemovedHeaders) {
       headers.delete(key);
     }
+
+    const toBeRemovedQueryParams = [
+      "X-Amz-Algorithm",
+      "X-Amz-Credential",
+      "X-Amz-Date",
+      "X-Amz-Expires",
+      "X-Amz-SignedHeaders",
+      "X-Amz-Signature",
+    ];
+
+    toBeRemovedQueryParams.forEach((param) => {
+      redirect.searchParams.delete(param);
+    });
 
     const forwardReq = new Request(redirect, {
       method: request.method,
@@ -160,7 +174,12 @@ export async function retryWithExponentialBackoff<T>(
 
   while (attempt < retries) {
     try {
-      return await fn();
+      return await Promise.race([
+        fn(),
+        new Promise<T>((_, reject) =>
+          setTimeout(() => reject(new Error("Operation timed out")), TIMEOUT)
+        ),
+      ]);
     } catch (error) {
       if (attempt >= retries - 1) {
         logger.critical(error);

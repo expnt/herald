@@ -12,7 +12,7 @@ Deno.test(async function listObjects() {
 
 // delete object test
 Deno.test(async function deleteObject() {
-  // successfull delete
+  // successful delete
 
   // failed delete
 });
