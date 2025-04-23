@@ -54,7 +54,7 @@ export async function prepareMirrorRequests(
   bucketConfig: Bucket,
   command: MirrorableCommands,
 ) {
-  logger.info("[S3 backend] mirroring requests...");
+  logger.info("Mirroring requests...");
 
   for (const backupConfig of bucketConfig.replicas) {
     const task: MirrorTask = {

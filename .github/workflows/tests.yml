@@ -2,14 +2,6 @@ name: test suite
 run-name: test suite for ${{ github.event.pull_request.title || github.ref }}
 on:
   workflow_dispatch:
-    inputs:
-      tmate_enabled:
-        type: boolean
-        description: |
-          Run the build with tmate debugging enabled (https://github.com/marketplace/actions/debugging-with-tmate).
-          This disables all but the test-full jobs.
-        required: false
-        default: false
   push:
     branches:
       - main
@@ -19,6 +11,15 @@ on:
       - reopened
       - synchronize
       - ready_for_review
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DENO_V: 2.2.3
+  GHJK_VERSION: "v0.2.1"
+  GHJK_ENV: "ci"
 
 jobs:
   changes:
@@ -43,57 +44,72 @@ jobs:
     needs: changes
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.x'
-    # - uses: metatypedev/setup-ghjk@318209a9d215f70716a4ac89dbeb9653a2deb8bc
-    - name: Install tofu
-      run: |
-        curl --proto '=https' --tlsv1.2 -fsSL https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh
-        chmod +x install-opentofu.sh
-        ./install-opentofu.sh --install-method deb
-        rm -f install-opentofu.sh
-    - shell: bash
-      run: |
-        curl -fsSL https://deno.land/install.sh | sh -s v2.2.3
-        export DENO_INSTALL="$HOME/.deno"
-        export PATH="$DENO_INSTALL/bin:$PATH"
-        # ghjk p resolve
-        python -m pip install --upgrade pip
-        pip install pre-commit
-        pre-commit install
-        deno --version
-        pre-commit run --all-files
-        # SKIP=ghjk-resolve pre-commit run --show-diff-on-failure --color=always --all-files
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - uses: denoland/setup-deno@v1
+        with:
+          deno-version: ${{ env.DENO_V }}
+      - name: Install tofu
+        run: |
+          curl --proto '=https' --tlsv1.2 -fsSL https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh
+          chmod +x install-opentofu.sh
+          ./install-opentofu.sh --install-method deb
+          rm -f install-opentofu.sh
 
+      - shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install pre-commit
+          pre-commit install
+          deno --version
+          pre-commit run --all-files
 
-  build-docker:
-      needs: changes
-      if: ${{ needs.changes.outputs.full == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.tmate_enabled) }}
-      runs-on: ubuntu-latest
-      steps:
-        - uses: actions/checkout@v4
-        - uses: docker/setup-buildx-action@v3
-        - uses: docker/login-action@v3
-          with:
-            registry: ghcr.io
-            username: ${{ github.actor }}
-            password: ${{ secrets.GITHUB_TOKEN }}
-        - name: Sanitize Docker tag
-          id: vars
-          run: |
-            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-              REF="${{ github.head_ref }}"
-            else
-              REF="latest"
-            fi
-            echo "TAG=$(echo "$REF" | tr '/' '-')" >> $GITHUB_ENV
-        - name: Build and push herald
-          uses: docker/build-push-action@v6
-          with:
-            context: .
-            file: ./Dockerfile
-            platforms: linux/amd64,linux/arm64
-            push: true
-            tags: ghcr.io/${{ github.repository_owner }}/herald:${{ env.TAG }}
+  test-full:
+    needs: [changes]
+    if: ${{ needs.changes.outputs.full == 'true' && github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v1
+        with:
+          deno-version: ${{ env.DENO_V }}
+      - name: Download Install Script
+        run: curl -fsSL "https://raw.github.com/metatypedev/ghjk/$GHJK_VERSION/install.sh" -o install.sh
+      - name: Execute Install Script
+        run: yes | bash install.sh
+      - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: echo "BASH_ENV=$HOME/.local/share/ghjk/env.sh" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Install tofu
+        run: |
+          curl --proto '=https' --tlsv1.2 -fsSL https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh
+          chmod +x install-opentofu.sh
+          ./install-opentofu.sh --install-method deb
+          rm -f install-opentofu.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - name: setup start-server-and-test
+        run: npm install -g start-server-and-test
+      - shell: bash
+        env:
+          AUTH_TYPE: "none"
+          LOG_LEVEL: "DEBUG"
+          ENV: "DEV"
+          S3_ACCESS_KEY: ${{ secrets.S3_ACCESS_KEY }}
+          S3_SECRET_KEY: ${{ secrets.S3_SECRET_KEY }}
+          OPENSTACK_USERNAME: ${{ secrets.OPENSTACK_USERNAME }}
+          OPENSTACK_PASSWORD: ${{ secrets.OPENSTACK_PASSWORD }}
+          OPENSTACK_PROJECT: ${{ secrets.OPENSTACK_PROJECT }}
+        run: |
+          # run all tests
+          ghjk x dev-compose all
+
+          deno install
+
+          # ghjk x setup-auth
+          npx start-server-and-test 'deno run -A --unstable-kv src/main.ts' http://0.0.0.0:8000/ 'deno test -A'

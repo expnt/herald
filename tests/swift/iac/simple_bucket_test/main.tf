@@ -1,11 +1,11 @@
 # https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket_object
 
 resource "aws_s3_bucket" "example" {
-  bucket = "swift-test"
+  bucket = "iac-swift"
 }
 
 resource "aws_s3_object" "object" {
-  bucket = "swift-test"
+  bucket = aws_s3_bucket.example.bucket
   key    = "new_object_key"
   source = "sample.txt"
 

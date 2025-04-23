@@ -12,17 +12,17 @@ task_store_backend:
   forcePathStyle: true
   bucket: task-store
   credentials:
-    accessKeyId: minio
-    secretAccessKey: password
+    accessKeyId: "fromEnv:S3_ACCESS_KEY"
+    secretAccessKey: "fromEnv:S3_SECRET_KEY"
 
 service_accounts:
   - name: "system:serviceaccount:dev-s3-herald:default"
     buckets:
       - s3-test
-      - s3-mirror-test
-      - iac-s3
+      - swift-test
 
 buckets:
+  # not mirrored
   s3-test:
     backend: minio_s3
     config:
@@ -31,18 +31,8 @@ buckets:
       forcePathStyle: true
       bucket: s3-test
       credentials:
-        accessKeyId: minio
-        secretAccessKey: password
-  s3-mirror-test:
-    backend: minio_s3
-    config:
-      endpoint: "http://localhost:9000"
-      region: local
-      forcePathStyle: true
-      bucket: s3-mirror-test
-      credentials:
-        accessKeyId: minio
-        secretAccessKey: password
+        accessKeyId: "fromEnv:S3_ACCESS_KEY"
+        secretAccessKey: "fromEnv:S3_SECRET_KEY"
   iac-s3:
     backend: minio_s3
     config:
@@ -51,35 +41,58 @@ buckets:
       forcePathStyle: true
       bucket: iac-s3
       credentials:
-        accessKeyId: minio
-        secretAccessKey: password
+        accessKeyId: "fromEnv:S3_ACCESS_KEY"
+        secretAccessKey: "fromEnv:S3_SECRET_KEY"
   swift-test:
     backend: openstack_swift
     config:
-      auth_url: "http://localhost:8080/auth/v1.0"
+      auth_url: https://api.pub1.infomaniak.cloud/identity/v3
       credentials:
-        username: "test:tester"
-        password: "testing"
-        project_name: "PCP-RP63UPV"
-        user_domain_name: "Default"
-        project_domain_name: "Default"
+        username: "fromEnv:OPENSTACK_USERNAME"
+        password: "fromEnv:OPENSTACK_PASSWORD"
+        project_name: "fromEnv:OPENSTACK_PROJECT"
+        user_domain_name: Default
+        project_domain_name: Default
       container: swift-test
       region: dc3-a
+  iac-swift:
+    backend: openstack_swift
+    config:
+      auth_url: https://api.pub1.infomaniak.cloud/identity/v3
+      credentials:
+        username: "fromEnv:OPENSTACK_USERNAME"
+        password: "fromEnv:OPENSTACK_PASSWORD"
+        project_name: "fromEnv:OPENSTACK_PROJECT"
+        user_domain_name: Default
+        project_domain_name: Default
+      container: iac-swift
+      region: dc3-a
+  # mirrored
+  s3-mirror-test:
+    backend: minio_s3
+    config:
+      endpoint: "http://localhost:9000"
+      region: local
+      forcePathStyle: true
+      bucket: s3-mirror-test
+      credentials:
+        accessKeyId: "fromEnv:S3_ACCESS_KEY"
+        secretAccessKey: "fromEnv:S3_SECRET_KEY"
   swift-mirror-test:
     backend: openstack_swift
     config:
-      auth_url: "http://localhost:8080/auth/v1.0"
+      auth_url: https://api.pub1.infomaniak.cloud/identity/v3
       credentials:
-        username: "test:tester"
-        password: "testing"
-        project_name: "PCP-RP63UPV"
-        user_domain_name: "Default"
-        project_domain_name: "Default"
+        username: "fromEnv:OPENSTACK_USERNAME"
+        password: "fromEnv:OPENSTACK_PASSWORD"
+        project_name: "fromEnv:OPENSTACK_PROJECT"
+        user_domain_name: Default
+        project_domain_name: Default
       container: swift-mirror-test
       region: dc3-a
 
 replicas:
-  - name: s3-swift-replica
+  - name: swift-test-replica
     backend: minio_s3
     config:
       endpoint: "http://localhost:9000"
@@ -87,39 +100,17 @@ replicas:
       forcePathStyle: true
       bucket: swift-mirror-test
       credentials:
-        accessKeyId: minio
-        secretAccessKey: password
-  - name: swift-swift-replica
+        accessKeyId: "fromEnv:S3_ACCESS_KEY"
+        secretAccessKey: "fromEnv:S3_SECRET_KEY"
+  - name: s3-test-replica
     backend: openstack_swift
     config:
       auth_url: https://api.pub1.infomaniak.cloud/identity/v3
       credentials:
-        username: "test:tester"
-        password: "testing"
-        project_name: "PCP-RP63UPV"
+        username: "fromEnv:OPENSTACK_USERNAME"
+        password: "fromEnv:OPENSTACK_PASSWORD"
+        project_name: "fromEnv:OPENSTACK_PROJECT"
         user_domain_name: Default
         project_domain_name: Default
-      container: "swift-mirror-test"
+      container:  s3-mirror-test
       region: dc3-a
-  - name: swift-replica
-    backend: openstack_swift
-    config:
-      auth_url: https://api.pub1.infomaniak.cloud/identity/v3
-      credentials:
-        username: "test:tester"
-        password: "testing"
-        project_name: "PCP-RP63UPV"
-        user_domain_name: Default
-        project_domain_name: Default
-      container: "s3-mirror-test"
-      region: dc3-a
-  - name: s3-replica
-    backend: minio_s3
-    config:
-      endpoint: "http://localhost:9090"
-      region: local
-      forcePathStyle: true
-      bucket: s3-mirror-test
-      credentials:
-        accessKeyId: minio
-        secretAccessKey: password

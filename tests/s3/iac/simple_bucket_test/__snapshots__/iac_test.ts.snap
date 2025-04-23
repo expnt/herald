@@ -27,6 +27,24 @@ OpenTofu will perform the following actions:
       [32m+[0m[0m tags_all                    = (known after apply)
       [32m+[0m[0m website_domain              = (known after apply)
       [32m+[0m[0m website_endpoint            = (known after apply)
+
+      [32m+[0m[0m cors_rule (known after apply)
+
+      [32m+[0m[0m grant (known after apply)
+
+      [32m+[0m[0m lifecycle_rule (known after apply)
+
+      [32m+[0m[0m logging (known after apply)
+
+      [32m+[0m[0m object_lock_configuration (known after apply)
+
+      [32m+[0m[0m replication_configuration (known after apply)
+
+      [32m+[0m[0m server_side_encryption_configuration (known after apply)
+
+      [32m+[0m[0m versioning (known after apply)
+
+      [32m+[0m[0m website (known after apply)
     }
 
 [1m  # aws_s3_bucket_object.object[0m will be created
@@ -67,20 +85,9 @@ OpenTofu will perform the following actions:
 [33m│[0m [0m  on main.tf line 8, in resource "aws_s3_bucket_object" "object":
 [33m│[0m [0m   8:   bucket = [4maws_s3_bucket.example.bucket[0m[0m
 [33m│[0m [0m
-[33m│[0m [0mUse the aws_s3_object resource instead
+[33m│[0m [0mbucket is deprecated. Use the aws_s3_object resource instead.
 [33m│[0m [0m
 [33m│[0m [0m(and 2 more similar warnings elsewhere)
-[33m╵[0m[0m
-[33m╷[0m[0m
-[33m│[0m [0m[1m[33mWarning: [0m[0m[1mAWS account ID not found for provider[0m
-[33m│[0m [0m
-[33m│[0m [0m[0m  with provider["registry.opentofu.org/hashicorp/aws"],
-[33m│[0m [0m  on versions.tf line 3, in provider "aws":
-[33m│[0m [0m   3: provider "aws" [4m{[0m[0m
-[33m│[0m [0m
-[33m│[0m [0mSee
-[33m│[0m [0mhttps://registry.terraform.io/providers/hashicorp/aws/latest/docs#skip_requesting_account_id
-[33m│[0m [0mfor implications.
 [33m╵[0m[0m
 [90m
 ─────────────────────────────────────────────────────────────────────────────[0m

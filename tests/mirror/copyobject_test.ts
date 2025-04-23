@@ -168,7 +168,7 @@ const testFailedCopyObject = async (
       const copyRes = await s3.send(copyCommand);
       checkCopyObject(copyRes);
     } catch (error) {
-      if ((error as Error).name === "BadResource") {
+      if ((error as Error).name === "TypeError") {
         // correct path
       } else {
         throw error;
@@ -183,6 +183,10 @@ const testFailedCopyObject = async (
 
   await t.step("Restart storage service", async () => {
     await startDockerContainer(storageService);
+  });
+
+  await t.step("Wait for service to restart", async () => {
+    await new Promise((r) => setTimeout(r, 7000));
   });
 
   await t.step("Check that object was not copied", async () => {
