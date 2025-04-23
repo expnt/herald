@@ -1,3 +1,14 @@
+## 0.2.0 (2025-04-23)
+
+### Feat
+
+- handle `ListParts` and `AbortMultipartUpload` (#20)
+
+### Fix
+
+- **chart**: remove wrong char (#32)
+- release (#30)
+
 ## 0.1.0 (2025-04-16)
 
 ### Feat
