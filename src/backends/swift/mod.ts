@@ -173,55 +173,104 @@ export function convertSwiftGetObjectToS3Response(
   swiftResponse: Response,
   queryParams: Record<string, string[]>,
 ) {
-  if (!swiftResponse.ok) {
-    return new HTTPException(swiftResponse.status, {
-      message: `Get Object Failed: ${swiftResponse.statusText}`,
-    });
-  }
-
+  const swiftStatus = swiftResponse.status;
   const swiftHeaders = swiftResponse.headers;
-  const eTag = swiftHeaders.get("etag");
-  const lastModified = swiftHeaders.get("last-modified");
-  const defaultContentType = swiftHeaders.get("content-type") ||
-    "application/octet-stream";
-  const contentLength = swiftHeaders.get("content-length");
 
-  const s3ContentType = queryParams["response-content-type"]
-    ? queryParams["response-content-type"][0]
-    : defaultContentType;
+  if (swiftStatus === 200) {
+    // Successful GetObject
+    const eTag = swiftHeaders.get("etag");
+    const lastModified = swiftHeaders.get("last-modified");
+    const contentLength = swiftHeaders.get("content-length");
+    const acceptRanges = swiftHeaders.get("accept-ranges");
+    const contentType = swiftHeaders.get("content-type") ||
+      "application/octet-stream";
 
-  const s3ResponseHeaders = new Headers();
-  s3ResponseHeaders.set("ETag", eTag!);
-  s3ResponseHeaders.set("Last-Modified", new Date(lastModified!).toUTCString());
-  s3ResponseHeaders.set("Content-Type", s3ContentType);
-  s3ResponseHeaders.set("Content-Length", contentLength!);
-
-  swiftHeaders.forEach((value, key) => {
-    if (key.startsWith("x-object-meta-")) {
-      s3ResponseHeaders.set(`x-amz-meta-${key.substring(14)}`, value);
+    if (!eTag || !lastModified || !contentLength) {
+      return new HTTPException(502, {
+        message: "Missing essential headers in Swift response",
+      });
     }
-  });
 
-  // https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html#API_GetObject_ResponseSyntax
-  return new Response(swiftResponse.body, {
-    status: 200, // Success in S3 is indicated by HTTP 200
-    headers: s3ResponseHeaders,
-  });
-}
+    const s3ContentType = queryParams["response-content-type"]
+      ? queryParams["response-content-type"][0]
+      : contentType;
 
-export function convertSwiftDeleteObjectToS3Response(swiftResponse: Response) {
-  if (!swiftResponse.ok) {
-    return new HTTPException(swiftResponse.status, {
-      message: `Delete Object Failed: ${swiftResponse.statusText}`,
+    const s3ResponseHeaders = new Headers();
+
+    s3ResponseHeaders.set("ETag", eTag);
+    s3ResponseHeaders.set(
+      "Last-Modified",
+      new Date(lastModified).toUTCString(),
+    );
+    s3ResponseHeaders.set("Content-Length", contentLength);
+    s3ResponseHeaders.set("Content-Type", s3ContentType);
+
+    if (acceptRanges) {
+      s3ResponseHeaders.set("accept-ranges", acceptRanges);
+    }
+
+    const requestId = swiftHeaders.get("x-openstack-request-id") ||
+      swiftHeaders.get("x-trans-id");
+    if (requestId) {
+      s3ResponseHeaders.set("x-amz-request-id", requestId);
+    }
+
+    // Map metadata headers
+    swiftHeaders.forEach((value, key) => {
+      if (key.startsWith("x-object-meta-")) {
+        const metaKey = key.substring("x-object-meta-".length);
+        s3ResponseHeaders.set(`x-amz-meta-${metaKey}`, value);
+      }
+    });
+
+    // https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html#API_GetObject_ResponseSyntax
+    return new Response(swiftResponse.body, {
+      status: 200,
+      headers: s3ResponseHeaders,
     });
   }
 
-  // https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObject.html#API_DeleteObject_ResponseSyntax
-  const s3Response = new Response(null, {
-    status: 204,
-  });
+  // Now handle mapped error cases
+  let errorCode = "";
+  let errorMessage = "";
+  let errorStatus = 0;
 
-  return s3Response;
+  switch (swiftStatus) {
+    case 404:
+      errorCode = "NoSuchKey";
+      errorMessage = "The specified key does not exist.";
+      errorStatus = 404;
+      break;
+    case 416:
+      errorCode = "InvalidObjectState";
+      errorMessage = "The object is archived and inaccessible until restored.";
+      errorStatus = 403;
+      break;
+    default:
+      // Unhandled Swift error
+      return new HTTPException(swiftStatus, {
+        message: `Unhandled Swift error: ${swiftResponse.statusText}`,
+      });
+  }
+
+  // Build proper S3 error XML
+  const s3ErrorXml = `
+<Error>
+  <Code>${errorCode}</Code>
+  <Message>${errorMessage}</Message>
+  <RequestId>${
+    swiftHeaders.get("x-openstack-request-id") ||
+    swiftHeaders.get("x-trans-id") || "Unknown"
+  }</RequestId>
+  <HostId>swift-mapped-to-s3</HostId>
+</Error>`.trim();
+
+  return new Response(s3ErrorXml, {
+    status: errorStatus,
+    headers: new Headers({
+      "Content-Type": "application/xml",
+    }),
+  });
 }
 
 export function convertSwiftUploadPartToS3Response(swiftResponse: Response) {
