@@ -57,7 +57,7 @@ function extractCommonPrefixes(folders: object[]): string[] {
   return Array.from(prefixes);
 }
 
-export async function convertSwiftListObjectsToS3Response(
+export async function toS3XmlContent(
   swiftResponse: Response,
   bucket: string,
   delimiter: string | null,
