@@ -35,6 +35,7 @@ import { getLogger } from "../../utils/log.ts";
 import { s3Utils } from "../../utils/mod.ts";
 import { Bucket } from "../../buckets/mod.ts";
 import { HeraldContext } from "../../types/mod.ts";
+import { formatRFC3339Date } from "./utils/mod.ts";
 
 const handlers = {
   putObject,
@@ -373,5 +374,245 @@ export function convertSwiftPutObjectToS3Response(swiftResponse: Response) {
     headers: new Headers({
       "Content-Type": "application/xml",
     }),
+  });
+}
+
+export function convertSwiftCopyObjectToS3Response(
+  swiftResponse: Response,
+) {
+  const swiftStatus = swiftResponse.status;
+  const swiftHeaders = swiftResponse.headers;
+
+  if (swiftStatus === 201) {
+    // Successful CopyObject operation
+
+    const eTag = swiftHeaders.get("etag");
+    const lastModified = swiftHeaders.get("last-modified");
+    const requestId = swiftHeaders.get("x-openstack-request-id") ||
+      swiftHeaders.get("x-trans-id");
+
+    if (!eTag || !lastModified) {
+      return new HTTPException(502, {
+        message: "Missing essential headers in Swift response for CopyObject",
+      });
+    }
+
+    const s3ResponseHeaders = new Headers();
+
+    // Set standard S3 CopyObject headers
+    if (requestId) {
+      s3ResponseHeaders.set("x-amz-copy-source-version-id", requestId);
+      s3ResponseHeaders.set("x-amz-version-id", requestId);
+      s3ResponseHeaders.set("x-amz-request-id", requestId);
+    }
+
+    s3ResponseHeaders.set("ETag", eTag); // Make sure it's quoted like S3
+
+    const s3ResponseBody = `
+<?xml version="1.0" encoding="UTF-8"?>
+<CopyObjectResult>
+  <ETag>${`"${eTag.replace(/^"|"$/g, "")}"`}</ETag>
+  <LastModified>${formatRFC3339Date(lastModified)}</LastModified>
+</CopyObjectResult>`.trim();
+
+    return new Response(s3ResponseBody, {
+      status: 200, // S3 CopyObject always returns 200 OK, not 201
+      headers: s3ResponseHeaders,
+    });
+  }
+
+  // Handle error mapping if CopyObject failed
+  let errorCode = "";
+  let errorMessage = "";
+  let errorStatus = 0;
+
+  switch (swiftStatus) {
+    case 404:
+      errorCode = "NoSuchKey";
+      errorMessage = "The source object does not exist.";
+      errorStatus = 404;
+      break;
+    case 416:
+      errorCode = "InvalidObjectState";
+      errorMessage =
+        "The source object is archived and must be restored before copying.";
+      errorStatus = 403;
+      break;
+    default:
+      return new HTTPException(swiftStatus, {
+        message:
+          `Unhandled Swift CopyObject error: ${swiftResponse.statusText}`,
+      });
+  }
+
+  const s3ErrorXml = `
+<Error>
+  <Code>${errorCode}</Code>
+  <Message>${errorMessage}</Message>
+  <RequestId>${
+    swiftHeaders.get("x-openstack-request-id") ||
+    swiftHeaders.get("x-trans-id") || "Unknown"
+  }</RequestId>
+  <HostId>swift-mapped-to-s3</HostId>
+</Error>`.trim();
+
+  return new Response(s3ErrorXml, {
+    status: errorStatus,
+    headers: new Headers({
+      "Content-Type": "application/xml",
+    }),
+  });
+}
+
+export function convertSwiftDeleteObjectToS3Response(swiftResponse: Response) {
+  if (!swiftResponse.ok) {
+    return new HTTPException(swiftResponse.status, {
+      message: `Delete Object Failed: ${swiftResponse.statusText}`,
+    });
+  }
+
+  // https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObject.html#API_DeleteObject_ResponseSyntax
+  const s3Response = new Response(null, {
+    status: 204,
+  });
+
+  return s3Response;
+}
+
+function createBucketSuccessResponse(bucketName: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<CreateBucketConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Location>${bucketName}</Location>
+</CreateBucketConfiguration>`;
+}
+
+export function convertSwiftCreateBucketToS3Response(
+  swiftResponse: Response,
+  bucketName: string, // We need the intended bucket name for the Location header
+) {
+  const swiftStatus = swiftResponse.status;
+  const swiftHeaders = swiftResponse.headers;
+
+  if (swiftStatus === 201) {
+    // Successful CreateBucket
+    const requestId = swiftHeaders.get("x-openstack-request-id") ||
+      swiftHeaders.get("x-trans-id");
+
+    const s3ResponseHeaders = new Headers();
+
+    if (requestId) {
+      s3ResponseHeaders.set("x-amz-request-id", requestId);
+    }
+    s3ResponseHeaders.set("Location", `/${bucketName}`);
+
+    return new Response(createBucketSuccessResponse(bucketName), {
+      status: 200,
+      headers: s3ResponseHeaders,
+    });
+  }
+
+  // Now handle mapped error cases
+  let errorCode = "";
+  let errorMessage = "";
+  const errorStatus = 409;
+
+  switch (swiftStatus) {
+    case 400:
+    case 507:
+      errorCode = "BucketAlreadyExists";
+      errorMessage =
+        "The requested bucket name is not available. Select a different name and try again.";
+      break;
+    case 404:
+      errorCode = "BucketAlreadyOwnedByYou";
+      errorMessage =
+        "The bucket you tried to create already exists, and you own it.";
+      break;
+    default:
+      return new HTTPException(swiftStatus, {
+        message:
+          `Unhandled Swift CreateBucket error: ${swiftResponse.statusText}`,
+      });
+  }
+
+  const s3ErrorXml = `
+<Error>
+  <Code>${errorCode}</Code>
+  <Message>${errorMessage}</Message>
+  <RequestId>${
+    swiftHeaders.get("x-openstack-request-id") ||
+    swiftHeaders.get("x-trans-id") || "Unknown"
+  }</RequestId>
+  <HostId>swift-mapped-to-s3</HostId>
+</Error>`.trim();
+
+  return new Response(s3ErrorXml, {
+    status: errorStatus,
+    headers: new Headers({
+      "Content-Type": "application/xml",
+    }),
+  });
+}
+
+export function convertSwiftHeadBucketToS3Response(
+  swiftResponse: Response,
+  bucketRegion = "us-east-1", // Default region
+) {
+  const swiftStatus = swiftResponse.status;
+  const swiftHeaders = swiftResponse.headers;
+
+  if (swiftStatus === 204) {
+    // Successful HeadBucket
+
+    const requestId = swiftHeaders.get("x-openstack-request-id") ||
+      swiftHeaders.get("x-trans-id");
+
+    const s3ResponseHeaders = new Headers();
+
+    if (requestId) {
+      s3ResponseHeaders.set("x-amz-request-id", requestId);
+    }
+
+    // S3 HeadBucket returns info about bucket location
+    s3ResponseHeaders.set("x-amz-bucket-region", bucketRegion);
+    s3ResponseHeaders.set("x-amz-bucket-location-type", "AvailabilityZone");
+    s3ResponseHeaders.set("x-amz-bucket-location-name", bucketRegion);
+
+    // Optional: you can map Accept-Ranges if Swift sends it
+    const acceptRanges = swiftHeaders.get("accept-ranges");
+    if (acceptRanges) {
+      s3ResponseHeaders.set("accept-ranges", acceptRanges);
+    }
+
+    return new Response(null, {
+      status: 200,
+      headers: s3ResponseHeaders,
+    });
+  }
+
+  // Handle error mapping
+  if (swiftStatus === 404) {
+    const s3ErrorXml = `
+<Error>
+  <Code>NoSuchBucket</Code>
+  <Message>The specified bucket does not exist.</Message>
+  <RequestId>${
+      swiftHeaders.get("x-openstack-request-id") ||
+      swiftHeaders.get("x-trans-id") || "Unknown"
+    }</RequestId>
+  <HostId>swift-mapped-to-s3</HostId>
+</Error>`.trim();
+
+    return new Response(s3ErrorXml, {
+      status: 404,
+      headers: new Headers({
+        "Content-Type": "application/xml",
+      }),
+    });
+  }
+
+  // Unhandled errors fallback
+  return new HTTPException(swiftStatus, {
+    message: `Unhandled Swift HeadBucket error: ${swiftResponse.statusText}`,
   });
 }
