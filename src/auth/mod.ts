@@ -299,17 +299,6 @@ export async function verifyS3SigV4(
   options: VerificationOptions = {},
   knownSecretKeys: Record<string, string | undefined>,
 ): Promise<{ isValid: boolean; error?: string }> {
-  const signer = new SignatureV4a({
-    // FIXME: properly fill these
-    service: "TODO",
-    region: "*",
-    sha256: Sha256,
-    credentials: {
-      accessKeyId: "TODO",
-      secretAccessKey: "TODO",
-    },
-  });
-
   const { clockSkew = 15 * 60 * 1000 } = options; // Default 15 minutes skew
 
   // 1. Extract Required Headers
@@ -431,6 +420,17 @@ export async function verifyS3SigV4(
     // const host = req.headers.get("Host") || ${service}.${region}.amazonaws.com`; // Default guess
     throw new Error("unable to determine host for request");
   }
+
+  const signer = new SignatureV4a({
+    // FIXME: properly fill these
+    service: "s3",
+    region: "local",
+    sha256: Sha256,
+    credentials: {
+      accessKeyId: parsedAuth.accessKeyId,
+      secretAccessKey: secretAccessKey,
+    },
+  });
   const sig = await signer.sign({
     method: canonicalMethod,
     hostname: hostHeader,
