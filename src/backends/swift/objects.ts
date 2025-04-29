@@ -20,6 +20,7 @@ import { s3Resolver } from "../s3/mod.ts";
 import {
   convertSwiftDeleteObjectToS3Response,
   convertSwiftGetObjectToS3Response,
+  convertSwiftHeadObjectToS3Response,
   convertSwiftPutObjectToS3Response,
   convertSwiftUploadPartToS3Response,
   swiftResolver,
@@ -439,13 +440,7 @@ export async function headObject(
     });
   }
 
-  // Create a new response with only the headers
-  const headResponse = new Response(null, {
-    status: response.status,
-    headers: response.headers,
-  });
-
-  return headResponse;
+  return convertSwiftHeadObjectToS3Response(response);
 }
 
 // currently supports copy within the same project

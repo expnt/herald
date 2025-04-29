@@ -616,3 +616,86 @@ export function convertSwiftHeadBucketToS3Response(
     message: `Unhandled Swift HeadBucket error: ${swiftResponse.statusText}`,
   });
 }
+
+export function convertSwiftHeadObjectToS3Response(
+  swiftResponse: Response,
+) {
+  const swiftStatus = swiftResponse.status;
+  const swiftHeaders = swiftResponse.headers;
+
+  if (swiftStatus === 200) {
+    // Successful HeadObject
+
+    const eTag = swiftHeaders.get("etag");
+    const contentLength = swiftHeaders.get("content-length");
+    const lastModified = swiftHeaders.get("last-modified");
+    const acceptRanges = swiftHeaders.get("accept-ranges");
+    const contentType = swiftHeaders.get("content-type") ||
+      "application/octet-stream";
+    const requestId = swiftHeaders.get("x-openstack-request-id") ||
+      swiftHeaders.get("x-trans-id");
+
+    if (!eTag || !contentLength || !lastModified) {
+      return new HTTPException(502, {
+        message: "Missing essential headers in Swift response for HeadObject",
+      });
+    }
+
+    const s3ResponseHeaders = new Headers();
+
+    // Set standard fields
+    s3ResponseHeaders.set("ETag", `"${eTag.replace(/^"|"$/g, "")}"`); // Ensure ETag is quoted
+    s3ResponseHeaders.set("Content-Length", contentLength);
+    s3ResponseHeaders.set(
+      "Last-Modified",
+      new Date(lastModified).toUTCString(),
+    );
+    s3ResponseHeaders.set("Content-Type", contentType);
+
+    if (acceptRanges) {
+      s3ResponseHeaders.set("accept-ranges", acceptRanges);
+    }
+    if (requestId) {
+      s3ResponseHeaders.set("x-amz-request-id", requestId);
+    }
+
+    // Map Swift user metadata
+    swiftHeaders.forEach((value, key) => {
+      if (key.startsWith("x-object-meta-")) {
+        const metaKey = key.substring("x-object-meta-".length);
+        s3ResponseHeaders.set(`x-amz-meta-${metaKey}`, value);
+      }
+    });
+
+    return new Response(null, {
+      status: 200,
+      headers: s3ResponseHeaders,
+    });
+  }
+
+  // Now handle error mapping
+  if (swiftStatus === 404) {
+    const s3ErrorXml = `
+<Error>
+  <Code>NoSuchKey</Code>
+  <Message>The specified key does not exist.</Message>
+  <RequestId>${
+      swiftHeaders.get("x-openstack-request-id") ||
+      swiftHeaders.get("x-trans-id") || "Unknown"
+    }</RequestId>
+  <HostId>swift-mapped-to-s3</HostId>
+</Error>`.trim();
+
+    return new Response(s3ErrorXml, {
+      status: 404,
+      headers: new Headers({
+        "Content-Type": "application/xml",
+      }),
+    });
+  }
+
+  // Fallback for unhandled Swift errors
+  return new HTTPException(swiftStatus, {
+    message: `Unhandled Swift HeadObject error: ${swiftResponse.statusText}`,
+  });
+}
