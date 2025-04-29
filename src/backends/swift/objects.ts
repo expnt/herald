@@ -727,6 +727,14 @@ export async function uploadPart(
   return convertSwiftUploadPartToS3Response(response);
 }
 
+export function uploadPartCopy(
+  _ctx: HeraldContext,
+  _req: Request,
+  _bucketConfig: Bucket,
+): Promise<Response | Error | HTTPException> {
+  throw Error("UnImplemented Error!");
+}
+
 export async function listParts(
   ctx: HeraldContext,
   req: Request,

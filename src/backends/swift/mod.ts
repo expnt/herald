@@ -10,6 +10,7 @@ import {
   listObjects,
   putObject,
   uploadPart,
+  uploadPartCopy,
 } from "./objects.ts";
 import {
   createBucket,
@@ -49,6 +50,7 @@ const handlers = {
   createMultipartUpload,
   completeMultipartUpload,
   uploadPart,
+  uploadPartCopy,
   abortMultipartUpload,
 };
 
@@ -124,6 +126,13 @@ export async function swiftResolver(
       }
       break;
     case "PUT":
+      if (
+        objectKey && queryParamKeys.has("partNumber") &&
+        req.headers.get("x-amz-copy-source")
+      ) {
+        return await handlers.uploadPartCopy(ctx, req, bucketConfig);
+      }
+
       if (objectKey && req.headers.get("x-amz-copy-source")) {
         return await handlers.copyObject(ctx, req, bucketConfig);
       }
