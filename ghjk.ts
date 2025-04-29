@@ -3,6 +3,7 @@ import { file, ports, stdDeps } from "./tools/deps.ts";
 // constants
 const DENO_VERSION = "2.2.3";
 const PYTHON_VERSION = "3.9.19";
+const DOCKER_CMD = Deno.env.get("DOCKER_CMD") ?? "docker";
 
 // installs
 const installs = {
@@ -48,14 +49,14 @@ const ghjk = file({
       }
 
       if (on.size > 0) {
-        await $.raw`docker compose ${
+        await $.raw`${DOCKER_CMD} compose ${
           [...on].flatMap((file) => [
             "-f",
             file,
           ])
         } up -d --remove-orphans`;
       } else {
-        await $.raw`docker compose ${
+        await $.raw`${DOCKER_CMD} compose ${
           Object.values(files).flatMap((file) => [
             "-f",
             file,
@@ -77,10 +78,10 @@ const ghjk = file({
       }
 
       if (arg === "up") {
-        await $.raw`docker compose up -d --remove-orphans`;
+        await $.raw`${DOCKER_CMD} compose up -d --remove-orphans`;
         console.log("It might take some time for the proxy to download dependencies based on your internet speed")
       } else {
-        await $.raw`docker compose down --remove-orphans --volumes`;
+        await $.raw`${DOCKER_CMD} compose down --remove-orphans --volumes`;
       }
     }
   },
@@ -89,8 +90,8 @@ const ghjk = file({
   "build-proxy": {
     desc: "Rebuild the proxy docker image",
     async fn($) {
-      await $.raw`docker-compose build --no-cache proxy`;
-      await $.raw`docker-compose up -d --force-recreate`;
+      await $.raw`${DOCKER_CMD} compose build --no-cache proxy`;
+      await $.raw`${DOCKER_CMD} compose up -d --force-recreate`;
     }
   },
 
@@ -99,6 +100,7 @@ const ghjk = file({
     async fn($) {
       // deno
       await $.raw`curl -fsSL https://deno.land/install.sh | sh`;
+      // FIXME: there's a pre-commit port down below??
       // pre-commit
       await $.raw`pip install pre-commit`;
       await $.raw`pre-commit install`;
@@ -131,7 +133,7 @@ const ghjk = file({
 // ghjk.install(installs.deno, installs.python, ports.pipi({ packageName: "pre-commit", version: "3.7.1" })[0],);
 
 export const sophon = ghjk.sophon;
-const { env, task } = ghjk;
+const { env } = ghjk;
 
 env("main")
 .install(

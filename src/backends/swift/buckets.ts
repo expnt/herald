@@ -184,17 +184,22 @@ export async function getBucketAcl(
   );
 
   if (response instanceof Error && bucketConfig.hasReplicas()) {
-    logger.warn(`Get Bucket ACL on Primary Bucket: ${bucketConfig.bucketName}`);
+    logger.warn(
+      `Get Bucket ACL on Primary Bucket Failed: ${bucketConfig.bucketName}`,
+      response,
+    );
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
         ? await s3Resolver(ctx, req, replica)
         : await swiftResolver(ctx, req, replica);
       if (res instanceof Error) {
-        logger.warn(`Get bucket ACL Failed on Replica: ${replica.name}`);
+        logger.warn(`Get bucket ACL Failed on Replica: ${replica.name}`, res);
         continue;
       }
       response = res;
+      // FIXME: shouldn't this break here? Are we trying all
+      // the replicas even if one works?
     }
   }
 

@@ -1,6 +1,7 @@
 {
   "imports": {
     "aws-sdk/client-s3": "npm:@aws-sdk/client-s3@3.712.0",
+    "aws-sdk/signature-v4a": "npm:@aws-sdk/signature-v4a@3.798.0",
     "http": "node:http",
     "url": "node:url",
     "buffer": "node:buffer",

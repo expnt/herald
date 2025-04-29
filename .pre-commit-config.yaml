@@ -31,6 +31,13 @@ repos:
         pass_filenames: false
         types:
           - ts
+      - id: deno-check
+        name: Deno lint
+        language: system
+        entry: bash -c 'deno check src/ tests/ benchmarks/'
+        pass_filenames: false
+        types:
+          - ts
   - repo: https://github.com/tofuutils/pre-commit-opentofu
     rev: v1.0.3
     hooks:

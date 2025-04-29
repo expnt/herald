@@ -5,7 +5,11 @@ import { getLogger, reportToSentry, setupLoggers } from "./utils/log.ts";
 import { resolveHandler } from "./backends/mod.ts";
 import { HTTPException } from "./types/http-exception.ts";
 import * as Sentry from "sentry";
-import { getAuthType, verifyServiceAccountToken } from "./auth/mod.ts";
+import {
+  getAuthType,
+  verifyS3SigV4,
+  verifyServiceAccountToken,
+} from "./auth/mod.ts";
 import { registerWorkers } from "./workers/mod.ts";
 import { registerSignalHandlers } from "./utils/signal_handlers.ts";
 import { HeraldContext } from "./types/mod.ts";
@@ -77,6 +81,11 @@ app.all("/*", async (c) => {
       token,
     )
     : "none";
+
+  await verifyS3SigV4(c.req.raw, {}, {
+    // TODO: integrate with service accounts
+    "minio": "password",
+  });
 
   const response = await resolveHandler(ctx, c, serviceAccountName);
   return response;
