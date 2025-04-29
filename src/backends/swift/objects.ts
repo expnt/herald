@@ -5,11 +5,7 @@ import {
   getBodyFromReq,
   retryWithExponentialBackoff,
 } from "../../utils/url.ts";
-import {
-  formatRFC3339Date,
-  toS3ListPartXmlContent,
-  toS3XmlContent,
-} from "./utils/mod.ts";
+import { toS3ListPartXmlContent, toS3XmlContent } from "./utils/mod.ts";
 import { NoSuchBucketException } from "../../constants/errors.ts";
 import { SwiftConfig } from "../../config/types.ts";
 import { S3_COPY_SOURCE_HEADER } from "../../constants/headers.ts";
@@ -18,6 +14,7 @@ import { prepareMirrorRequests } from "../mirror.ts";
 import { Bucket } from "../../buckets/mod.ts";
 import { s3Resolver } from "../s3/mod.ts";
 import {
+  convertSwiftCopyObjectToS3Response,
   convertSwiftDeleteObjectToS3Response,
   convertSwiftGetObjectToS3Response,
   convertSwiftHeadObjectToS3Response,
@@ -505,42 +502,7 @@ export async function copyObject(
     }
   }
 
-  const s3ResponseHeaders = new Headers();
-  s3ResponseHeaders.set(
-    "x-amz-copy-source-version-id",
-    response.headers.get("x-openstack-request-id") || "",
-  );
-  s3ResponseHeaders.set(
-    "x-amz-version-id",
-    response.headers.get("x-openstack-request-id") || "",
-  );
-  s3ResponseHeaders.set("x-amz-id-2", response.headers.get("x-trans-id") || "");
-  s3ResponseHeaders.set(
-    "x-amz-request-id",
-    response.headers.get("x-openstack-request-id") || "",
-  );
-  s3ResponseHeaders.set("ETag", response.headers.get("etag") || "");
-
-  let lastModified = response.headers.get("last-modified");
-  if (!lastModified) {
-    lastModified = "1970-01-01T00:00:00.000Z"; // default value for entries with no date
-  }
-  const s3ResponseBody = `
-    <CopyObjectResult>
-      <LastModified>${formatRFC3339Date(lastModified)}</LastModified>
-      <ETag>${response.headers.get("etag")}</ETag>
-    </CopyObjectResult>
-    `;
-
-  // https://docs.aws.amazon.com/AmazonS3/latest/API/API_CopyObject.html#API_CopyObject_ResponseSyntax
-  // https://docs.aws.amazon.com/AmazonS3/latest/API/API_CopyObject.html#API_CopyObject_ResponseSyntax
-  const s3Response = new Response(s3ResponseBody, {
-    status: 200,
-    statusText: response.statusText,
-    headers: s3ResponseHeaders,
-  });
-
-  return s3Response;
+  return convertSwiftCopyObjectToS3Response(response);
 }
 
 export function createMultipartUpload(
