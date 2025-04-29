@@ -84,7 +84,7 @@ export async function createBucket(
   const clonedHeaders = new Headers(response.headers);
   clonedHeaders.set("Content-Type", XML_CONTENT_TYPE);
   const newResponse = new Response(successResponse, {
-    status: response.status,
+    status: 200,
     statusText: response.statusText,
     headers: clonedHeaders,
   });

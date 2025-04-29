@@ -20,6 +20,7 @@ import { s3Resolver } from "../s3/mod.ts";
 import {
   convertSwiftDeleteObjectToS3Response,
   convertSwiftGetObjectToS3Response,
+  convertSwiftPutObjectToS3Response,
   convertSwiftUploadPartToS3Response,
   swiftResolver,
 } from "./mod.ts";
@@ -82,7 +83,7 @@ export async function putObject(
     }
   }
 
-  return response;
+  return convertSwiftPutObjectToS3Response(response);
 }
 
 export async function getObject(
