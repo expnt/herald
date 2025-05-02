@@ -70,6 +70,18 @@
           "buildDepConfigs": {},
           "portRef": "zstd_aa@0.1.0",
           "specifiedVersion": false
+        },
+        "bciqmwjmrl52opaj6ozcav6ujrccfj7j7p32opexmea6w4szaxbdrv6i": {
+          "version": "v1.9.1",
+          "buildDepConfigs": {},
+          "portRef": "opentofu_ghrel_fix@0.1.0",
+          "specifiedVersion": false
+        },
+        "bciqiqu7c3vqpsdt7ti7roafpiu26fmppsffsoi5g3ruf4fe73uetuca": {
+          "version": "todo",
+          "buildDepConfigs": {},
+          "portRef": "mc_minio@0.1.0",
+          "specifiedVersion": true
         }
       }
     },
@@ -89,7 +101,9 @@
             "ghjkEnvProvInstSet___main": {
               "installs": [
                 "bciqf7bx6igpppca7ks4fqjkivfqiacuyncmyln2tyw6fl4edl6mhs3q",
-                "bciqdtuhf425g6prb5fyupbcokttmkill6wyqk7bkphx3ueltl5mvu4q"
+                "bciqdtuhf425g6prb5fyupbcokttmkill6wyqk7bkphx3ueltl5mvu4q",
+                "bciqc5cvg3ipzl6giofosevlb3u5mdrst35iblvsrjtgw65xctgmi4iq",
+                "bciqg6sbbhanfx5e3zfa25be3hrlaz5zz7dsaddule5dvdiqcqo47hyq"
               ],
               "allowedBuildDeps": "bciqobhqmhpz3cphjnwec64vhpqkptbfmzhj5biicmcba5qpblmhq3ta"
             }
@@ -104,31 +118,31 @@
               "ty": "denoFile@v1",
               "key": "setup-auth",
               "desc": "Setup auth",
-              "envKey": "bciqa3gn6bjbmgjf7mvk7cv6wfjo23wj3vyppgtpqt4ovvxkpzjrcvua"
+              "envKey": "bciqlyqobzsnotejmiiy2mavp4kvstbnufncoriydici3c6pbs446oda"
             },
             "install-sys-deps": {
               "ty": "denoFile@v1",
               "key": "install-sys-deps",
               "desc": "Install system dependencies",
-              "envKey": "bciqa3gn6bjbmgjf7mvk7cv6wfjo23wj3vyppgtpqt4ovvxkpzjrcvua"
+              "envKey": "bciqlyqobzsnotejmiiy2mavp4kvstbnufncoriydici3c6pbs446oda"
             },
             "build-proxy": {
               "ty": "denoFile@v1",
               "key": "build-proxy",
               "desc": "Rebuild the proxy docker image",
-              "envKey": "bciqa3gn6bjbmgjf7mvk7cv6wfjo23wj3vyppgtpqt4ovvxkpzjrcvua"
+              "envKey": "bciqlyqobzsnotejmiiy2mavp4kvstbnufncoriydici3c6pbs446oda"
             },
             "dev-proxy": {
               "ty": "denoFile@v1",
               "key": "dev-proxy",
               "desc": "Run the proxy inside a docker container",
-              "envKey": "bciqa3gn6bjbmgjf7mvk7cv6wfjo23wj3vyppgtpqt4ovvxkpzjrcvua"
+              "envKey": "bciqlyqobzsnotejmiiy2mavp4kvstbnufncoriydici3c6pbs446oda"
             },
             "dev-compose": {
               "ty": "denoFile@v1",
               "key": "dev-compose",
               "desc": "Wrapper around docker compose to manage runtime dependencies",
-              "envKey": "bciqa3gn6bjbmgjf7mvk7cv6wfjo23wj3vyppgtpqt4ovvxkpzjrcvua"
+              "envKey": "bciqlyqobzsnotejmiiy2mavp4kvstbnufncoriydici3c6pbs446oda"
             }
           },
           "tasksNamed": [
@@ -144,17 +158,37 @@
         "id": "envs",
         "config": {
           "envs": {
-            "bciqfzekhtsrjd72noxifmici3ssck4jgvbjwhxwhhwtirzm7yomhxya": {
+            "bciqljvaoqekeiv4c75rwdhfdcxjy44w7nr3jyfdp4izls3wk6tdhrri": {
               "desc": "the default default environment.",
               "provides": [
+                {
+                  "ty": "posix.envVar",
+                  "key": "S3_ACCESS_KEY",
+                  "val": "minio"
+                },
+                {
+                  "ty": "posix.envVar",
+                  "key": "S3_SECRET_KEY",
+                  "val": "password"
+                },
                 {
                   "ty": "ghjk.ports.InstallSetRef",
                   "setId": "ghjkEnvProvInstSet___main"
                 }
               ]
             },
-            "bciqa3gn6bjbmgjf7mvk7cv6wfjo23wj3vyppgtpqt4ovvxkpzjrcvua": {
+            "bciqlyqobzsnotejmiiy2mavp4kvstbnufncoriydici3c6pbs446oda": {
               "provides": [
+                {
+                  "ty": "posix.envVar",
+                  "key": "S3_ACCESS_KEY",
+                  "val": "minio"
+                },
+                {
+                  "ty": "posix.envVar",
+                  "key": "S3_SECRET_KEY",
+                  "val": "password"
+                },
                 {
                   "ty": "ghjk.ports.InstallSetRef",
                   "setId": "ghjkEnvProvInstSet___main"
@@ -164,7 +198,7 @@
           },
           "defaultEnv": "main",
           "envsNamed": {
-            "main": "bciqfzekhtsrjd72noxifmici3ssck4jgvbjwhxwhhwtirzm7yomhxya"
+            "main": "bciqljvaoqekeiv4c75rwdhfdcxjy44w7nr3jyfdp4izls3wk6tdhrri"
           }
         }
       }
@@ -221,6 +255,40 @@
           "moduleSpecifier": "https://raw.githubusercontent.com/metatypedev/ghjk/v0.2.1/ports/pipi.ts"
         },
         "packageName": "pre-commit"
+      },
+      "bciqc5cvg3ipzl6giofosevlb3u5mdrst35iblvsrjtgw65xctgmi4iq": {
+        "port": {
+          "ty": "denoWorker@v1",
+          "name": "opentofu_ghrel_fix",
+          "platforms": [
+            "aarch64-linux",
+            "x86_64-linux",
+            "aarch64-darwin",
+            "x86_64-darwin",
+            "aarch64-freebsd",
+            "x86_64-freebsd",
+            "aarch64-windows",
+            "x86_64-windows",
+            "aarch64-solaris",
+            "x86_64-solaris"
+          ],
+          "version": "0.1.0",
+          "moduleSpecifier": "file:///home/asdf/repos/ecma/herald/tools/opentofu_ghrel.port.ts"
+        }
+      },
+      "bciqg6sbbhanfx5e3zfa25be3hrlaz5zz7dsaddule5dvdiqcqo47hyq": {
+        "version": "todo",
+        "port": {
+          "ty": "denoWorker@v1",
+          "name": "mc_minio",
+          "platforms": [
+            "x86_64-linux",
+            "aarch64-linux",
+            "windows-x86_64"
+          ],
+          "version": "0.1.0",
+          "moduleSpecifier": "file:///home/asdf/repos/ecma/herald/tools/mc.port.ts"
+        }
       },
       "bciqb6ua63xodzwxngnbjq35hfikiwzb3dclbqkc7e6xgjdt5jin4pia": {
         "manifest": {

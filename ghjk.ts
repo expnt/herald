@@ -1,4 +1,7 @@
 import { file, ports, stdDeps } from "./tools/deps.ts";
+import opentofu_ghrel from "./tools/opentofu_ghrel.port.ts";
+import mc from "./tools/mc.port.ts";
+
 
 // constants
 const DENO_VERSION = "2.2.3";
@@ -139,7 +142,12 @@ env("main")
 .install(
   installs.deno,
   ports.pipi({ packageName: "pre-commit", version: "3.7.1" })[0],
+  opentofu_ghrel(),
+  ...Deno.build.os == "linux" ? [mc({version: "todo"})] :[],
 ).allowedBuildDeps(
   ...stdDeps(),
     installs.python,
-);
+).vars({
+    S3_ACCESS_KEY: "minio",
+    S3_SECRET_KEY: "password",
+  });

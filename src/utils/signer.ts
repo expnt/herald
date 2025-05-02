@@ -1,19 +1,33 @@
-import { S3BucketConfig, S3Config } from "../config/mod.ts";
 import { HttpRequest, QueryParameterBag } from "@smithy/types";
 import { Sha256 } from "@aws-crypto/sha256";
 import * as s from "@smithy/signature-v4";
-import { AUTH_HEADER } from "../constants/headers.ts";
+import { AMZ_DATE_HEADER, AUTH_HEADER } from "../constants/headers.ts";
 import { APIErrors, getAPIErrorResponse } from "../types/api_errors.ts";
 import { HTTPException } from "../types/http-exception.ts";
+import { S3Config, SwiftConfig } from "../config/types.ts";
+import { getLogger } from "./log.ts";
+import { z as zod } from "zod";
+
+const logger = getLogger(import.meta);
 
 /**
  * Returns a V4 signer for S3 requests after loading configs.
  * @returns The V4 signer object.
  */
-function getV4Signer(config: S3Config) {
+function getV4Signer(
+  config: S3Config | SwiftConfig,
+  /**
+   * If other credentials are desired.
+   */
+  creds?: S3Config["credentials"],
+) {
   const signer = new s.SignatureV4({
     region: config.region,
-    credentials: config.credentials,
+    credentials: creds ??
+      ("accessKeyId" in config.credentials ? config.credentials : {
+        accessKeyId: config.credentials.username,
+        secretAccessKey: config.credentials.password,
+      }),
     service: "s3", // TODO: get from config
     sha256: Sha256,
     applyChecksum: true,
@@ -26,12 +40,85 @@ function getV4Signer(config: S3Config) {
  * Extracts the signature from the request.
  *
  * @param {Request} request - The request object.
- * @returns {string} - The extracted signature.
  * @throws {HTTPException} - If the authentication header is empty, the sign tag is missing, or the sign tag is invalid.
  */
-export function extractSignature(request: Request): string {
-  const authHeader = request.headers.get(AUTH_HEADER);
+export function extractSignature(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const queryParams = Object.fromEntries(
+    searchParams.entries().map(([key, val]) => [key.toLowerCase(), val]),
+  );
 
+  const parsed = zod.object({
+    "x-amz-algorithm": zod.string(),
+    "x-amz-credential": zod.string(),
+    "x-amz-signature": zod.string(),
+    "x-amz-signedheaders": zod.string(),
+    "x-amz-expires": zod.string().transform((str, ctx) => {
+      const parsed = parseInt(str);
+      if (isNaN(parsed)) {
+        ctx.addIssue({
+          code: zod.ZodIssueCode.custom,
+          message: "Not a number",
+        });
+        return zod.NEVER;
+      }
+      return parsed;
+    }),
+    "x-amz-date": zod.string().transform((str, ctx) => {
+      try {
+        return parseAmzDate(str);
+      } catch {
+        ctx.addIssue({
+          code: zod.ZodIssueCode.custom,
+          message: "Not a valid amz date",
+        });
+        return zod.NEVER;
+      }
+    }),
+    "x-amz-content-sha256": zod.string(),
+    "x-id": zod.string(),
+  }).safeParse(queryParams);
+  if (parsed.success) {
+    const sigV4Regex = /^([^/]+)\/(\d{8})\/([^/]+)\/([^/]+)\/aws4_request/;
+
+    const match = parsed.data["x-amz-credential"].match(sigV4Regex);
+    if (!match) {
+      const errResponse = getAPIErrorResponse(APIErrors.ErrAuthHeaderEmpty);
+      throw new HTTPException(
+        errResponse.status,
+        { res: errResponse },
+      );
+    }
+    const [
+      ,
+      accessKeyId,
+      dateStamp,
+      region,
+      service,
+    ] = match;
+
+    const signedHeaders = parsed.data["x-amz-signedheaders"].split(";").map((
+      h,
+    ) => h.trim().toLowerCase()).sort(); // Keep sorted
+
+    return {
+      source: "pre-sign" as const,
+      expiresIn: parsed.data["x-amz-expires"],
+      date: parsed.data["x-amz-date"],
+      ...{
+        algorithm: parsed.data["x-amz-algorithm"],
+        accessKeyId,
+        dateStamp,
+        region,
+        service,
+        signedHeaders,
+        signature: parsed.data["x-amz-signature"],
+        credentialScope: `${dateStamp}/${region}/${service}/aws4_request`,
+      } satisfies ReturnType<typeof parseAuthorizationHeader>,
+    };
+  }
+
+  const authHeader = request.headers.get(AUTH_HEADER);
   if (authHeader === null) {
     const errResponse = getAPIErrorResponse(APIErrors.ErrAuthHeaderEmpty);
     throw new HTTPException(
@@ -39,11 +126,8 @@ export function extractSignature(request: Request): string {
       { res: errResponse },
     );
   }
-
-  const splittedAuthHeader = authHeader.split(", ");
-  const rawSignature = splittedAuthHeader.at(splittedAuthHeader.length - 1);
-
-  if (!rawSignature) {
+  const parsedHeader = parseAuthorizationHeader(authHeader);
+  if (!parsedHeader) {
     const errResponse = getAPIErrorResponse(APIErrors.ErrMissingSignTag);
     throw new HTTPException(
       errResponse.status,
@@ -51,16 +135,49 @@ export function extractSignature(request: Request): string {
     );
   }
 
-  const signaturePrefix = "Signature=";
-  if (rawSignature?.slice(0, signaturePrefix.length - 1) !== signaturePrefix) {
-    const errResponse = getAPIErrorResponse(APIErrors.ErrInvalidSignTag);
-    throw new HTTPException(
-      errResponse.status,
-      { res: errResponse },
-    );
+  return {
+    source: "header" as const,
+    date: parseAmzDate(request.headers.get(AMZ_DATE_HEADER)!),
+    ...parsedHeader,
+  };
+}
+
+function parseAuthorizationHeader(
+  authHeader: string,
+) {
+  const sigV4Regex =
+    /^AWS4-([A-Z0-9-]+) Credential=([^/]+)\/(\d{8})\/([^/]+)\/([^/]+)\/aws4_request, SignedHeaders=([^,]+), Signature=(.+)$/;
+  const match = authHeader.match(sigV4Regex);
+
+  if (!match) {
+    return null;
   }
 
-  return rawSignature.slice(signaturePrefix.length);
+  const [
+    ,
+    algorithm,
+    accessKeyId,
+    dateStamp,
+    region,
+    service,
+    signedHeadersStr,
+    signature,
+  ] = match;
+
+  const signedHeaders = signedHeadersStr.split(";").map((h) =>
+    h.trim().toLowerCase()
+  ).sort(); // Keep sorted
+
+  return {
+    algorithm,
+    accessKeyId,
+    dateStamp,
+    region,
+    service,
+    signedHeaders,
+    signature,
+    credentialScope: `${dateStamp}/${region}/${service}/aws4_request`,
+  };
 }
 
 /**
@@ -70,7 +187,7 @@ export function extractSignature(request: Request): string {
  * @returns The signed headers as an array of strings.
  * @throws {HTTPException} If the authentication header is empty, the signed headers tag is missing, or the signed headers are invalid.
  */
-function extractSignedHeaders(request: Request) {
+function _extractSignedHeaders(request: Request) {
   const authHeader = request.headers.get(AUTH_HEADER);
 
   if (authHeader === null) {
@@ -116,7 +233,7 @@ function extractSignedHeaders(request: Request) {
  */
 export async function signRequestV4(
   req: Request,
-  bucketConfig: S3Config,
+  bucketConfig: S3Config | SwiftConfig,
 ) {
   const signer = getV4Signer(bucketConfig);
 
@@ -160,6 +277,7 @@ export async function signRequestV4(
     protocol: reqUrl.protocol,
     port: parseInt(reqUrl.port),
     query: getQueryParameters(req),
+    body: req.body,
   };
 
   const signed = await signer.sign(signableReq, {
@@ -169,13 +287,14 @@ export async function signRequestV4(
   const newReq = new Request(reqUrl, {
     method: signed.method,
     headers: signed.headers,
-    body: req.body,
+    body: signed.body,
     redirect: undefined,
   });
 
   return newReq;
 }
 
+// TODO: check if access key has access to object
 /**
  * Verifies the V4 signature of the original request.
  *
@@ -184,19 +303,53 @@ export async function signRequestV4(
  */
 export async function verifyV4Signature(
   originalRequest: Request,
-  bucketConfig: S3BucketConfig,
+  bucketConfig: S3Config | SwiftConfig,
+  bucketCredentials: Record<string, string>,
 ) {
   const originalSignature = extractSignature(originalRequest);
-  const signableHeaders = extractSignedHeaders(originalRequest);
 
-  originalRequest.headers.delete(AUTH_HEADER);
-  const signer = getV4Signer(bucketConfig.config);
+  // originalRequest.headers.delete(AUTH_HEADER);
+  // let signer = signers.get(bucketConfig.credentials.)
+  const signer = getV4Signer(
+    bucketConfig,
+    bucketCredentials[originalSignature.accessKeyId]
+      ? {
+        accessKeyId: originalSignature.accessKeyId,
+        secretAccessKey: bucketCredentials[originalSignature.accessKeyId],
+      }
+      : "accessKeyId" in bucketConfig.credentials
+      ? bucketConfig.credentials
+      : {
+        accessKeyId: bucketConfig.credentials.username,
+        secretAccessKey: bucketConfig.credentials.password,
+      },
+  );
 
-  const signableRequest = await toSignableRequest(originalRequest);
+  const signableRequest = toSignableRequest(originalRequest);
 
-  const signedRequest = await signer.sign(signableRequest, {
-    signableHeaders: new Set(signableHeaders),
-  });
+  const CLOCK_SKEW = 15 * 60 * 1000;
+  if (originalSignature.source == "pre-sign") {
+    const now = new Date().getTime();
+    const expiry = originalSignature.date.getTime() +
+      originalSignature.expiresIn * 1000;
+    if (now > expiry + CLOCK_SKEW) {
+      const errResponse = getAPIErrorResponse(
+        APIErrors.ErrExpiredPresign,
+      );
+      throw new HTTPException(errResponse.status, { res: errResponse });
+    }
+  }
+
+  const signedRequest = originalSignature.source == "pre-sign"
+    ? await signer.presign(signableRequest, {
+      signableHeaders: new Set(originalSignature.signedHeaders),
+      expiresIn: originalSignature.expiresIn,
+      signingDate: originalSignature.date,
+    })
+    : await signer.sign(signableRequest, {
+      signableHeaders: new Set(originalSignature.signedHeaders),
+      signingDate: originalSignature.date,
+    });
 
   const signedNativeRequest = toNativeRequest(
     signedRequest,
@@ -205,7 +358,11 @@ export async function verifyV4Signature(
 
   const calculatedSignature = extractSignature(signedNativeRequest);
 
-  if (originalSignature !== calculatedSignature) {
+  if (originalSignature.signature !== calculatedSignature.signature) {
+    logger.error("bad signature on request", {
+      originalSignature,
+      calculatedSignature,
+    });
     const errResponse = getAPIErrorResponse(APIErrors.ErrSignatureDoesNotMatch);
     throw new HTTPException(errResponse.status, { res: errResponse });
   }
@@ -216,7 +373,7 @@ export async function verifyV4Signature(
  * @param req - The Request object to convert.
  * @returns A Promise that resolves to the converted HttpRequest object.
  */
-export async function toSignableRequest(req: Request): Promise<HttpRequest> {
+export function toSignableRequest(req: Request): HttpRequest {
   const reqUrl = new URL(req.url);
   const crtHeaders: [string, string][] = [];
   const headersRecord: Record<string, string> = {};
@@ -225,7 +382,7 @@ export async function toSignableRequest(req: Request): Promise<HttpRequest> {
     crtHeaders.push([key, val]);
   });
 
-  const reqBody = await req.body?.getReader().read();
+  // const reqBody = await req.body?.getReader().read();
 
   const httpReq: HttpRequest = {
     method: req.method,
@@ -234,7 +391,7 @@ export async function toSignableRequest(req: Request): Promise<HttpRequest> {
     hostname: reqUrl.hostname,
     protocol: reqUrl.protocol,
     port: parseInt(reqUrl.port),
-    body: reqBody ? reqBody.value : undefined,
+    // body: reqBody ? reqBody.value : undefined,
     query: getQueryParameters(req),
   };
 
@@ -289,4 +446,17 @@ function getQueryParameters(request: Request): QueryParameterBag {
   });
 
   return queryParameters;
+}
+
+function parseAmzDate(str: string) {
+  const date = new Date(
+    str.replace(
+      /(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/,
+      "$1-$2-$3T$4:$5:$6Z",
+    ),
+  );
+  if (isNaN(date.valueOf())) {
+    throw new Error(`invalid amz date: ${str}`);
+  }
+  return date;
 }

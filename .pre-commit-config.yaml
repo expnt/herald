@@ -32,7 +32,7 @@ repos:
         types:
           - ts
       - id: deno-check
-        name: Deno lint
+        name: Deno check
         language: system
         entry: bash -c 'deno check src/ tests/ benchmarks/'
         pass_filenames: false

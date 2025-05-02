@@ -119,7 +119,7 @@ export async function putObject(
   );
 
   if (response instanceof Error) {
-    logger.warn(`Put Object Failed: ${response.message}`);
+    logger.warn(`Put Object Failed: ${response.message}`, { response });
     const errorXml = `<?xml version="1.0" encoding="UTF-8"?>
 <Error>
   <Code>${response.name}</Code>
@@ -136,7 +136,7 @@ export async function putObject(
 
   if (response.status != 200) {
     const errMessage = `Put Object Failed: ${response.statusText}`;
-    logger.warn(errMessage);
+    logger.warn(errMessage, { response });
     reportToSentry(errMessage);
   } else {
     logger.info(`Put Object Successful: ${response.statusText}`);

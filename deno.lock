@@ -44,7 +44,7 @@
     "npm:@aws-crypto/sha256-js@5.2.0": "5.2.0",
     "npm:@aws-sdk/client-s3@3.712.0": "3.712.0_@aws-sdk+client-sts@3.712.0__@aws-sdk+client-sso-oidc@3.712.0___@aws-sdk+client-sts@3.712.0_@aws-sdk+client-sso-oidc@3.712.0__@aws-sdk+client-sts@3.712.0___@aws-sdk+client-sso-oidc@3.712.0____@aws-sdk+client-sts@3.712.0__@aws-sdk+client-sts@3.712.0___@aws-sdk+client-sso-oidc@3.712.0____@aws-sdk+client-sts@3.712.0_____@aws-sdk+client-sso-oidc@3.712.0___@aws-sdk+client-sso-oidc@3.712.0",
     "npm:@aws-sdk/lib-storage@3.712.0": "3.712.0_@aws-sdk+client-s3@3.712.0__@aws-sdk+client-sts@3.712.0___@aws-sdk+client-sso-oidc@3.712.0____@aws-sdk+client-sts@3.712.0__@aws-sdk+client-sso-oidc@3.712.0___@aws-sdk+client-sts@3.712.0____@aws-sdk+client-sso-oidc@3.712.0_____@aws-sdk+client-sts@3.712.0___@aws-sdk+client-sts@3.712.0____@aws-sdk+client-sso-oidc@3.712.0_____@aws-sdk+client-sts@3.712.0______@aws-sdk+client-sso-oidc@3.712.0____@aws-sdk+client-sso-oidc@3.712.0",
-    "npm:@aws-sdk/signature-v4a@3.798.0": "3.798.0",
+    "npm:@aws-sdk/s3-request-presigner@3.712.0": "3.712.0",
     "npm:@noble/hashes@1.4.0": "1.4.0",
     "npm:@smithy/signature-v4@4.2.3": "4.2.3",
     "npm:@smithy/types@3.7.1": "3.7.1",
@@ -314,7 +314,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -324,7 +324,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-stream",
         "@smithy/util-utf8@3.0.0",
@@ -377,7 +377,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -387,7 +387,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-stream",
         "@smithy/util-utf8@3.0.0",
@@ -440,7 +440,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -450,7 +450,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-stream",
         "@smithy/util-utf8@3.0.0",
@@ -503,7 +503,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -513,7 +513,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-stream",
         "@smithy/util-utf8@3.0.0",
@@ -550,7 +550,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -560,7 +560,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -595,7 +595,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -605,7 +605,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -640,7 +640,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -650,7 +650,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -685,7 +685,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -695,7 +695,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -730,7 +730,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -740,7 +740,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -775,7 +775,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -785,7 +785,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -820,7 +820,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -830,7 +830,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -865,7 +865,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -875,7 +875,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -910,7 +910,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -920,7 +920,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -955,7 +955,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -965,7 +965,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1000,7 +1000,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1010,7 +1010,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1045,7 +1045,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1055,7 +1055,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1090,7 +1090,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1100,7 +1100,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1135,7 +1135,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1145,7 +1145,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1180,7 +1180,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1190,7 +1190,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1225,7 +1225,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1235,7 +1235,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1270,7 +1270,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1280,7 +1280,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1315,7 +1315,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1325,7 +1325,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1360,7 +1360,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1370,7 +1370,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1405,7 +1405,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1415,7 +1415,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1450,7 +1450,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1460,7 +1460,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1495,7 +1495,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1505,7 +1505,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1538,7 +1538,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1548,7 +1548,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1583,7 +1583,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1593,7 +1593,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1628,7 +1628,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1638,7 +1638,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1673,7 +1673,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1683,7 +1683,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1718,7 +1718,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1728,7 +1728,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1763,7 +1763,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1773,7 +1773,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1808,7 +1808,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1818,7 +1818,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1853,7 +1853,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1863,7 +1863,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1898,7 +1898,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1908,7 +1908,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1943,7 +1943,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1953,7 +1953,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -1988,7 +1988,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -1998,7 +1998,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -2033,7 +2033,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -2043,7 +2043,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -2078,7 +2078,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -2088,7 +2088,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -2123,7 +2123,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -2133,7 +2133,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -2168,7 +2168,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -2178,7 +2178,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -2213,7 +2213,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -2223,7 +2223,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -2258,7 +2258,7 @@
         "@smithy/middleware-stack",
         "@smithy/node-config-provider",
         "@smithy/node-http-handler",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
@@ -2268,7 +2268,7 @@
         "@smithy/util-defaults-mode-browser",
         "@smithy/util-defaults-mode-node",
         "@smithy/util-endpoints",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -2281,11 +2281,11 @@
         "@smithy/core",
         "@smithy/node-config-provider",
         "@smithy/property-provider",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/signature-v4@4.2.4",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "fast-xml-parser",
         "tslib"
       ]
@@ -2308,7 +2308,7 @@
         "@smithy/fetch-http-handler",
         "@smithy/node-http-handler",
         "@smithy/property-provider",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/util-stream",
@@ -3897,7 +3897,7 @@
         "@aws-sdk/types",
         "@aws-sdk/util-arn-parser",
         "@smithy/node-config-provider",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/types@3.7.2",
         "@smithy/util-config-provider",
         "tslib"
@@ -3907,7 +3907,7 @@
       "integrity": "sha512-Tbl/DFvE4rHl8lMb9IzetwK4tf5R3VeHZkvEXQalsWoK0tbEQ8kXWi7wAYO4qbE7bFVvaxKX+irjJjTxf3BrCQ==",
       "dependencies": [
         "@aws-sdk/types",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/types@3.7.2",
         "tslib"
       ]
@@ -3922,9 +3922,9 @@
         "@aws-sdk/types",
         "@smithy/is-array-buffer@3.0.0",
         "@smithy/node-config-provider",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/types@3.7.2",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-stream",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -3934,7 +3934,7 @@
       "integrity": "sha512-8gQYCYAaIw4lOCd5WYdf15Y/61MgRsAnrb2eiTl+icMlUOOzl8aOl5iDwm/Idp0oHZTflwxM4XSvGXO83PRWcw==",
       "dependencies": [
         "@aws-sdk/types",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/types@3.7.2",
         "tslib"
       ]
@@ -3959,7 +3959,7 @@
       "integrity": "sha512-PObL/wLr4lkfbQ0yXUWaoCWu/jcwfwZzCjsUiXW/H6hW9b/00enZxmx7OhtJYaR6xmh/Lcx5wbhIoDCbzdv0tw==",
       "dependencies": [
         "@aws-sdk/types",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/types@3.7.2",
         "tslib"
       ]
@@ -3972,12 +3972,12 @@
         "@aws-sdk/util-arn-parser",
         "@smithy/core",
         "@smithy/node-config-provider",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/signature-v4@4.2.4",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
         "@smithy/util-config-provider",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-stream",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -3998,7 +3998,7 @@
         "@aws-sdk/types",
         "@aws-sdk/util-endpoints",
         "@smithy/core",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/types@3.7.2",
         "tslib"
       ]
@@ -4010,7 +4010,20 @@
         "@smithy/node-config-provider",
         "@smithy/types@3.7.2",
         "@smithy/util-config-provider",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
+        "tslib"
+      ]
+    },
+    "@aws-sdk/s3-request-presigner@3.712.0": {
+      "integrity": "sha512-LE+uNtGDyypRMxBfrJmkpWaW+x0QFp4qYH+nZYMDLdD0um8UrTrbVSfvIxcVm9QsL1gVy6WkpUj+5cU3YZBgyQ==",
+      "dependencies": [
+        "@aws-sdk/signature-v4-multi-region",
+        "@aws-sdk/types",
+        "@aws-sdk/util-format-url",
+        "@smithy/middleware-endpoint",
+        "@smithy/protocol-http",
+        "@smithy/smithy-client",
+        "@smithy/types@3.7.2",
         "tslib"
       ]
     },
@@ -4019,16 +4032,9 @@
       "dependencies": [
         "@aws-sdk/middleware-sdk-s3",
         "@aws-sdk/types",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/signature-v4@4.2.4",
         "@smithy/types@3.7.2",
-        "tslib"
-      ]
-    },
-    "@aws-sdk/signature-v4a@3.798.0": {
-      "integrity": "sha512-0hyx8dXXrwkFxOWL7Kagh1BApoDOkvEvL9akXxrT8f/dSmVwjhFOcINgUz2BlI28FpXGcgXgD5f2lOZGMqGUrA==",
-      "dependencies": [
-        "@smithy/signature-v4a",
         "tslib"
       ]
     },
@@ -4321,6 +4327,15 @@
         "tslib"
       ]
     },
+    "@aws-sdk/util-format-url@3.709.0": {
+      "integrity": "sha512-HGR11hx1KeFfoub/TACf+Yyal37lR85791Di2QPaElQThaqztLlppxale3EohKboOFf7Q/zvslJyM0fmgrlpQw==",
+      "dependencies": [
+        "@aws-sdk/types",
+        "@smithy/querystring-builder",
+        "@smithy/types@3.7.2",
+        "tslib"
+      ]
+    },
     "@aws-sdk/util-locate-window@3.693.0": {
       "integrity": "sha512-ttrag6haJLWABhLqtg1Uf+4LgHWIMOVSYL+VYZmAp2v4PUGOwWmWQH0Zk8RM7YuQcLfH/EoR72/Yxz6A4FKcuw==",
       "dependencies": [
@@ -4382,7 +4397,7 @@
         "@smithy/node-config-provider",
         "@smithy/types@3.7.2",
         "@smithy/util-config-provider",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "tslib"
       ]
     },
@@ -4390,10 +4405,10 @@
       "integrity": "sha512-8olpW6mKCa0v+ibCjoCzgZHQx1SQmZuW/WkrdZo73wiTprTH6qhmskT60QLFdT9DRa5mXxjz89kQPZ7ZSsoqqg==",
       "dependencies": [
         "@smithy/middleware-serde",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/types@3.7.2",
         "@smithy/util-body-length-browser",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-stream",
         "@smithy/util-utf8@3.0.0",
         "tslib"
@@ -4414,7 +4429,7 @@
       "dependencies": [
         "@aws-crypto/crc32",
         "@smithy/types@3.7.2",
-        "@smithy/util-hex-encoding@3.0.0",
+        "@smithy/util-hex-encoding",
         "tslib"
       ]
     },
@@ -4452,7 +4467,7 @@
     "@smithy/fetch-http-handler@4.1.3": {
       "integrity": "sha512-6SxNltSncI8s689nvnzZQc/dPXcpHQ34KUj6gR/HBroytKOd/isMG3gJF/zBE1TBmTT18TXyzhg3O3SOOqGEhA==",
       "dependencies": [
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/querystring-builder",
         "@smithy/types@3.7.2",
         "@smithy/util-base64",
@@ -4504,12 +4519,6 @@
         "tslib"
       ]
     },
-    "@smithy/is-array-buffer@4.0.0": {
-      "integrity": "sha512-saYhF8ZZNoJDTvJBEWgeBccCg+yvp1CX+ed12yORU3NilJScfc6gfch2oVb4QgxZrGUx3/ZJlb+c/dJbyupxlw==",
-      "dependencies": [
-        "tslib"
-      ]
-    },
     "@smithy/md5-js@3.0.11": {
       "integrity": "sha512-3NM0L3i2Zm4bbgG6Ymi9NBcxXhryi3uE8fIfHJZIOfZVxOkGdjdgjR9A06SFIZCfnEIWKXZdm6Yq5/aPXFFhsQ==",
       "dependencies": [
@@ -4521,7 +4530,7 @@
     "@smithy/middleware-content-length@3.0.13": {
       "integrity": "sha512-zfMhzojhFpIX3P5ug7jxTjfUcIPcGjcQYzB9t+rv0g1TX7B0QdwONW+ATouaLoD7h7LOw/ZlXfkq4xJ/g2TrIw==",
       "dependencies": [
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/types@3.7.2",
         "tslib"
       ]
@@ -4535,7 +4544,7 @@
         "@smithy/shared-ini-file-loader",
         "@smithy/types@3.7.2",
         "@smithy/url-parser",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "tslib"
       ]
     },
@@ -4543,11 +4552,11 @@
       "integrity": "sha512-yVRr/AAtPZlUvwEkrq7S3x7Z8/xCd97m2hLDaqdz6ucP2RKHsBjEqaUA2ebNv2SsZoPEi+ZD0dZbOB1u37tGCA==",
       "dependencies": [
         "@smithy/node-config-provider",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/service-error-classification",
         "@smithy/smithy-client",
         "@smithy/types@3.7.2",
-        "@smithy/util-middleware@3.0.11",
+        "@smithy/util-middleware",
         "@smithy/util-retry",
         "tslib",
         "uuid"
@@ -4580,7 +4589,7 @@
       "integrity": "sha512-BrpZOaZ4RCbcJ2igiSNG16S+kgAc65l/2hmxWdmhyoGWHTLlzQzr06PXavJp9OBlPEG/sHlqdxjWmjzV66+BSQ==",
       "dependencies": [
         "@smithy/abort-controller",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/querystring-builder",
         "@smithy/types@3.7.2",
         "tslib"
@@ -4600,18 +4609,11 @@
         "tslib"
       ]
     },
-    "@smithy/protocol-http@5.1.0": {
-      "integrity": "sha512-KxAOL1nUNw2JTYrtviRRjEnykIDhxc84qMBzxvu1MUfQfHTuBlCG7PA6EdVwqpJjH7glw7FqQoFxUJSyBQgu7g==",
-      "dependencies": [
-        "@smithy/types@4.2.0",
-        "tslib"
-      ]
-    },
     "@smithy/querystring-builder@3.0.11": {
       "integrity": "sha512-u+5HV/9uJaeLj5XTb6+IEF/dokWWkEqJ0XiaRRogyREmKGUgZnNecLucADLdauWFKUNbQfulHFEZEdjwEBjXRg==",
       "dependencies": [
         "@smithy/types@3.7.2",
-        "@smithy/util-uri-escape@3.0.0",
+        "@smithy/util-uri-escape",
         "tslib"
       ]
     },
@@ -4639,11 +4641,11 @@
       "integrity": "sha512-pPSQQ2v2vu9vc8iew7sszLd0O09I5TRc5zhY71KA+Ao0xYazIG+uLeHbTJfIWGO3BGVLiXjUr3EEeCcEQLjpWQ==",
       "dependencies": [
         "@smithy/is-array-buffer@3.0.0",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/types@3.7.2",
-        "@smithy/util-hex-encoding@3.0.0",
-        "@smithy/util-middleware@3.0.11",
-        "@smithy/util-uri-escape@3.0.0",
+        "@smithy/util-hex-encoding",
+        "@smithy/util-middleware",
+        "@smithy/util-uri-escape",
         "@smithy/util-utf8@3.0.0",
         "tslib"
       ]
@@ -4652,35 +4654,12 @@
       "integrity": "sha512-5JWeMQYg81TgU4cG+OexAWdvDTs5JDdbEZx+Qr1iPbvo91QFGzjy0IkXAKaXUHqmKUJgSHK0ZxnCkgZpzkeNTA==",
       "dependencies": [
         "@smithy/is-array-buffer@3.0.0",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/types@3.7.2",
-        "@smithy/util-hex-encoding@3.0.0",
-        "@smithy/util-middleware@3.0.11",
-        "@smithy/util-uri-escape@3.0.0",
+        "@smithy/util-hex-encoding",
+        "@smithy/util-middleware",
+        "@smithy/util-uri-escape",
         "@smithy/util-utf8@3.0.0",
-        "tslib"
-      ]
-    },
-    "@smithy/signature-v4@5.1.0": {
-      "integrity": "sha512-4t5WX60sL3zGJF/CtZsUQTs3UrZEDO2P7pEaElrekbLqkWPYkgqNW1oeiNYC6xXifBnT9dVBOnNQRvOE9riU9w==",
-      "dependencies": [
-        "@smithy/is-array-buffer@4.0.0",
-        "@smithy/protocol-http@5.1.0",
-        "@smithy/types@4.2.0",
-        "@smithy/util-hex-encoding@4.0.0",
-        "@smithy/util-middleware@4.0.2",
-        "@smithy/util-uri-escape@4.0.0",
-        "@smithy/util-utf8@4.0.0",
-        "tslib"
-      ]
-    },
-    "@smithy/signature-v4a@3.0.1": {
-      "integrity": "sha512-Yx/jssI0ok46v2Hyj18qctnwQPTGmAuUzkhuqBHDurjIOYEG31a38UZudugZzsF3Q+bn/6MIcgv0f+byEWqgdw==",
-      "dependencies": [
-        "@smithy/signature-v4@5.1.0",
-        "@smithy/types@4.2.0",
-        "@smithy/util-hex-encoding@4.0.0",
-        "@smithy/util-utf8@4.0.0",
         "tslib"
       ]
     },
@@ -4690,7 +4669,7 @@
         "@smithy/core",
         "@smithy/middleware-endpoint",
         "@smithy/middleware-stack",
-        "@smithy/protocol-http@4.1.8",
+        "@smithy/protocol-http",
         "@smithy/types@3.7.2",
         "@smithy/util-stream",
         "tslib"
@@ -4704,12 +4683,6 @@
     },
     "@smithy/types@3.7.2": {
       "integrity": "sha512-bNwBYYmN8Eh9RyjS1p2gW6MIhSO2rl7X9QeLM8iTdcGRP+eDiIWDt66c9IysCc22gefKszZv+ubV9qZc7hdESg==",
-      "dependencies": [
-        "tslib"
-      ]
-    },
-    "@smithy/types@4.2.0": {
-      "integrity": "sha512-7eMk09zQKCO+E/ivsjQv+fDlOupcFUCSC/L2YUPgwhvowVGWbPQHjEFcmjt7QQ4ra5lyowS92SV53Zc6XD4+fg==",
       "dependencies": [
         "tslib"
       ]
@@ -4756,13 +4729,6 @@
         "tslib"
       ]
     },
-    "@smithy/util-buffer-from@4.0.0": {
-      "integrity": "sha512-9TOQ7781sZvddgO8nxueKi3+yGvkY35kotA0Y6BWRajAv8jjmigQ1sBwz0UX47pQMYXJPahSKEKYFgt+rXdcug==",
-      "dependencies": [
-        "@smithy/is-array-buffer@4.0.0",
-        "tslib"
-      ]
-    },
     "@smithy/util-config-provider@3.0.0": {
       "integrity": "sha512-pbjk4s0fwq3Di/ANL+rCvJMKM5bzAQdE5S/6RL5NXgMExFAi6UgQMPOm5yPaIWPpr+EOXKXRonJ3FoxKf4mCJQ==",
       "dependencies": [
@@ -4805,23 +4771,10 @@
         "tslib"
       ]
     },
-    "@smithy/util-hex-encoding@4.0.0": {
-      "integrity": "sha512-Yk5mLhHtfIgW2W2WQZWSg5kuMZCVbvhFmC7rV4IO2QqnZdbEFPmQnCcGMAX2z/8Qj3B9hYYNjZOhWym+RwhePw==",
-      "dependencies": [
-        "tslib"
-      ]
-    },
     "@smithy/util-middleware@3.0.11": {
       "integrity": "sha512-dWpyc1e1R6VoXrwLoLDd57U1z6CwNSdkM69Ie4+6uYh2GC7Vg51Qtan7ITzczuVpqezdDTKJGJB95fFvvjU/ow==",
       "dependencies": [
         "@smithy/types@3.7.2",
-        "tslib"
-      ]
-    },
-    "@smithy/util-middleware@4.0.2": {
-      "integrity": "sha512-6GDamTGLuBQVAEuQ4yDQ+ti/YINf/MEmIegrEeg7DdB/sld8BX1lqt9RRuIcABOhAGTA50bRbPzErez7SlDtDQ==",
-      "dependencies": [
-        "@smithy/types@4.2.0",
         "tslib"
       ]
     },
@@ -4841,19 +4794,13 @@
         "@smithy/types@3.7.2",
         "@smithy/util-base64",
         "@smithy/util-buffer-from@3.0.0",
-        "@smithy/util-hex-encoding@3.0.0",
+        "@smithy/util-hex-encoding",
         "@smithy/util-utf8@3.0.0",
         "tslib"
       ]
     },
     "@smithy/util-uri-escape@3.0.0": {
       "integrity": "sha512-LqR7qYLgZTD7nWLBecUi4aqolw8Mhza9ArpNEQ881MJJIU2sE5iHCK6TdyqqzcDLy0OPe10IY4T8ctVdtynubg==",
-      "dependencies": [
-        "tslib"
-      ]
-    },
-    "@smithy/util-uri-escape@4.0.0": {
-      "integrity": "sha512-77yfbCbQMtgtTylO9itEAdpPXSog3ZxMe09AEhm0dU0NLTalV70ghDZFR+Nfi1C60jnJoh/Re4090/DuZh2Omg==",
       "dependencies": [
         "tslib"
       ]
@@ -4869,13 +4816,6 @@
       "integrity": "sha512-rUeT12bxFnplYDe815GXbq/oixEGHfRFFtcTF3YdDi/JaENIM6aSYYLJydG83UNzLXeRI5K8abYd/8Sp/QM0kA==",
       "dependencies": [
         "@smithy/util-buffer-from@3.0.0",
-        "tslib"
-      ]
-    },
-    "@smithy/util-utf8@4.0.0": {
-      "integrity": "sha512-b+zebfKCfRdgNJDknHCob3O7FpeYQN6ZG6YLExMcasDHsCXlsXCEuiPZeLnJLpwa5dvPetGlnGCiMHuLwGvFow==",
-      "dependencies": [
-        "@smithy/util-buffer-from@4.0.0",
         "tslib"
       ]
     },
@@ -5601,7 +5541,7 @@
       "npm:@aws-crypto/sha256-js@5.2.0",
       "npm:@aws-sdk/client-s3@3.712.0",
       "npm:@aws-sdk/lib-storage@3.712.0",
-      "npm:@aws-sdk/signature-v4a@3.798.0",
+      "npm:@aws-sdk/s3-request-presigner@3.712.0",
       "npm:@smithy/signature-v4@4.2.3",
       "npm:@smithy/types@3.7.1",
       "npm:xml2js@0.6.2"

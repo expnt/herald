@@ -2,12 +2,13 @@ import { HeraldContext } from "./../types/mod.ts";
 import { Context } from "@hono/hono";
 import { getBucket } from "../config/loader.ts";
 import { HTTPException } from "../types/http-exception.ts";
-import { getBackendDef } from "../config/mod.ts";
+import { getBackendDef, globalConfig } from "../config/mod.ts";
 import { s3Resolver } from "./s3/mod.ts";
 import { swiftResolver } from "./swift/mod.ts";
 import { extractRequestInfo } from "../utils/s3.ts";
 import { getLogger } from "../utils/log.ts";
 import { getAuthType, hasBucketAccess } from "../auth/mod.ts";
+import { verifyV4Signature } from "../utils/signer.ts";
 
 const logger = getLogger(import.meta);
 
@@ -26,6 +27,14 @@ export async function resolveHandler(
       message: "Bucket not specified in the request",
     });
   }
+
+  await verifyV4Signature(
+    c.req.raw,
+    globalConfig.buckets[bucketName].config,
+    {
+      // FIXME: properly source the credential lists
+    },
+  );
 
   const auth = getAuthType();
   if (auth !== "none" && !hasBucketAccess(serviceAccountName, bucketName)) {

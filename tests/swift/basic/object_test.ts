@@ -7,20 +7,31 @@ import {
   PutObjectCommand,
   S3Client,
 } from "aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import * as path from "std/path/";
 import { assert, assertEquals } from "std/assert";
-import { loggingMiddleware, testConfig } from "../../utils/mod.ts";
+import { loggingMiddleware } from "../../utils/mod.ts";
 import { deleteBucketIfExists, setupBucket } from "../../../utils/s3.ts";
-import { proxyUrl } from "../../../src/config/mod.ts";
+import { configInit, globalConfig, proxyUrl } from "../../../src/config/mod.ts";
 import { Upload } from "aws-sdk/lib-storage";
 import { createTempFile, createTempStream } from "../../../utils/file.ts";
 
 const containerName = "swift-test";
 
+await configInit();
+const containerConfig = globalConfig.buckets[containerName].config;
 const s3 = new S3Client({
-  ...testConfig,
+  credentials: "accessKeyId" in containerConfig.credentials
+    ? containerConfig.credentials
+    : {
+      accessKeyId: containerConfig.credentials.username,
+      secretAccessKey: containerConfig.credentials.password,
+    },
+  region: "dc3-a",
+  forcePathStyle: true,
   endpoint: proxyUrl,
 });
+
 s3.middlewareStack.add(loggingMiddleware, {
   step: "finalizeRequest",
 });
@@ -146,4 +157,77 @@ Deno.test(async function emptyBucketListObject(t) {
   await t.step(async function setup() {
     await deleteBucketIfExists(s3, containerName);
   });
+});
+
+Deno.test(async function presignUpload(t) {
+  await t.step(async function setup() {
+    await setupBucket(s3, containerName);
+  });
+
+  const headers = new Headers();
+  headers.set("Content-Type", "application/octet-stream");
+  headers.set("Content-Length", (1 * 1024 * 1024).toString());
+
+  const url = await getSignedUrl(
+    s3,
+    new PutObjectCommand({
+      Bucket: containerName,
+      Key: objectKey,
+    }),
+    {
+      expiresIn: 60,
+    },
+  );
+
+  const body = await Deno.readFile(tempFile);
+
+  const res = await fetch(url, {
+    method: "PUT",
+    body,
+    headers,
+  });
+  if (!res.ok) {
+    throw new Error("error uploading through presign: ", { cause: res });
+  }
+  assert(await res.blob());
+});
+
+Deno.test(async function presignDownload() {
+  const url = await getSignedUrl(
+    s3,
+    new GetObjectCommand({
+      Bucket: containerName,
+      Key: objectKey,
+    }),
+    {
+      expiresIn: 60,
+    },
+  );
+
+  const resp = await fetch(url);
+  if (!resp.ok) {
+    throw new Error("error downloading through presign: ", { cause: resp });
+  }
+  assert(await resp.blob());
+});
+
+Deno.test(async function presignDelete() {
+  const url = await getSignedUrl(
+    s3,
+    new DeleteObjectCommand({
+      Bucket: containerName,
+      Key: objectKey,
+    }),
+    {
+      expiresIn: 60,
+    },
+  );
+
+  const res = await fetch(url, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    throw new Error("error deleting through presign: ", { cause: res });
+  }
+  assert(await res.blob());
 });

@@ -1,7 +1,6 @@
 {
   "imports": {
     "aws-sdk/client-s3": "npm:@aws-sdk/client-s3@3.712.0",
-    "aws-sdk/signature-v4a": "npm:@aws-sdk/signature-v4a@3.798.0",
     "http": "node:http",
     "url": "node:url",
     "buffer": "node:buffer",
@@ -41,6 +40,7 @@
     "@smithy/signature-v4": "npm:@smithy/signature-v4@4.2.3",
     "@smithy/types": "npm:@smithy/types@3.7.1",
     "@aws-crypto/sha256": "npm:@aws-crypto/sha256-js@5.2.0",
+    "@aws-sdk/s3-request-presigner": "npm:@aws-sdk/s3-request-presigner@3.712.0",
     "@std/yaml": "jsr:@std/yaml@1.0.5",
     "xml2js": "npm:xml2js@0.6.2",
     "sentry": "https://deno.land/x/sentry@8.32.0/index.mjs",

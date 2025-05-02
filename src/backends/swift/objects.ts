@@ -68,7 +68,7 @@ export async function putObject(
 
   if (response.status !== 201) {
     const errMessage = `Put Object Failed: ${response.statusText}`;
-    logger.warn(errMessage);
+    logger.warn(errMessage, { response });
     reportToSentry(errMessage);
   } else {
     logger.info(`Put Object Successful: ${response.statusText}`);
