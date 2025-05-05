@@ -75,8 +75,8 @@ export function extractSignature(request: Request) {
         return zod.NEVER;
       }
     }),
-    "x-amz-content-sha256": zod.string(),
-    "x-id": zod.string(),
+    "x-amz-content-sha256": zod.string().nullish(),
+    "x-id": zod.string().nullish(),
   }).safeParse(queryParams);
   if (parsed.success) {
     const sigV4Regex = /^([^/]+)\/(\d{8})\/([^/]+)\/([^/]+)\/aws4_request/;
@@ -135,9 +135,12 @@ export function extractSignature(request: Request) {
     );
   }
 
+  const rawDate = request.headers.get(AMZ_DATE_HEADER) ??
+    request.headers.get("Date");
+  const date = rawDate ? parseAmzDate(rawDate) : undefined;
   return {
     source: "header" as const,
-    date: parseAmzDate(request.headers.get(AMZ_DATE_HEADER)!),
+    date,
     ...parsedHeader,
   };
 }
@@ -449,14 +452,18 @@ function getQueryParameters(request: Request): QueryParameterBag {
 }
 
 function parseAmzDate(str: string) {
-  const date = new Date(
+  let date = new Date(str);
+  if (!isNaN(date.valueOf())) {
+    return date;
+  }
+  date = new Date(
     str.replace(
       /(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/,
       "$1-$2-$3T$4:$5:$6Z",
     ),
   );
-  if (isNaN(date.valueOf())) {
-    throw new Error(`invalid amz date: ${str}`);
+  if (!isNaN(date.valueOf())) {
+    return date;
   }
-  return date;
+  throw new Error(`invalid amz date: ${str}`);
 }
