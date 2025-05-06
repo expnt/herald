@@ -328,8 +328,6 @@ export async function verifyV4Signature(
       },
   );
 
-  const signableRequest = toSignableRequest(originalRequest);
-
   const CLOCK_SKEW = 15 * 60 * 1000;
   if (originalSignature.source == "pre-sign") {
     const now = new Date().getTime();
@@ -343,15 +341,21 @@ export async function verifyV4Signature(
     }
   }
 
+  const signableRequest = toSignableRequest(
+    originalRequest,
+    originalSignature.signedHeaders,
+  );
   const signedRequest = originalSignature.source == "pre-sign"
     ? await signer.presign(signableRequest, {
       signableHeaders: new Set(originalSignature.signedHeaders),
       expiresIn: originalSignature.expiresIn,
       signingDate: originalSignature.date,
+      signingService: originalSignature.service,
     })
     : await signer.sign(signableRequest, {
       signableHeaders: new Set(originalSignature.signedHeaders),
       signingDate: originalSignature.date,
+      signingService: originalSignature.service,
     });
 
   const signedNativeRequest = toNativeRequest(
@@ -363,6 +367,9 @@ export async function verifyV4Signature(
 
   if (originalSignature.signature !== calculatedSignature.signature) {
     logger.error("bad signature on request", {
+      originalRequest,
+      signedNativeRequest,
+      // signableRequest,
       originalSignature,
       calculatedSignature,
     });
@@ -376,13 +383,17 @@ export async function verifyV4Signature(
  * @param req - The Request object to convert.
  * @returns A Promise that resolves to the converted HttpRequest object.
  */
-export function toSignableRequest(req: Request): HttpRequest {
+export function toSignableRequest(
+  req: Request,
+  signedHeaders: string[],
+): HttpRequest {
   const reqUrl = new URL(req.url);
-  const crtHeaders: [string, string][] = [];
-  const headersRecord: Record<string, string> = {};
+  const headersRecord = {} as Record<string, string>;
   req.headers.forEach((val, key) => {
-    headersRecord[key] = val;
-    crtHeaders.push([key, val]);
+    const lower = key.toLowerCase();
+    if (signedHeaders.some((sKey) => sKey == lower)) {
+      headersRecord[key] = val;
+    }
   });
 
   // const reqBody = await req.body?.getReader().read();
@@ -394,7 +405,10 @@ export function toSignableRequest(req: Request): HttpRequest {
     hostname: reqUrl.hostname,
     protocol: reqUrl.protocol,
     port: parseInt(reqUrl.port),
+    // password: reqUrl.password,
+    // username: reqUrl.username,
     // body: reqBody ? reqBody.value : undefined,
+    // body: req.body,
     query: getQueryParameters(req),
   };
 

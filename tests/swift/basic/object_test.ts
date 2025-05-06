@@ -27,7 +27,7 @@ const s3 = new S3Client({
       accessKeyId: containerConfig.credentials.username,
       secretAccessKey: containerConfig.credentials.password,
     },
-  region: "dc3-a",
+  region: containerConfig.region,
   forcePathStyle: true,
   endpoint: proxyUrl,
 });
