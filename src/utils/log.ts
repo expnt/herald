@@ -9,13 +9,15 @@ const loggers = new Map<string, Logger>();
 
 const consoleHandler = new log.ConsoleHandler("NOTSET", {
   formatter: (logRecord) => {
-    const { datetime, levelName, msg, loggerName } = logRecord;
+    const { datetime, levelName, msg, loggerName, args } = logRecord;
 
     const formattedDate = datetime
       ? datetime.toISOString().replace("T", " ").split(".")[0]
       : new Date().toISOString().replace("T", " ").split(".")[0];
     let finalMessasge =
-      `${formattedDate} ${levelName} [${loggerName}] -- ${msg}`;
+      `${formattedDate} ${levelName} [${loggerName}] -- ${msg} ${
+        args.length ? ` ${Deno.inspect(args)}` : ""
+      }`;
     if (logRecord.level === log.LogLevels.DEBUG) {
       finalMessasge = magenta(finalMessasge);
     }

@@ -175,7 +175,7 @@ async function getJWKURI(
   logger.info("Fetching JWKS URI from k8s API...");
   const k8s_url = envVarsConfig.k8s_api;
   const headers = envVarsConfig.env === "DEV"
-    ? {}
+    ? undefined
     : { Authorization: `Bearer ${currentToken}` };
 
   const fetchFunc = async () =>

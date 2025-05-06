@@ -4,16 +4,26 @@ import {
   S3Client,
 } from "aws-sdk/client-s3";
 import { assertEquals } from "std/assert";
-import { loggingMiddleware, testConfig } from "../../utils/mod.ts";
-import { proxyUrl } from "../../../src/config/mod.ts";
+import { loggingMiddleware } from "../../utils/mod.ts";
+import { configInit, globalConfig, proxyUrl } from "../../../src/config/mod.ts";
 import { deleteBucketIfExists } from "../../../utils/s3.ts";
 
 const containerName = "swift-test";
 
+await configInit();
+const containerConfig = globalConfig.buckets[containerName].config;
 const s3 = new S3Client({
-  ...testConfig,
+  credentials: "accessKeyId" in containerConfig.credentials
+    ? containerConfig.credentials
+    : {
+      accessKeyId: containerConfig.credentials.username,
+      secretAccessKey: containerConfig.credentials.password,
+    },
+  region: containerConfig.region,
+  forcePathStyle: true,
   endpoint: proxyUrl,
 });
+
 s3.middlewareStack.add(loggingMiddleware, {
   step: "finalizeRequest",
 });

@@ -9,6 +9,7 @@ import {
   PutObjectCommand,
   S3Client,
 } from "aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createTempFile, createTempStream } from "../../../utils/file.ts";
 import { assert } from "std/assert";
 import { getS3Client, setupBucket } from "../../../utils/s3.ts";
@@ -130,4 +131,78 @@ Deno.test(async function streamUpload() {
 
   const res = await upload.done();
   assertEquals(200, res.$metadata.httpStatusCode);
+});
+Deno.test(async function presignUpload() {
+  await setupBucket(s3, bucket);
+
+  const headers = new Headers();
+  headers.set("Content-Type", "application/octet-stream");
+  headers.set("Content-Length", (1 * 1024 * 1024).toString());
+
+  const url = await getSignedUrl(
+    s3,
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: objectKey,
+    }),
+    {
+      expiresIn: 60,
+    },
+  );
+
+  const body = await Deno.readFile(filePath);
+
+  const res = await fetch(url, {
+    method: "PUT",
+    body,
+    headers,
+  });
+  if (!res.ok) {
+    throw new Error("error uploading through presign: ", { cause: res });
+  }
+  assert(await res.blob());
+});
+
+Deno.test(async function presignDownload() {
+  const url = await getSignedUrl(
+    s3,
+    new GetObjectCommand({
+      Bucket: bucket,
+      Key: objectKey,
+    }),
+    {
+      expiresIn: 60,
+    },
+  );
+
+  const resp = await fetch(url);
+  if (!resp.ok) {
+    throw new Error("error downloading through presign: ", { cause: resp });
+  }
+  assert(await resp.blob());
+});
+
+Deno.test(async function presignDelete() {
+  const url = await getSignedUrl(
+    s3,
+    new DeleteObjectCommand({
+      Bucket: bucket,
+      Key: objectKey,
+    }),
+    {
+      expiresIn: 60,
+    },
+  );
+
+  const res = await fetch(url, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    throw new Error("error deleting through presign: ", { cause: res });
+  }
+  assert(await res.blob());
+});
+
+Deno.test(async function presignUploadMulti() {
+  // TODO:
 });
