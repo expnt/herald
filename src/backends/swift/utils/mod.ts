@@ -27,7 +27,7 @@ function getS3Object(item: SwiftObject) {
 
 function getS3Part(item: SwiftObject) {
   return {
-    PartNumber: item.name,
+    PartNumber: parseInt(item.name.substring(item.name.lastIndexOf("/") + 1)),
     LastModified: formatRFC3339Date(item.last_modified),
     ETag: item.hash,
     Size: item.bytes,
@@ -95,6 +95,7 @@ export async function toS3XmlContent(
 
   const contents = [];
   for (const item of swiftBody) {
+    // FIXME: skip the hidden folder which holds the herald state
     if (!item.name) {
       continue;
     }
@@ -169,7 +170,6 @@ export async function toS3XmlContent(
   return new Response(formattedXml, {
     status: 200,
     headers: {
-      ...Object.fromEntries(s3ResponseHeaders.entries()),
       "Content-Type": "application/xml",
     },
   });
@@ -178,7 +178,7 @@ export async function toS3XmlContent(
 export async function toS3ListPartXmlContent(
   swiftResponse: Response,
   bucket: string,
-  object: string,
+  object: string | null,
   uploadId: string | null,
   partNumberMarker: number | null,
   maxKeys: number | null,
@@ -188,7 +188,7 @@ export async function toS3ListPartXmlContent(
   // Transforming Swift's JSON response to S3's XML format
   const parts = [];
   for (const item of swiftBody) {
-    if (!item.name) {
+    if (!item.name || item.name.startsWith(".herald-state")) {
       continue;
     }
     parts.push(getS3Part(item));
@@ -198,16 +198,19 @@ export async function toS3ListPartXmlContent(
   const s3FormattedBody = {
     ListPartsResult: {
       Bucket: bucket,
-      Key: object,
+      Key: object ?? "",
       MaxParts: maxKeys,
       UploadId: uploadId,
       PartNumberMarker: partNumberMarker,
-      NextPartNumberMarker: (partNumberMarker ?? 0) + maxKeys,
+      NextPartNumberMarker: parts.length > 0
+        ? parts[parts.length - 1].PartNumber
+        : null,
       IsTruncated: swiftBody.length === maxKeys,
-      ...parts.map((part) => ({
-        Part: {
-          part,
-        },
+      Part: parts.map((part) => ({
+        PartNumber: part.PartNumber,
+        LastModified: part.LastModified,
+        ETag: part.ETag,
+        Size: part.Size,
       })),
     },
   };

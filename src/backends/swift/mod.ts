@@ -7,7 +7,9 @@ import {
   getObject,
   getObjectMeta,
   headObject,
+  listMultipartUploads,
   listObjects,
+  listParts,
   putObject,
   uploadPart,
   uploadPartCopy,
@@ -51,6 +53,8 @@ const handlers = {
   createMultipartUpload,
   completeMultipartUpload,
   uploadPart,
+  listParts,
+  listMultipartUploads,
   uploadPartCopy,
   abortMultipartUpload,
 };
@@ -108,8 +112,16 @@ export async function swiftResolver(
   // Handle regular requests
   switch (method) {
     case "GET":
+      if (objectKey && queryParamKeys.has("uploadId")) {
+        return await handlers.listParts(ctx, req, bucketConfig);
+      }
+
       if (objectKey) {
         return await handlers.getObject(ctx, req, bucketConfig);
+      }
+
+      if (queryParamKeys.has("uploads")) {
+        return await handlers.listMultipartUploads(ctx, req, bucketConfig);
       }
 
       return await handlers.listObjects(ctx, req, bucketConfig);
@@ -317,7 +329,7 @@ export function convertSwiftPutObjectToS3Response(swiftResponse: Response) {
     s3ResponseHeaders.set("ETag", eTag);
 
     if (contentLength) {
-      s3ResponseHeaders.set("x-amz-object-size", contentLength);
+      s3ResponseHeaders.set("content-length", contentLength);
     }
 
     if (requestId) {

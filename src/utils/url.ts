@@ -156,6 +156,11 @@ export function getBodyFromReq(
   }
 }
 
+export async function getBodyBuffer(req: Request): Promise<Uint8Array> {
+  const arrayBuffer = await req.arrayBuffer();
+  return new Uint8Array(arrayBuffer);
+}
+
 // Utility function to delay execution
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

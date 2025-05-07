@@ -1,12 +1,21 @@
+import * as xml2js from "xml2js";
+
 import { getLogger, reportToSentry } from "../../utils/log.ts";
 import { HTTPException } from "../../types/http-exception.ts";
 import { getSwiftRequestHeaders } from "./auth.ts";
 import {
+  getBodyBuffer,
   getBodyFromReq,
   retryWithExponentialBackoff,
 } from "../../utils/url.ts";
 import { toS3ListPartXmlContent, toS3XmlContent } from "./utils/mod.ts";
-import { NoSuchBucketException } from "../../constants/errors.ts";
+import {
+  InternalServerErrorException,
+  InvalidRequestException,
+  MissingUploadIdException,
+  NoSuchBucketException,
+  NotImplementedException,
+} from "../../constants/errors.ts";
 import { SwiftConfig } from "../../config/types.ts";
 import { S3_COPY_SOURCE_HEADER } from "../../constants/headers.ts";
 import { s3Utils } from "../../utils/mod.ts";
@@ -24,6 +33,8 @@ import {
 } from "./mod.ts";
 import { HeraldContext } from "../../types/mod.ts";
 import { getRandomUUID } from "../../utils/crypto.ts";
+import { MULTIPART_UPLOADS_PATH } from "../../constants/s3.ts";
+
 const logger = getLogger(import.meta);
 
 export async function putObject(
@@ -35,9 +46,9 @@ export async function putObject(
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
   const body = req.body;
   if (!bucket) {
-    return new HTTPException(400, {
-      message: "Bucket information missing from the request",
-    });
+    return InvalidRequestException(
+      "Bucket information missing from the request",
+    );
   }
 
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
@@ -95,9 +106,9 @@ export async function getObject(
     req,
   );
   if (!bucket) {
-    return new HTTPException(400, {
-      message: "Bucket information missing from the request",
-    });
+    return InvalidRequestException(
+      "Bucket information missing from the request",
+    );
   }
 
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
@@ -163,9 +174,9 @@ export async function deleteObject(
 
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
   if (!bucket) {
-    return new HTTPException(400, {
-      message: "Bucket information missing from the request",
-    });
+    return InvalidRequestException(
+      "Bucket information missing from the request",
+    );
   }
 
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
@@ -222,9 +233,9 @@ export async function listObjects(
 
   const { bucket, queryParams: query } = s3Utils.extractRequestInfo(req);
   if (!bucket) {
-    return new HTTPException(400, {
-      message: "Bucket information missing from the request",
-    });
+    return InvalidRequestException(
+      "Bucket information missing from the request",
+    );
   }
 
   const config = bucketConfig.config as SwiftConfig;
@@ -285,7 +296,7 @@ export async function listObjects(
 
   if (response.status === 404) {
     logger.warn(`Get List of Objects Failed: ${response.statusText}`);
-    throw NoSuchBucketException();
+    return NoSuchBucketException();
   } else {
     logger.info(`Get List of Objects Successful: ${response.statusText}`);
   }
@@ -304,6 +315,7 @@ export async function listObjects(
     maxKeys ?? 1000,
     continuationToken,
   );
+
   return formattedResponse;
 }
 
@@ -316,9 +328,9 @@ export async function getObjectMeta(
 
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
   if (!bucket) {
-    throw new HTTPException(400, {
-      message: "Bucket information missing from the request",
-    });
+    throw InvalidRequestException(
+      "Bucket information missing from the request",
+    );
   }
 
   const config = bucketConfig.config as SwiftConfig;
@@ -383,9 +395,9 @@ export async function headObject(
 
   const { bucket, objectKey } = s3Utils.extractRequestInfo(req);
   if (!bucket || !objectKey) {
-    return new HTTPException(404, {
-      message: "Bucket or object information missing from the request",
-    });
+    return InvalidRequestException(
+      "Bucket or object information missing from the request",
+    );
   }
 
   const config = bucketConfig.config as SwiftConfig;
@@ -449,9 +461,9 @@ export async function copyObject(
   logger.info("[Swift backend] Proxying Copy Object Request...");
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
   if (!bucket) {
-    return new HTTPException(400, {
-      message: "Bucket information missing from the request",
-    });
+    return InvalidRequestException(
+      "Bucket information missing from the request",
+    );
   }
 
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
@@ -463,9 +475,9 @@ export async function copyObject(
   const headers = getSwiftRequestHeaders(authToken);
   const copySource = req.headers.get(S3_COPY_SOURCE_HEADER);
   if (!copySource) {
-    throw new HTTPException(400, {
-      message: `Invalid Request: ${S3_COPY_SOURCE_HEADER} missing from request`,
-    });
+    return InvalidRequestException(
+      `${S3_COPY_SOURCE_HEADER} missing from request`,
+    );
   }
   headers.set("X-Copy-From", copySource);
   const reqUrl = `${swiftUrl}/${bucket}/${object}`;
@@ -505,55 +517,198 @@ export async function copyObject(
   return convertSwiftCopyObjectToS3Response(response);
 }
 
-export function createMultipartUpload(
-  _ctx: HeraldContext,
+export async function createMultipartUpload(
+  ctx: HeraldContext,
   req: Request,
-  _bucketConfig: Bucket,
-): Response | Error | HTTPException {
+  bucketConfig: Bucket,
+): Promise<Response | Error | HTTPException> {
   logger.info("[Swift backend] Proxying Create Multipart Upload Request...");
 
   const uploadId = getRandomUUID();
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
-  logger.info(`Create Multipart Upload Successful: Ok`);
+  if (!bucket || !object) {
+    return InvalidRequestException(
+      "Bucket or object information missing from the request",
+    );
+  }
 
-  const xmlResponseBody = `
-    <CreateMultipartUploadResult>
-      <Bucket>${bucket}</Bucket>
-      <Key>${object}</Key>
-      <UploadId>${uploadId}</UploadId>
-    </CreateMultipartUploadResult>
-  `;
+  const config = bucketConfig.config as SwiftConfig;
+  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const { storageUrl: swiftUrl, token: authToken } = res;
+  const headers = getSwiftRequestHeaders(authToken);
+
+  // Define the path for the multipart uploads index file
+  const multipartIndexPath = `${MULTIPART_UPLOADS_PATH}/index.json`;
+  const multipartIndexUrl = `${swiftUrl}/${bucket}/${multipartIndexPath}`;
+
+  // Create new upload metadata
+  const now = new Date().toISOString();
+  const newUploadMetadata = {
+    uploadId,
+    bucket,
+    objectKey: object,
+    initiated: now,
+    initiator: {
+      ID: "initiator-id",
+      DisplayName: "initiator",
+    },
+    owner: {
+      ID: "owner-id",
+      DisplayName: "owner",
+    },
+    storageClass: "STANDARD",
+  };
+
+  // Try to fetch the existing index file
+  let existingUploads = [];
+  try {
+    const fetchIndexFunc = async () => {
+      return await fetch(multipartIndexUrl, {
+        method: "GET",
+        headers: headers,
+      });
+    };
+
+    const indexResponse = await retryWithExponentialBackoff(fetchIndexFunc);
+
+    if (indexResponse instanceof Error) {
+      logger.warn(`Failed to fetch multipart index: ${indexResponse.message}`);
+    } else if (indexResponse.ok) {
+      const indexData = await indexResponse.json();
+      existingUploads = Array.isArray(indexData.uploads)
+        ? indexData.uploads
+        : [];
+    }
+  } catch (error) {
+    logger.info(
+      `No existing multipart uploads index found, creating new one: ${
+        (error as Error).message
+      }`,
+    );
+    return InternalServerErrorException();
+  }
+
+  // Add the new upload to the list
+  existingUploads.push(newUploadMetadata);
+
+  // Update the index file
+  const updatedIndex = {
+    lastUpdated: now,
+    uploads: existingUploads,
+  };
+
+  const updateIndexFunc = async () => {
+    return await fetch(multipartIndexUrl, {
+      method: "PUT",
+      headers: headers,
+      body: JSON.stringify(updatedIndex),
+    });
+  };
+
+  const updateResponse = await retryWithExponentialBackoff(updateIndexFunc);
+
+  if (updateResponse instanceof Error) {
+    const errMessage =
+      `Failed to update multipart uploads index: ${updateResponse.message}`;
+    logger.warn(errMessage);
+    reportToSentry(errMessage);
+
+    const xmlError = `<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>InternalError</Code>
+  <Message>Failed to save multipart upload metadata</Message>
+  <RequestId>dummy-request-id</RequestId>
+  <HostId>dummy-host-id</HostId>
+</Error>`;
+
+    return new Response(xmlError, {
+      status: 500,
+      headers: {
+        "Content-Type": "application/xml",
+        "x-amz-request-id": "dummy-request-id",
+        "x-amz-id-2": "dummy-host-id",
+      },
+    });
+  }
+
+  if (!updateResponse.ok) {
+    const errMessage =
+      `Failed to update multipart uploads index: ${updateResponse.statusText}`;
+    logger.warn(errMessage);
+    reportToSentry(errMessage);
+
+    const xmlError = `<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>InternalError</Code>
+  <Message>Failed to save multipart upload metadata</Message>
+  <RequestId>dummy-request-id</RequestId>
+  <HostId>dummy-host-id</HostId>
+</Error>`;
+
+    return new Response(xmlError, {
+      status: 500,
+      headers: {
+        "Content-Type": "application/xml",
+        "x-amz-request-id": "dummy-request-id",
+        "x-amz-id-2": "dummy-host-id",
+      },
+    });
+  }
+
+  logger.info(
+    `Create Multipart Upload Successful: Updated index at ${multipartIndexPath}`,
+  );
+
+  // Generate S3-compatible response
+  const xmlResponseBody = `<?xml version="1.0" encoding="UTF-8"?>
+<InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Bucket>${bucket}</Bucket>
+  <Key>${object}</Key>
+  <UploadId>${uploadId}</UploadId>
+</InitiateMultipartUploadResult>`.trim();
+
+  const requestId = getRandomUUID();
+  const hostId = getRandomUUID();
+
+  const responseHeaders = new Headers({
+    "Content-Type": "application/xml",
+    "x-amz-request-id": requestId,
+    "x-amz-id-2": hostId,
+  });
 
   return new Response(xmlResponseBody, {
     status: 200,
-    headers: new Headers({
-      "Content-Type": "application/xml",
-    }),
+    headers: responseHeaders,
   });
 }
 
 // https://docs.aws.amazon.com/AmazonS3/latest/API/API_CreateMultipartUpload.html#API_CreateMultipartUpload_ResponseSyntax
-// https://docs.aws.amazon.com/AmazonS3/latest/API/API_CreateMultipartUpload.html#API_CreateMultipartUpload_ResponseSyntax
-function createCompleteMultipartUploadResponse(
+function generateCompleteMultipartUploadResponse(
   bucketName: string,
   objectKey: string,
   location: string,
   eTag: string,
 ): Response {
-  const xmlResponseBody = `
-    <CompleteMultipartUploadResult>
-      <Location>${location}</Location>
-      <Bucket>${bucketName}</Bucket>
-      <Key>${objectKey}</Key>
-      <ETag>"${eTag}"</ETag>
-    </CompleteMultipartUploadResult>
-  `;
+  const quotedETag = `"${eTag}"`;
+
+  const xmlResponseBody = `<?xml version="1.0" encoding="UTF-8"?>
+<CompleteMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Location>${location}</Location>
+  <Bucket>${bucketName}</Bucket>
+  <Key>${objectKey}</Key>
+  <ETag>${quotedETag}</ETag>
+</CompleteMultipartUploadResult>`.trim();
+
+  const headers = new Headers({
+    "Content-Type": "application/xml",
+    "ETag": quotedETag, // REQUIRED
+    "x-amz-request-id": "dummy-request-id", // Recommended
+    "x-amz-id-2": "dummy-host-id", // Recommended
+  });
 
   return new Response(xmlResponseBody, {
     status: 200,
-    headers: new Headers({
-      "Content-Type": "application/xml",
-    }),
+    headers,
   });
 }
 
@@ -565,9 +720,9 @@ export async function completeMultipartUpload(
   logger.info("[Swift backend] Proxying Complete Multipart Upload Request...");
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
   if (!bucket || !object) {
-    return new HTTPException(400, {
-      message: "Bucket information missing from the request",
-    });
+    return InvalidRequestException(
+      "Bucket information missing from the request",
+    );
   }
 
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
@@ -579,6 +734,62 @@ export async function completeMultipartUpload(
   headers.append("X-Object-Manifest", `${bucket}/${object}`);
 
   const reqUrl = `${swiftUrl}/${bucket}/${object}`;
+
+  // Get the uploadId from query parameters
+  const { queryParams } = s3Utils.extractRequestInfo(req);
+  const uploadId = queryParams["uploadId"]?.[0];
+  if (!uploadId) {
+    return MissingUploadIdException();
+  }
+
+  // Define the path for the multipart uploads index file
+  const multipartIndexPath = `${MULTIPART_UPLOADS_PATH}/index.json`;
+  const multipartIndexUrl = `${swiftUrl}/${bucket}/${multipartIndexPath}`;
+
+  // Fetch the existing index file to remove the upload metadata
+  try {
+    const fetchIndexFunc = async () => {
+      return await fetch(multipartIndexUrl, {
+        method: "GET",
+        headers: headers,
+      });
+    };
+    const indexResponse = await retryWithExponentialBackoff(fetchIndexFunc);
+
+    if (!(indexResponse instanceof Error) && indexResponse.ok) {
+      const indexData = await indexResponse.json();
+      // Filter out the completed upload
+      const updatedUploads = indexData.uploads.filter((
+        upload: { uploadId: string },
+      ) => upload.uploadId !== uploadId);
+
+      // Update the index file
+      const updateIndexFunc = async () => {
+        return await fetch(multipartIndexUrl, {
+          method: "PUT",
+          headers: headers,
+          body: JSON.stringify(updatedUploads),
+        });
+      };
+      await retryWithExponentialBackoff(updateIndexFunc);
+      logger.info(`Removed upload ${uploadId} from multipart uploads index`);
+    } else {
+      logger.warn(
+        `Failed to fetch multipart uploads index: ${
+          indexResponse instanceof Error
+            ? indexResponse.message
+            : indexResponse.statusText
+        }`,
+      );
+    }
+  } catch (error) {
+    logger.warn(
+      `Error updating multipart uploads index: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    return InternalServerErrorException();
+  }
 
   const fetchFunc = async () => {
     return await fetch(reqUrl, {
@@ -614,12 +825,10 @@ export async function completeMultipartUpload(
 
   const etag = response.headers.get("eTag");
   if (!etag) {
-    return new HTTPException(501, {
-      message: "Storage service error: Etag missing in the response headers",
-    });
+    return InvalidRequestException("ETag not found in response");
   }
 
-  const result = createCompleteMultipartUploadResponse(
+  const result = generateCompleteMultipartUploadResponse(
     bucket,
     object,
     config.region,
@@ -639,9 +848,9 @@ export async function uploadPart(
     req,
   );
   if (!bucket) {
-    return new HTTPException(400, {
-      message: "Bucket information missing from the request",
-    });
+    return InvalidRequestException(
+      "Bucket information missing from the request",
+    );
   }
 
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
@@ -651,17 +860,18 @@ export async function uploadPart(
 
   const partNumber = queryParams["partNumber"];
   if (!partNumber) {
-    return new HTTPException(400, {
-      message: "Bad Request: partNumber is missing from request",
-    });
+    return InvalidRequestException(
+      "Bad Request: partNumber is missing from request",
+    );
   }
 
   const reqUrl = `${swiftUrl}/${bucket}/${object}/${partNumber}`;
+  const bodyBuffer = await getBodyBuffer(req);
   const fetchFunc = async () => {
     return await fetch(reqUrl, {
       method: "PUT",
       headers: headers,
-      body: getBodyFromReq(req),
+      body: bodyBuffer,
     });
   };
   const response = await retryWithExponentialBackoff(
@@ -688,8 +898,8 @@ export function uploadPartCopy(
   _ctx: HeraldContext,
   _req: Request,
   _bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
-  throw Error("UnImplemented Error!");
+): Promise<Response | Error | HTTPException> | Response {
+  return NotImplementedException();
 }
 
 export async function listParts(
@@ -702,10 +912,11 @@ export async function listParts(
   const { bucket, queryParams: query, objectKey } = s3Utils.extractRequestInfo(
     req,
   );
-  if (!bucket || !objectKey) {
-    return new HTTPException(400, {
-      message: "Bucket or Object information missing from the request",
-    });
+
+  if (!bucket) {
+    return InvalidRequestException(
+      "Bucket or Object information missing from the request",
+    );
   }
 
   const config = bucketConfig.config as SwiftConfig;
@@ -715,7 +926,7 @@ export async function listParts(
   const headers = getSwiftRequestHeaders(authToken);
 
   const params = new URLSearchParams();
-  params.append("prefix", objectKey);
+  if (query.prefix) params.append("prefix", query.prefix[0]);
   if (query.delimiter) params.append("delimiter", "/");
   if (query["part-number-marker"]) {
     params.append("marker", query["part-number-marker"][0]);
@@ -794,10 +1005,13 @@ export async function abortMultipartUpload(
   logger.info("[Swift backend] Proxying AbortMultipartUpload Request...");
 
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
-  if (!bucket) {
-    return new HTTPException(400, {
-      message: "Bucket information missing from the request",
-    });
+  const url = new URL(req.url);
+  const uploadId = url.searchParams.get("uploadId");
+
+  if (!bucket || !object || !uploadId) {
+    return InvalidRequestException(
+      "Bucket, object, or uploadId information missing from the request",
+    );
   }
 
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
@@ -805,8 +1019,77 @@ export async function abortMultipartUpload(
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
-  const reqUrl = `${swiftUrl}/${bucket}/${object}`;
 
+  // First, update the multipart uploads index to remove this upload
+  const multipartIndexPath = `${MULTIPART_UPLOADS_PATH}/index.json`;
+  const multipartIndexUrl = `${swiftUrl}/${bucket}/${multipartIndexPath}`;
+
+  // Try to fetch the existing index file
+  let existingUploads = [];
+  try {
+    const fetchIndexFunc = async () => {
+      return await fetch(multipartIndexUrl, {
+        method: "GET",
+        headers: headers,
+      });
+    };
+
+    const indexResponse = await retryWithExponentialBackoff(fetchIndexFunc);
+
+    if (indexResponse instanceof Error) {
+      logger.warn(`Failed to fetch multipart index: ${indexResponse.message}`);
+    } else if (indexResponse.ok) {
+      const indexData = await indexResponse.json();
+      existingUploads = Array.isArray(indexData.uploads)
+        ? indexData.uploads
+        : [];
+
+      // Filter out the upload being aborted
+      existingUploads = existingUploads.filter((upload: { uploadId: string }) =>
+        upload.uploadId !== uploadId
+      );
+
+      // Update the index file
+      const now = new Date().toISOString();
+      const updatedIndex = {
+        lastUpdated: now,
+        uploads: existingUploads,
+      };
+
+      const updateIndexFunc = async () => {
+        return await fetch(multipartIndexUrl, {
+          method: "PUT",
+          headers: headers,
+          body: JSON.stringify(updatedIndex),
+        });
+      };
+
+      const updateResponse = await retryWithExponentialBackoff(updateIndexFunc);
+
+      if (updateResponse instanceof Error || !updateResponse.ok) {
+        const errMessage = updateResponse instanceof Error
+          ? `Failed to update multipart uploads index: ${updateResponse.message}`
+          : `Failed to update multipart uploads index: ${updateResponse.statusText}`;
+        logger.warn(errMessage);
+        reportToSentry(errMessage);
+      } else {
+        logger.info(
+          `Successfully removed upload ${uploadId} from index at ${multipartIndexPath}`,
+        );
+      }
+    }
+  } catch (error) {
+    logger.warn(
+      `Error updating multipart uploads index: ${(error as Error).message}`,
+    );
+    reportToSentry(
+      `Error updating multipart uploads index: ${(error as Error).message}`,
+    );
+    return InternalServerErrorException();
+  }
+
+  // Now delete the object parts
+  const reqUrl = `${swiftUrl}/${bucket}/${object}`;
   const fetchFunc = async () => {
     return await fetch(reqUrl, {
       method: "DELETE",
@@ -814,9 +1097,7 @@ export async function abortMultipartUpload(
     });
   };
 
-  const response = await retryWithExponentialBackoff(
-    fetchFunc,
-  );
+  const response = await retryWithExponentialBackoff(fetchFunc);
 
   if (response instanceof Error) {
     logger.warn(`AbortMultipartUpload Failed: ${response.message}`);
@@ -831,5 +1112,214 @@ export async function abortMultipartUpload(
     logger.info(`AbortMultipartUpload Successful: ${response.statusText}`);
   }
 
-  return response;
+  // Return a successful response according to S3 spec
+  const responseHeaders = new Headers({
+    "x-amz-request-id": getRandomUUID(),
+    "x-amz-id-2": getRandomUUID(),
+  });
+
+  return new Response(null, {
+    status: 204,
+    headers: responseHeaders,
+  });
+}
+
+export async function listMultipartUploads(
+  ctx: HeraldContext,
+  req: Request,
+  bucketConfig: Bucket,
+): Promise<Response | Error | HTTPException> {
+  logger.info("[Swift backend] Proxying List Multipart Uploads Request...");
+
+  const { bucket, queryParams: query } = s3Utils.extractRequestInfo(req);
+  if (!bucket) {
+    return InvalidRequestException(
+      "Bucket information missing from the request",
+    );
+  }
+
+  const config = bucketConfig.config as SwiftConfig;
+  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+
+  const { storageUrl: swiftUrl, token: authToken } = res;
+  const headers = getSwiftRequestHeaders(authToken);
+
+  // Define the path for the multipart uploads index file
+  const multipartIndexPath = `${MULTIPART_UPLOADS_PATH}/index.json`;
+  const multipartIndexUrl = `${swiftUrl}/${bucket}/${multipartIndexPath}`;
+
+  // Fetch the multipart uploads index file
+  const fetchIndexFunc = async () => {
+    return await fetch(multipartIndexUrl, {
+      method: "GET",
+      headers: headers,
+    });
+  };
+
+  const indexResponse = await retryWithExponentialBackoff(
+    fetchIndexFunc,
+    bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
+  );
+
+  // Fixme: proper response not being propagated
+  if (indexResponse instanceof Error && bucketConfig.hasReplicas()) {
+    logger.warn("List Multipart Uploads Failed on Primary. Trying replicas...");
+    for (const replica of bucketConfig.replicas) {
+      const res = replica.typ === "ReplicaS3Config"
+        ? await s3Resolver(ctx, req, replica)
+        : await swiftResolver(ctx, req, replica);
+      if (!(res instanceof Error)) {
+        return res; // Return the successful response from replica
+      }
+    }
+    return indexResponse; // Return the original error if all replicas failed
+  }
+
+  if (indexResponse instanceof Error || indexResponse.status === 404) {
+    logger.error("List Multipart Uploads Failed: ", indexResponse);
+    return InternalServerErrorException();
+  }
+
+  // Parse the index file
+  let uploads = [];
+  try {
+    const indexData = await indexResponse.json();
+    uploads = Array.isArray(indexData.uploads) ? indexData.uploads : [];
+  } catch (error) {
+    logger.warn(
+      `Error parsing multipart uploads index: ${(error as Error).message}`,
+    );
+    return InternalServerErrorException();
+  }
+
+  // Extract query parameters
+  const prefix = query.prefix ? query.prefix[0] : "";
+  const delimiter = query.delimiter ? query.delimiter[0] : "";
+  const keyMarker = query["key-marker"] ? query["key-marker"][0] : "";
+  const uploadIdMarker = query["upload-id-marker"]
+    ? query["upload-id-marker"][0]
+    : "";
+  const maxUploads = query["max-uploads"]
+    ? parseInt(query["max-uploads"][0], 10)
+    : 1000;
+
+  // Apply filtering based on the parameters
+  let filteredUploads = uploads;
+
+  // Filter by prefix if provided
+  if (prefix) {
+    filteredUploads = filteredUploads.filter((upload: { objectKey: string }) =>
+      upload.objectKey && upload.objectKey.startsWith(prefix)
+    );
+  }
+
+  // Filter by key-marker if provided
+  if (keyMarker) {
+    filteredUploads = filteredUploads.filter((
+      upload: { objectKey: string | number; uploadId: string },
+    ) =>
+      upload.objectKey > keyMarker ||
+      (upload.objectKey === keyMarker && upload.uploadId > uploadIdMarker)
+    );
+  }
+
+  // Sort uploads by objectKey and uploadId
+  filteredUploads.sort(
+    (
+      a: { objectKey: number; uploadId: string },
+      b: { objectKey: number; uploadId: string },
+    ) => {
+      if (a.objectKey < b.objectKey) return -1;
+      if (a.objectKey > b.objectKey) return 1;
+      return a.uploadId.localeCompare(b.uploadId);
+    },
+  );
+
+  // Handle common prefixes if delimiter is provided
+  const commonPrefixes = new Set<string>();
+  if (delimiter) {
+    filteredUploads = filteredUploads.filter(
+      (upload: { objectKey: string }) => {
+        if (!upload.objectKey.startsWith(prefix)) return false;
+
+        const restKey = upload.objectKey.substring(prefix.length);
+        const delimiterIndex = restKey.indexOf(delimiter);
+
+        if (delimiterIndex >= 0) {
+          const commonPrefix = prefix +
+            restKey.substring(0, delimiterIndex + delimiter.length);
+          commonPrefixes.add(commonPrefix);
+          return false;
+        }
+        return true;
+      },
+    );
+  }
+
+  // Apply limit
+  const isTruncated = filteredUploads.length > maxUploads;
+  filteredUploads = filteredUploads.slice(0, maxUploads);
+
+  // Determine next markers
+  const nextKeyMarker = isTruncated && filteredUploads.length > 0
+    ? filteredUploads[filteredUploads.length - 1].objectKey
+    : "";
+  const nextUploadIdMarker = isTruncated && filteredUploads.length > 0
+    ? filteredUploads[filteredUploads.length - 1].uploadId
+    : "";
+
+  // Format uploads for XML response
+  const formattedUploads = filteredUploads.map((
+    upload: {
+      objectKey: string;
+      uploadId: string;
+      initiated: string;
+      initiator: string;
+      owner: string;
+      storageClass: string;
+    },
+  ) => ({
+    Key: upload.objectKey,
+    UploadId: upload.uploadId,
+    Initiated: upload.initiated,
+    Initiator: upload.initiator || {
+      ID: "initiator-id",
+      DisplayName: "initiator",
+    },
+    Owner: upload.owner || {
+      ID: "owner-id",
+      DisplayName: "owner",
+    },
+    StorageClass: upload.storageClass || "STANDARD",
+  }));
+
+  // Build XML response
+  const xmlResponse = {
+    ListMultipartUploadsResult: {
+      Bucket: bucket,
+      KeyMarker: keyMarker,
+      UploadIdMarker: uploadIdMarker,
+      NextKeyMarker: nextKeyMarker,
+      NextUploadIdMarker: nextUploadIdMarker,
+      Prefix: prefix,
+      Delimiter: delimiter,
+      MaxUploads: maxUploads,
+      IsTruncated: isTruncated,
+      Upload: formattedUploads,
+      CommonPrefixes: Array.from(commonPrefixes).map((prefix) => ({
+        Prefix: prefix,
+      })),
+    },
+  };
+
+  const xmlBuilder = new xml2js.Builder();
+  const formattedXml = xmlBuilder.buildObject(xmlResponse);
+
+  return new Response(formattedXml, {
+    headers: {
+      "Content-Type": "application/xml",
+      "x-amz-request-id": getRandomUUID(),
+      "x-amz-id-2": getRandomUUID(),
+    },
+  });
 }
