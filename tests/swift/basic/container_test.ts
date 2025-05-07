@@ -28,7 +28,7 @@ Deno.test(async function createContainer(t) {
   });
 
   const result = await s3.send(command);
-  assertEquals(201, result.$metadata.httpStatusCode);
+  assertEquals(200, result.$metadata.httpStatusCode);
 });
 
 Deno.test(async function deleteContainer() {
