@@ -38,6 +38,7 @@ export async function getObject(
         continue;
       }
       response = res;
+      break;
     }
   }
 
@@ -84,6 +85,7 @@ export async function listObjects(
         continue;
       }
       response = res;
+      break;
     }
   }
 
@@ -285,6 +287,7 @@ export async function headObject(
         continue;
       }
       response = res;
+      break;
     }
   }
 
@@ -396,6 +399,7 @@ export async function listParts(
         continue;
       }
       response = res;
+      break;
     }
   }
 

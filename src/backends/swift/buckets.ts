@@ -198,8 +198,7 @@ export async function getBucketAcl(
         continue;
       }
       response = res;
-      // FIXME: shouldn't this break here? Are we trying all
-      // the replicas even if one works?
+      break;
     }
   }
 
@@ -302,6 +301,7 @@ export async function getBucketVersioning(
         continue;
       }
       response = res;
+      break;
     }
   }
 
@@ -463,6 +463,7 @@ export async function getBucketEncryption(
         continue;
       }
       response = res;
+      break;
     }
   }
 
@@ -550,6 +551,7 @@ export async function headBucket(
         continue;
       }
       response = res;
+      break;
     }
   }
 
@@ -693,6 +695,7 @@ export async function getBucketTagging(
         continue;
       }
       response = res;
+      break;
     }
   }
 
@@ -784,6 +787,7 @@ export async function getBucketPolicy(
         continue;
       }
       response = res;
+      break;
     }
   }
 
