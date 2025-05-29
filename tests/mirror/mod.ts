@@ -75,8 +75,8 @@ export const swiftMirrorConfigs: S3ClientConfig[] = [
   },
   {
     endpoint: "http://localhost:8000",
-    region: swiftContainerConfigs[1].region,
     forcePathStyle: true,
+    region: swiftContainerConfigs[1].region,
     credentials: "accessKeyId" in swiftContainerConfigs[1].credentials
       ? swiftContainerConfigs[1].credentials
       : {
@@ -86,8 +86,8 @@ export const swiftMirrorConfigs: S3ClientConfig[] = [
   },
   {
     endpoint: "http://localhost:8000",
-    region: swiftContainerConfigs[2].region,
     forcePathStyle: true,
+    region: swiftContainerConfigs[2].region,
     credentials: "accessKeyId" in swiftContainerConfigs[2].credentials
       ? swiftContainerConfigs[2].credentials
       : {

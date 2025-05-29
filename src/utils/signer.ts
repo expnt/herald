@@ -25,6 +25,7 @@ function getV4Signer(
     region: config.region,
     credentials: creds ??
       ("accessKeyId" in config.credentials ? config.credentials : {
+        // FIXME: swift username and password are not s3 creds, wouldn't work here unless we use them in the client sending the request
         accessKeyId: config.credentials.username,
         secretAccessKey: config.credentials.password,
       }),
@@ -78,12 +79,15 @@ export function extractSignature(request: Request) {
     "x-amz-content-sha256": zod.string().nullish(),
     "x-id": zod.string().nullish(),
   }).safeParse(queryParams);
+
+  // means it was a presigned request and the signature was in the query params
   if (parsed.success) {
     const sigV4Regex = /^([^/]+)\/(\d{8})\/([^/]+)\/([^/]+)\/aws4_request/;
 
+    // check if the credential is valid
     const match = parsed.data["x-amz-credential"].match(sigV4Regex);
     if (!match) {
-      const errResponse = getAPIErrorResponse(APIErrors.ErrAuthHeaderEmpty);
+      const errResponse = getAPIErrorResponse(APIErrors.ErrInvalidSignTag);
       throw new HTTPException(
         errResponse.status,
         { res: errResponse },
@@ -118,6 +122,7 @@ export function extractSignature(request: Request) {
     };
   }
 
+  // means it was a signed request and the signature was in the header
   const authHeader = request.headers.get(AUTH_HEADER);
   if (authHeader === null) {
     const errResponse = getAPIErrorResponse(APIErrors.ErrAuthHeaderEmpty);
@@ -311,8 +316,6 @@ export async function verifyV4Signature(
 ) {
   const originalSignature = extractSignature(originalRequest);
 
-  // originalRequest.headers.delete(AUTH_HEADER);
-  // let signer = signers.get(bucketConfig.credentials.)
   const signer = getV4Signer(
     bucketConfig,
     bucketCredentials[originalSignature.accessKeyId]
