@@ -72,9 +72,6 @@ export async function forwardS3RequestToS3WithTimeouts(
       body = request.body; // Deno body is already a ReadableStream
     }
 
-    logger.debug(`Original URL: ${request.url}`);
-    logger.debug(`Modified URL: ${redirect.toString()}`);
-
     const headers = new Headers();
     for (const [key, value] of request.headers) {
       headers.append(key, value);
@@ -112,6 +109,8 @@ export async function forwardS3RequestToS3WithTimeouts(
       "X-Amz-Expires",
       "X-Amz-SignedHeaders",
       "X-Amz-Signature",
+      "X-Amz-Content-Sha256",
+      "x-id",
     ];
 
     toBeRemovedQueryParams.forEach((param) => {
@@ -131,6 +130,9 @@ export async function forwardS3RequestToS3WithTimeouts(
       headers: signed.headers,
       body: signed.body ?? undefined,
     });
+
+    logger.debug(`Original URL: ${request.url}`);
+    logger.debug(`Modified URL: ${redirect.toString()}`);
 
     // Need to add the url, or content-length gets set to -1
     const response = await fetch(redirect, newRequest);

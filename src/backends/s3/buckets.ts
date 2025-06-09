@@ -143,6 +143,7 @@ export async function routeQueryParamedRequest(
         continue;
       }
       response = res;
+      break;
     }
   }
 
@@ -192,6 +193,7 @@ export async function headBucket(
         continue;
       }
       response = res;
+      break;
     }
   }
 

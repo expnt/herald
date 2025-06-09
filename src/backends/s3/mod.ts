@@ -44,6 +44,7 @@ export async function s3Resolver(
   request: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error> {
+  // FIXME: `resolveHandler` has already extracted request info
   const { method, objectKey, queryParams } = extractRequestInfo(request);
   const queryParamKeys = new Set(Object.keys(queryParams));
 
