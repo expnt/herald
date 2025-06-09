@@ -123,16 +123,15 @@ export function InvalidRequestException(message?: string) {
   });
 }
 
-// xml error response for InternalServerError
-const internalServerErrorXml = `<?xml version="1.0" encoding="UTF-8"?>
+export function InternalServerErrorException(requestId = "unknown") {
+  // xml error response for InternalServerError
+  const internalServerErrorXml = `<?xml version="1.0" encoding="UTF-8"?>
 <Error>
   <Code>InternalServerError</Code>
   <Message>We encountered an internal error. Please try again.</Message>
-  <RequestId>EXAMPLE123456789</RequestId>
-  <HostId>EXAMPLEhostIDString1234567890123456789012345678901234567890</HostId>
+  <RequestId>${requestId}</RequestId>
+  <HostId>1234567890123456789012345678901234567890</HostId>
 </Error>`;
-
-export function InternalServerErrorException() {
   return new Response(internalServerErrorXml, {
     status: 500,
     headers: commonHeaders,

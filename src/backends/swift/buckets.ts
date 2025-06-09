@@ -398,7 +398,7 @@ export function getBucketPayment(
 
   // Swift doesn't have a concept of requester pays like S3
   // We'll return a MethodNotAllowed response
-  throw MethodNotAllowedException("GET");
+  return MethodNotAllowedException("GET");
 }
 
 export async function getBucketEncryption(

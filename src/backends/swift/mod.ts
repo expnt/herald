@@ -508,7 +508,7 @@ export function convertSwiftCreateBucketToS3Response(
   const swiftStatus = swiftResponse.status;
   const swiftHeaders = swiftResponse.headers;
 
-  if (swiftStatus === 201) {
+  if (swiftStatus === 201 || swiftStatus === 202) {
     // Successful CreateBucket
     const requestId = swiftHeaders.get("x-openstack-request-id") ||
       swiftHeaders.get("x-trans-id");

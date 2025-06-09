@@ -1,7 +1,6 @@
 {
   "version": "0",
-  "platform": "x86_64-linux",
-  "moduleEntries": {
+  "sys_entries": {
     "ports": {
       "version": "0",
       "configResolutions": {
@@ -18,13 +17,13 @@
               "version": "3.9.19",
               "buildDepConfigs": {
                 "tar_aa": {
-                  "version": "3.5",
+                  "version": "1.34",
                   "buildDepConfigs": {},
                   "portRef": "tar_aa@0.1.0",
                   "specifiedVersion": false
                 },
                 "zstd_aa": {
-                  "version": "v1.5.7,",
+                  "version": "v1.4.8,",
                   "buildDepConfigs": {},
                   "portRef": "zstd_aa@0.1.0",
                   "specifiedVersion": false
@@ -43,13 +42,13 @@
           "version": "3.9.19",
           "buildDepConfigs": {
             "tar_aa": {
-              "version": "3.5",
+              "version": "1.34",
               "buildDepConfigs": {},
               "portRef": "tar_aa@0.1.0",
               "specifiedVersion": false
             },
             "zstd_aa": {
-              "version": "v1.5.7,",
+              "version": "v1.4.8,",
               "buildDepConfigs": {},
               "portRef": "zstd_aa@0.1.0",
               "specifiedVersion": false
@@ -60,13 +59,13 @@
           "specifiedVersion": true
         },
         "bciqj4p5hoqweghbuvz52rupja7sqze34z63dd62nz632c5zxikv6ezy": {
-          "version": "3.5",
+          "version": "1.34",
           "buildDepConfigs": {},
           "portRef": "tar_aa@0.1.0",
           "specifiedVersion": false
         },
         "bciqe6fwheayositrdk7rkr2ngdr4wizldakex23tgivss7w6z7g3q3y": {
-          "version": "v1.5.7,",
+          "version": "v1.4.8,",
           "buildDepConfigs": {},
           "portRef": "zstd_aa@0.1.0",
           "specifiedVersion": false
@@ -102,8 +101,8 @@
               "installs": [
                 "bciqf7bx6igpppca7ks4fqjkivfqiacuyncmyln2tyw6fl4edl6mhs3q",
                 "bciqdtuhf425g6prb5fyupbcokttmkill6wyqk7bkphx3ueltl5mvu4q",
-                "bciqc5cvg3ipzl6giofosevlb3u5mdrst35iblvsrjtgw65xctgmi4iq",
-                "bciqg6sbbhanfx5e3zfa25be3hrlaz5zz7dsaddule5dvdiqcqo47hyq"
+                "bciqiu6li32aqhha2dqwlh2caxmgc5m7uyjbdmq66oi645yjdcgqubaq",
+                "bciqaxflzhuipvbgt3xrenxxoygf62beyufqiz7ckeexp3o3ecddthza"
               ],
               "allowedBuildDeps": "bciqobhqmhpz3cphjnwec64vhpqkptbfmzhj5biicmcba5qpblmhq3ta"
             }
@@ -256,7 +255,7 @@
         },
         "packageName": "pre-commit"
       },
-      "bciqc5cvg3ipzl6giofosevlb3u5mdrst35iblvsrjtgw65xctgmi4iq": {
+      "bciqiu6li32aqhha2dqwlh2caxmgc5m7uyjbdmq66oi645yjdcgqubaq": {
         "port": {
           "ty": "denoWorker@v1",
           "name": "opentofu_ghrel_fix",
@@ -273,10 +272,10 @@
             "x86_64-solaris"
           ],
           "version": "0.1.0",
-          "moduleSpecifier": "file:///home/asdf/repos/ecma/herald/tools/opentofu_ghrel.port.ts"
+          "moduleSpecifier": "file:///home/destifo/dev/herald/tools/opentofu_ghrel.port.ts"
         }
       },
-      "bciqg6sbbhanfx5e3zfa25be3hrlaz5zz7dsaddule5dvdiqcqo47hyq": {
+      "bciqaxflzhuipvbgt3xrenxxoygf62beyufqiz7ckeexp3o3ecddthza": {
         "version": "todo",
         "port": {
           "ty": "denoWorker@v1",
@@ -287,7 +286,7 @@
             "windows-x86_64"
           ],
           "version": "0.1.0",
-          "moduleSpecifier": "file:///home/asdf/repos/ecma/herald/tools/mc.port.ts"
+          "moduleSpecifier": "file:///home/destifo/dev/herald/tools/mc.port.ts"
         }
       },
       "bciqb6ua63xodzwxngnbjq35hfikiwzb3dclbqkc7e6xgjdt5jin4pia": {

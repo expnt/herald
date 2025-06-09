@@ -10,6 +10,7 @@ import { registerWorkers } from "./workers/mod.ts";
 import { registerSignalHandlers } from "./utils/signal_handlers.ts";
 import { HeraldContext } from "./types/mod.ts";
 import { initTaskStore } from "./backends/task_store.ts";
+import { InternalServerErrorException } from "./constants/errors.ts";
 
 // setup
 await configInit();
@@ -98,10 +99,11 @@ app.onError((err, c) => {
   }
 
   const errMessage = `Something went wrong in the proxy: ${err.message}`;
-  const errResponse = "Something went wrong in the proxy";
   logger.error(errMessage);
   reportToSentry(errMessage);
-  return c.text(errResponse);
+  return InternalServerErrorException(
+    c.req.header("x-request-id") ?? "unknown",
+  );
 });
 
 registerSignalHandlers(ctx);
