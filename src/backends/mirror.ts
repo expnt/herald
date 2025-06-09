@@ -1,12 +1,11 @@
 import { HeraldContext } from "./../types/mod.ts";
-import { ReplicaS3Config, S3Config, SwiftConfig } from "../config/types.ts";
+import { S3Config, SwiftConfig } from "../config/types.ts";
 import { getLogger, reportToSentry } from "../utils/log.ts";
 import { s3Utils } from "../utils/mod.ts";
 import * as s3 from "./s3/objects.ts";
 import * as s3_buckets from "./s3/buckets.ts";
 import * as swift_buckets from "./swift/buckets.ts";
 import * as swift from "./swift/objects.ts";
-import { S3_COPY_SOURCE_HEADER } from "../constants/headers.ts";
 import { MirrorableCommands, MirrorTask } from "./types.ts";
 import { deserializeToRequest, serializeRequest } from "../utils/url.ts";
 import { bucketStore } from "../config/mod.ts";
@@ -66,31 +65,6 @@ export async function prepareMirrorRequests(
     };
     await enqueueMirrorTask(ctx, task);
   }
-}
-
-function _getCopyObjectRequest(
-  // This is a PutObject request
-  request: Request,
-  backupConfig: ReplicaS3Config,
-): Request {
-  const { bucket, objectKey } = s3Utils.extractRequestInfo(request);
-  const copySource = `/${bucket}/${objectKey}`;
-
-  const copyObjectUrl =
-    `${backupConfig.config.endpoint}/${backupConfig.config.bucket}/${
-      request.url.split("/").pop()
-    }`;
-
-  const copyObjectHeaders = new Headers(request.headers);
-  copyObjectHeaders.delete(S3_COPY_SOURCE_HEADER);
-  copyObjectHeaders.set(S3_COPY_SOURCE_HEADER, copySource);
-
-  const copyObjectRequest = new Request(copyObjectUrl, {
-    method: "GET",
-    headers: copyObjectHeaders,
-  });
-
-  return copyObjectRequest;
 }
 
 function getDownloadS3Url(originalRequest: Request, config: S3Config) {
