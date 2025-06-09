@@ -37,6 +37,37 @@ function getV4Signer(
   return signer;
 }
 
+const preSignedQueryParamsSchema = zod.object({
+  "x-amz-algorithm": zod.string(),
+  "x-amz-credential": zod.string(),
+  "x-amz-signature": zod.string(),
+  "x-amz-signedheaders": zod.string(),
+  "x-amz-expires": zod.string().transform((str, ctx) => {
+    const parsed = parseInt(str);
+    if (isNaN(parsed)) {
+      ctx.addIssue({
+        code: zod.ZodIssueCode.custom,
+        message: "Not a number",
+      });
+      return zod.NEVER;
+    }
+    return parsed;
+  }),
+  "x-amz-date": zod.string().transform((str, ctx) => {
+    try {
+      return parseAmzDate(str);
+    } catch {
+      ctx.addIssue({
+        code: zod.ZodIssueCode.custom,
+        message: "Not a valid amz date",
+      });
+      return zod.NEVER;
+    }
+  }),
+  "x-amz-content-sha256": zod.string().nullish(),
+  "x-id": zod.string().nullish(),
+});
+
 /**
  * Extracts the signature from the request.
  *
@@ -49,36 +80,7 @@ export function extractSignature(request: Request) {
     searchParams.entries().map(([key, val]) => [key.toLowerCase(), val]),
   );
 
-  const parsed = zod.object({
-    "x-amz-algorithm": zod.string(),
-    "x-amz-credential": zod.string(),
-    "x-amz-signature": zod.string(),
-    "x-amz-signedheaders": zod.string(),
-    "x-amz-expires": zod.string().transform((str, ctx) => {
-      const parsed = parseInt(str);
-      if (isNaN(parsed)) {
-        ctx.addIssue({
-          code: zod.ZodIssueCode.custom,
-          message: "Not a number",
-        });
-        return zod.NEVER;
-      }
-      return parsed;
-    }),
-    "x-amz-date": zod.string().transform((str, ctx) => {
-      try {
-        return parseAmzDate(str);
-      } catch {
-        ctx.addIssue({
-          code: zod.ZodIssueCode.custom,
-          message: "Not a valid amz date",
-        });
-        return zod.NEVER;
-      }
-    }),
-    "x-amz-content-sha256": zod.string().nullish(),
-    "x-id": zod.string().nullish(),
-  }).safeParse(queryParams);
+  const parsed = preSignedQueryParamsSchema.safeParse(queryParams);
 
   // means it was a presigned request and the signature was in the query params
   if (parsed.success) {
@@ -331,6 +333,7 @@ export async function verifyV4Signature(
       },
   );
 
+  // https://aws.amazon.com/blogs/developer/clock-skew-correction/
   const CLOCK_SKEW = 15 * 60 * 1000;
   if (originalSignature.source == "pre-sign") {
     const now = new Date().getTime();
@@ -371,10 +374,6 @@ export async function verifyV4Signature(
   if (originalSignature.signature !== calculatedSignature.signature) {
     logger.error("bad signature on request", {
       originalRequest,
-      signedNativeRequest,
-      // signableRequest,
-      originalSignature,
-      calculatedSignature,
     });
     const errResponse = getAPIErrorResponse(APIErrors.ErrSignatureDoesNotMatch);
     throw new HTTPException(errResponse.status, { res: errResponse });

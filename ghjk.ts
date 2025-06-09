@@ -103,10 +103,6 @@ const ghjk = file({
     async fn($) {
       // deno
       await $.raw`curl -fsSL https://deno.land/install.sh | sh`;
-      // FIXME: there's a pre-commit port down below??
-      // pre-commit
-      await $.raw`pip install pre-commit`;
-      await $.raw`pre-commit install`;
     }
   },
 
