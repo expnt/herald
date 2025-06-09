@@ -1,3 +1,14 @@
+## 0.3.0 (2025-06-09)
+
+### Feat
+
+- support for pre-signed S3 urls (#37)
+
+### Fix
+
+- remove creds
+- remove creds
+
 ## 0.2.0 (2025-04-23)
 
 ### Feat
