@@ -105,6 +105,8 @@ jobs:
           OPENSTACK_USERNAME: ${{ secrets.OPENSTACK_USERNAME }}
           OPENSTACK_PASSWORD: ${{ secrets.OPENSTACK_PASSWORD }}
           OPENSTACK_PROJECT: ${{ secrets.OPENSTACK_PROJECT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.OPENSTACK_USERNAME }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.OPENSTACK_PASSWORD }}
         run: |
           # run all tests
           ghjk x dev-compose all

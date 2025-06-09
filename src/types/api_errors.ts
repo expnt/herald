@@ -7,6 +7,7 @@ export enum APIErrors {
   ErrMissingSignTag,
   ErrInvalidSignTag,
   ErrSignatureDoesNotMatch,
+  ErrExpiredPresign,
 }
 
 interface APIError {
@@ -17,6 +18,12 @@ interface APIError {
 }
 
 const errorCodeMap: Record<APIErrors, APIError> = {
+  [APIErrors.ErrExpiredPresign]: {
+    code: "InvalidArgument",
+    description: "The presigned url has expired.",
+    httpStatusCode: http.STATUS_CODE.BadRequest,
+    errorSource: "Proxy",
+  },
   [APIErrors.ErrAuthHeaderEmpty]: {
     code: "InvalidArgument",
     description:

@@ -65,6 +65,9 @@ export async function swiftResolver(
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error> {
+  // FIXME: `resolveHandler` has already extracted request info
+  // it is also called in other functions invoked hereafter
+  // multiple times if replicas are involved
   const { method, objectKey } = s3Utils.extractRequestInfo(req);
   const url = new URL(req.url);
   const queryParam = url.searchParams.keys().next().value;

@@ -7,10 +7,7 @@ provider "aws" {
     s3 = "http://localhost:8000/"
   }
 
-  region = "us-east-1"
-
-  access_key = "test:tester"
-  secret_key = "testing"
+  region = "dc3-a"
 
   # Disable AWS-specific features
   skip_credentials_validation = true

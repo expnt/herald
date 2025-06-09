@@ -78,7 +78,7 @@ export async function putObject(
 
   if (response.status !== 201) {
     const errMessage = `Put Object Failed: ${response.statusText}`;
-    logger.warn(errMessage);
+    logger.warn(errMessage, { response });
     reportToSentry(errMessage);
   } else {
     logger.info(`Put Object Successful: ${response.statusText}`);
@@ -146,6 +146,7 @@ export async function getObject(
         continue;
       }
       response = res;
+      break;
     }
   }
 
@@ -286,6 +287,7 @@ export async function listObjects(
         continue;
       }
       response = res;
+      break;
     }
   }
 
@@ -367,6 +369,7 @@ export async function getObjectMeta(
         continue;
       }
       response = res;
+      break;
     }
   }
 
@@ -433,6 +436,7 @@ export async function headObject(
         continue;
       }
       response = res;
+      break;
     }
   }
 
@@ -966,6 +970,7 @@ export async function listParts(
         continue;
       }
       response = res;
+      break;
     }
   }
 

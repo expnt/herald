@@ -171,17 +171,21 @@ export async function getBucketAcl(
   );
 
   if (response instanceof Error && bucketConfig.hasReplicas()) {
-    logger.warn(`Get Bucket ACL on Primary Bucket: ${bucketConfig.bucketName}`);
+    logger.warn(
+      `Get Bucket ACL on Primary Bucket Failed: ${bucketConfig.bucketName}`,
+      response,
+    );
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
         ? await s3Resolver(ctx, req, replica)
         : await swiftResolver(ctx, req, replica);
       if (res instanceof Error) {
-        logger.warn(`Get bucket ACL Failed on Replica: ${replica.name}`);
+        logger.warn(`Get bucket ACL Failed on Replica: ${replica.name}`, res);
         continue;
       }
       response = res;
+      break;
     }
   }
 
@@ -284,6 +288,7 @@ export async function getBucketVersioning(
         continue;
       }
       response = res;
+      break;
     }
   }
 
@@ -445,6 +450,7 @@ export async function getBucketEncryption(
         continue;
       }
       response = res;
+      break;
     }
   }
 
@@ -532,6 +538,7 @@ export async function headBucket(
         continue;
       }
       response = res;
+      break;
     }
   }
 
@@ -669,6 +676,7 @@ export async function getBucketTagging(
         continue;
       }
       response = res;
+      break;
     }
   }
 
@@ -760,6 +768,7 @@ export async function getBucketPolicy(
         continue;
       }
       response = res;
+      break;
     }
   }
 
