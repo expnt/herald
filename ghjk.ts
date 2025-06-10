@@ -4,7 +4,7 @@ import mc from "./tools/mc.port.ts";
 
 
 // constants
-const DENO_VERSION = "2.2.3";
+const DENO_VERSION = "2.3.5";
 const PYTHON_VERSION = "3.9.19";
 const DOCKER_CMD = Deno.env.get("DOCKER_CMD") ?? "docker";
 
