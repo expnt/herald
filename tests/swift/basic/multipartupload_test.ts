@@ -11,7 +11,7 @@ import {
   UploadPartCommand,
 } from "aws-sdk/client-s3";
 import { assert, assertEquals } from "std/assert";
-import { loggingMiddleware } from "../../utils/mod.ts";
+// import { loggingMiddleware } from "../../utils/mod.ts";
 import { configInit, globalConfig, proxyUrl } from "../../../src/config/mod.ts";
 import { checkHeadObject, deleteBucketIfExists } from "../../../utils/s3.ts";
 import { createTempFile } from "../../../utils/file.ts";
@@ -35,9 +35,9 @@ const s3 = new S3Client({
   endpoint: proxyUrl,
 });
 
-s3.middlewareStack.add(loggingMiddleware, {
-  step: "finalizeRequest",
-});
+// s3.middlewareStack.add(loggingMiddleware, {
+//   step: "finalizeRequest",
+// });
 
 Deno.test("Multipart Upload Flow", async (t) => {
   await t.step("Cleanup bucket if exists", async () => {
