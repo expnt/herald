@@ -206,7 +206,7 @@ export async function deleteObject(
     return response;
   }
 
-  if (response.status !== 204) {
+  if (response.status !== 204 && response.status !== 404) {
     const errMessage = `Delete Object Failed: ${response.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
