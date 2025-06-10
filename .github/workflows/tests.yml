@@ -109,6 +109,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.OPENSTACK_PASSWORD }}
         run: |
           # run all tests
+          deno --version
           ghjk x dev-compose all
 
           deno install
