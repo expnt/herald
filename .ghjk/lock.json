@@ -4,8 +4,8 @@
     "ports": {
       "version": "0",
       "configResolutions": {
-        "bciqhmlbhsaq4rf6jgtvb6n3ckyyz6zxmlrodgpgmbicthonvynggzda": {
-          "version": "v2.2.3",
+        "bciqhhww3xwn4akvuawuighsbieqgiukzfs6bqgdwgxu5ivyfgfvdpga": {
+          "version": "v2.3.5",
           "buildDepConfigs": {},
           "portRef": "deno_ghrel@0.1.0",
           "specifiedVersion": true
@@ -99,7 +99,7 @@
           "sets": {
             "ghjkEnvProvInstSet___main": {
               "installs": [
-                "bciqf7bx6igpppca7ks4fqjkivfqiacuyncmyln2tyw6fl4edl6mhs3q",
+                "bciqp4mcilxvsz47pvg3mvgy3wpektitmomjqbhrcssm23icryjkkpsa",
                 "bciqdtuhf425g6prb5fyupbcokttmkill6wyqk7bkphx3ueltl5mvu4q",
                 "bciqiu6li32aqhha2dqwlh2caxmgc5m7uyjbdmq66oi645yjdcgqubaq",
                 "bciqaxflzhuipvbgt3xrenxxoygf62beyufqiz7ckeexp3o3ecddthza"
@@ -203,8 +203,8 @@
       }
     ],
     "blackboard": {
-      "bciqf7bx6igpppca7ks4fqjkivfqiacuyncmyln2tyw6fl4edl6mhs3q": {
-        "version": "2.2.3",
+      "bciqp4mcilxvsz47pvg3mvgy3wpektitmomjqbhrcssm23icryjkkpsa": {
+        "version": "2.3.5",
         "port": {
           "ty": "denoWorker@v1",
           "name": "deno_ghrel",
