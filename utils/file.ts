@@ -1,5 +1,6 @@
 import { writeAll } from "std/io";
 import { basename } from "std/path/";
+import { testTempDir } from "../tests/utils/mod.ts";
 
 /**
  * Creates a temporary file of the specified size in megabytes.
@@ -8,10 +9,19 @@ import { basename } from "std/path/";
  */
 export async function createTempFile(
   sizeInMB: number,
-  path: string | undefined = undefined,
+  path: string = testTempDir,
 ): Promise<string> {
   const sizeInBytes = sizeInMB * 1024 * 1024;
 
+  try {
+    await Deno.stat(path);
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) {
+      await Deno.mkdir(path, { recursive: true });
+    } else {
+      throw error;
+    }
+  }
   const tempFile = await Deno.makeTempFile({
     dir: path,
   });

@@ -343,10 +343,16 @@ async function mirrorCreateBucket(
     bucket.bucketName === replica.bucketName
   )!;
   if (replica.typ === "ReplicaS3Config") {
+    const config = replica.config as S3Config;
+    const xmlBody = generateCreateBucketXml(config.region);
+    const headers = new Headers();
+    headers.set("Content-Type", "application/xml");
+    headers.set("Content-Length", xmlBody.length.toString());
+
     const modifiedRequest = new Request(originalRequest.url, {
-      method: originalRequest.method,
-      headers: originalRequest.headers,
-      body: generateCreateBucketXml(replica.config.region),
+      method: originalRequest.method, // Should be PUT for Create Bucket
+      headers: headers,
+      body: xmlBody,
     });
     const replicaBucket = primaryBucket.getReplica(replica.name)!;
     await s3_buckets.createBucket(ctx, modifiedRequest, replicaBucket);
@@ -391,7 +397,12 @@ async function mirrorCompleteMultipartUpload(
   primary: Bucket,
   replica: Bucket,
 ) {
-  return await mirrorPutObject(ctx, originalRequest, primary, replica);
+  const url = new URL(originalRequest.url);
+  url.searchParams.delete("uploadId");
+  const modifiedUrl = url.toString();
+  const modifiedRequest = new Request(modifiedUrl, originalRequest);
+
+  return await mirrorPutObject(ctx, modifiedRequest, primary, replica);
 }
 
 export async function processTask(ctx: HeraldContext, task: MirrorTask) {
