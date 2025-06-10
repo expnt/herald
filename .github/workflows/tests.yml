@@ -18,7 +18,7 @@ concurrency:
 
 env:
   DENO_V: 2.3.5
-  GHJK_VERSION: "v0.3.0"
+  GHJK_VERSION: "v0.2.2"
   GHJK_ENV: "ci"
 
 jobs:
@@ -75,7 +75,8 @@ jobs:
       - uses: denoland/setup-deno@v1
         with:
           deno-version: ${{ env.DENO_V }}
-      - uses: metatypedev/setup-ghjk@b4ab7287a841fd5f8a4117f3efc14131c7ec62e1
+      - name: Download Install Script
+        run: curl -fsSL "https://raw.github.com/metatypedev/ghjk/$GHJK_VERSION/install.sh" -o install.sh
       - name: Execute Install Script
         run: yes | bash install.sh
       - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
