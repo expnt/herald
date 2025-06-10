@@ -98,14 +98,6 @@ const ghjk = file({
     }
   },
 
-  "install-sys-deps": {
-    desc: "Install system dependencies",
-    async fn($) {
-      // deno
-      await $.raw`curl -fsSL https://deno.land/install.sh | sh`;
-    }
-  },
-
   "setup-auth": {
     desc: "Setup auth",
     async fn($) {

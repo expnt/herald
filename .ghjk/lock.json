@@ -119,12 +119,6 @@
               "desc": "Setup auth",
               "envKey": "bciqlyqobzsnotejmiiy2mavp4kvstbnufncoriydici3c6pbs446oda"
             },
-            "install-sys-deps": {
-              "ty": "denoFile@v1",
-              "key": "install-sys-deps",
-              "desc": "Install system dependencies",
-              "envKey": "bciqlyqobzsnotejmiiy2mavp4kvstbnufncoriydici3c6pbs446oda"
-            },
             "build-proxy": {
               "ty": "denoFile@v1",
               "key": "build-proxy",
@@ -146,7 +140,6 @@
           },
           "tasksNamed": [
             "setup-auth",
-            "install-sys-deps",
             "build-proxy",
             "dev-proxy",
             "dev-compose"
