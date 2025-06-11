@@ -940,6 +940,7 @@ export async function listParts(
   headers.delete("Accept");
   headers.set("Accept", "application/json");
 
+  // FIXME: cant append objectKey directly, swift doesn't allow to access the parts just like files in folders, needs to be fetched selectively
   const reqUrl = `${swiftUrl}/${bucket}?${params.toString()}`;
 
   const fetchFunc = async () => {
@@ -976,12 +977,13 @@ export async function listParts(
 
   if (response instanceof Error) {
     logger.warn(`ListParts Failed: ${response.message}`);
-    return response;
+    throw response;
   }
 
   if (response.status === 404) {
     logger.warn(`ListParts Failed: ${response.statusText}`);
-    throw NoSuchBucketException();
+    const errMessage = await response.text();
+    throw new HTTPException(response.status, { message: errMessage });
   } else {
     logger.info(`ListParts Successful: ${response.statusText}`);
   }

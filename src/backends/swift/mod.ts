@@ -38,6 +38,7 @@ import { s3Utils } from "../../utils/mod.ts";
 import { Bucket } from "../../buckets/mod.ts";
 import { HeraldContext } from "../../types/mod.ts";
 import { formatRFC3339Date } from "./utils/mod.ts";
+import { InternalServerErrorException } from "../../constants/errors.ts";
 
 const handlers = {
   putObject,
@@ -144,6 +145,7 @@ export async function swiftResolver(
     case "PUT":
       if (
         objectKey && queryParamKeys.has("partNumber") &&
+        queryParamKeys.has("uploadId") &&
         req.headers.get("x-amz-copy-source")
       ) {
         return await handlers.uploadPartCopy(ctx, req, bucketConfig);
@@ -297,7 +299,12 @@ export function convertSwiftUploadPartToS3Response(swiftResponse: Response) {
   }
 
   const swiftHeaders = swiftResponse.headers;
-  const eTag = swiftHeaders.get("etag")!;
+  const eTag = swiftHeaders.get("etag");
+
+  if (!eTag) {
+    logger.error("Etag not found in Upload Part response");
+    throw new HTTPException(500, { res: InternalServerErrorException() });
+  }
 
   const s3ResponseHeaders = new Headers();
   s3ResponseHeaders.set("ETag", eTag);
@@ -421,7 +428,7 @@ export function convertSwiftCopyObjectToS3Response(
       s3ResponseHeaders.set("x-amz-request-id", requestId);
     }
 
-    s3ResponseHeaders.set("ETag", eTag); // Make sure it's quoted like S3
+    s3ResponseHeaders.set("ETag", eTag);
 
     const s3ResponseBody = `
 <?xml version="1.0" encoding="UTF-8"?>

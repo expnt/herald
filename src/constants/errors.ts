@@ -66,7 +66,7 @@ const noSuchBucketConfigurationXml = `<?xml version="1.0" encoding="UTF-8"?>
 
 export function NoSuchBucketConfigurationException() {
   return new Response(noSuchBucketConfigurationXml, {
-    status: 500,
+    status: 404,
     headers: commonHeaders,
   });
 }
