@@ -51,7 +51,7 @@ const uploadWithSDK = async (t: Deno.TestContext) => {
   });
 
   const createBucketResponse = await s3.send(createBucketCommand);
-  assertEquals(201, createBucketResponse.$metadata.httpStatusCode);
+  assertEquals(200, createBucketResponse.$metadata.httpStatusCode);
 
   const body = await Deno.readFile(tempFile);
 
@@ -62,7 +62,7 @@ const uploadWithSDK = async (t: Deno.TestContext) => {
   });
 
   const res = await s3.send(uploadCommand);
-  assertEquals(201, res.$metadata.httpStatusCode);
+  assertEquals(200, res.$metadata.httpStatusCode);
 };
 
 Deno.test("upload an object to s3", uploadWithSDK);
@@ -121,7 +121,7 @@ Deno.test(async function streamUpload() {
   });
 
   const res = await upload.done();
-  assertEquals(201, res.$metadata.httpStatusCode);
+  assertEquals(200, res.$metadata.httpStatusCode);
 });
 
 Deno.test(async function nonExistingBucketListObject(t) {

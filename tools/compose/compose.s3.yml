@@ -3,6 +3,7 @@ services:
     image: docker.io/bitnami/minio:2024
     platform: linux/amd64
     restart: unless-stopped
+    user: root # fix to run in coder workspace
     ports:
       - "9000:9000"
       - "9001:9001"

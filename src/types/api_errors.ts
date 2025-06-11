@@ -65,12 +65,19 @@ const errorCodeMap: Record<APIErrors, APIError> = {
 };
 
 export function getAPIErrorResponse(error: APIErrors): Response {
-  const err = errorCodeMap[error];
+  const originalErr = errorCodeMap[error];
+  const err = `<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>${originalErr.code}</Code>
+  <Message>${originalErr.description}</Message>
+  <ErrorSource>${originalErr.errorSource}</ErrorSource>
+</Error>`;
 
-  return new Response(err.description, {
-    status: err.httpStatusCode,
+  return new Response(err, {
+    status: originalErr.httpStatusCode,
     headers: {
-      ErrorSource: err.errorSource,
+      "Content-Type": "application/xml",
+      ErrorSource: originalErr.errorSource,
     },
   });
 }

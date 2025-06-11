@@ -7,7 +7,8 @@ provider "aws" {
     s3 = "http://localhost:8000/"
   }
 
-  region = "dc3-a"
+  region      = "dc3-a"
+  max_retries = 3
 
   # Disable AWS-specific features
   skip_credentials_validation = true

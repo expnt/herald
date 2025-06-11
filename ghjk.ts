@@ -4,7 +4,7 @@ import mc from "./tools/mc.port.ts";
 
 
 // constants
-const DENO_VERSION = "2.2.3";
+const DENO_VERSION = "2.3.5";
 const PYTHON_VERSION = "3.9.19";
 const DOCKER_CMD = Deno.env.get("DOCKER_CMD") ?? "docker";
 
@@ -95,14 +95,6 @@ const ghjk = file({
     async fn($) {
       await $.raw`${DOCKER_CMD} compose build --no-cache proxy`;
       await $.raw`${DOCKER_CMD} compose up -d --force-recreate`;
-    }
-  },
-
-  "install-sys-deps": {
-    desc: "Install system dependencies",
-    async fn($) {
-      // deno
-      await $.raw`curl -fsSL https://deno.land/install.sh | sh`;
     }
   },
 

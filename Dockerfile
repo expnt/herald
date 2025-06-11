@@ -1,6 +1,6 @@
 # checkov:skip=CKV_DOCKER_2: Health check managed elsewhere
 # checkov:skip=CKV_DOCKER_3: User settings managed elsewhere
-FROM denoland/deno:alpine-2.2.3
+FROM denoland/deno:alpine-2.3.5
 
 WORKDIR /app
 

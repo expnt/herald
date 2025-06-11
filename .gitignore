@@ -87,3 +87,4 @@ token
 *.db
 *.db-shm
 *.db-wal
+.vscode

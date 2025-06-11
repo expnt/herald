@@ -10,20 +10,16 @@ import { MethodNotAllowedException } from "../../constants/errors.ts";
 import { XML_CONTENT_TYPE } from "../../constants/query-params.ts";
 import { SwiftConfig } from "../../config/types.ts";
 import { prepareMirrorRequests } from "../mirror.ts";
-import { HTTP_STATUS_CODES } from "../../constants/http_status_codes.ts";
 import { Bucket } from "../../buckets/mod.ts";
 import { s3Resolver } from "../s3/mod.ts";
-import { swiftResolver } from "./mod.ts";
+import {
+  convertSwiftCreateBucketToS3Response,
+  convertSwiftHeadBucketToS3Response,
+  swiftResolver,
+} from "./mod.ts";
 import { HeraldContext } from "../../types/mod.ts";
 
 const logger = getLogger(import.meta);
-
-function createBucketSuccessResponse(bucketName: string): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<CreateBucketConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
-  <Location>${bucketName}</Location>
-</CreateBucketConfiguration>`;
-}
 
 export async function createBucket(
   ctx: HeraldContext,
@@ -80,16 +76,7 @@ export async function createBucket(
     }
   }
 
-  const successResponse = createBucketSuccessResponse(bucket);
-  const clonedHeaders = new Headers(response.headers);
-  clonedHeaders.set("Content-Type", XML_CONTENT_TYPE);
-  const newResponse = new Response(successResponse, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: clonedHeaders,
-  });
-
-  return newResponse;
+  return convertSwiftCreateBucketToS3Response(response, bucket);
 }
 
 export async function deleteBucket(
@@ -411,7 +398,7 @@ export function getBucketPayment(
 
   // Swift doesn't have a concept of requester pays like S3
   // We'll return a MethodNotAllowed response
-  throw MethodNotAllowedException("GET");
+  return MethodNotAllowedException("GET");
 }
 
 export async function getBucketEncryption(
@@ -580,13 +567,7 @@ export async function headBucket(
     });
   }
 
-  // Create a new response with only the headers
-  const headResponse = new Response(null, {
-    status: HTTP_STATUS_CODES.OK,
-    headers: response.headers,
-  });
-
-  return headResponse;
+  return convertSwiftHeadBucketToS3Response(response, config.region);
 }
 
 export function getBucketCors(

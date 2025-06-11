@@ -88,9 +88,9 @@ export async function setupBucket(client: S3Client, bucketName: string) {
 
 export function checkPutObject(res: ServiceOutputTypes) {
   const actual = res.$metadata.httpStatusCode;
-  const expected = [200, 201]; // Allowed values
+  const expected = 200; // Allowed values
 
-  assert(actual !== undefined && expected.includes(actual));
+  assert(actual !== undefined && expected === actual);
 }
 
 export function checkDeleteObject(res: ServiceOutputTypes) {
@@ -103,9 +103,9 @@ export function checkUpload(res: ServiceOutputTypes) {
 
 export function checkCreateBucket(res: ServiceOutputTypes) {
   const actual = res.$metadata.httpStatusCode;
-  const expected = [200, 201]; // Allowed values
+  const expected = 200; // Allowed values
 
-  assert(actual !== undefined && expected.includes(actual));
+  assert(actual !== undefined && expected === actual);
 }
 
 export function checkDeleteBucket(res: ServiceOutputTypes) {
@@ -126,9 +126,9 @@ export function checkHeadObject(res: ServiceOutputTypes) {
 
 export function checkCopyObject(res: ServiceOutputTypes) {
   const actual = res.$metadata.httpStatusCode;
-  const expected = [200, 201]; // Allowed values
+  const expected = 200; // Allowed values
 
-  assert(actual !== undefined && expected.includes(actual));
+  assert(actual !== undefined && expected === actual);
 }
 
 export async function createBucketWithoutSDK(
