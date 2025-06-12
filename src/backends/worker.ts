@@ -93,6 +93,7 @@ async function onMsg(event: MessageEvent) {
       await onStart(event, logger);
       break;
     default:
+      // logically unreachable
       throw new Error("Unknown message type:", message.type);
   }
 }

@@ -108,7 +108,7 @@ async function mirrorPutObject(
   originalRequest: Request,
   primary: Bucket,
   replica: Bucket,
-): Promise<void> {
+): Promise<void | Error> {
   if (primary.typ === "S3BucketConfig") {
     // get object from s3
     const getObjectUrl = getDownloadS3Url(
@@ -126,12 +126,13 @@ async function mirrorPutObject(
     const response = await s3.getObject(ctx, getObjectRequest, primaryBucket);
 
     if (response instanceof Error) {
-      const errMessage = "Get object failed during mirroring to replica bucket";
+      const errMessage =
+        `Get object failed during mirroring to replica bucket: ${response.message}`;
       logger.error(
         errMessage,
       );
       reportToSentry(errMessage);
-      return;
+      return response;
     }
 
     if (!response.ok) {
@@ -192,12 +193,13 @@ async function mirrorPutObject(
   const response = await swift.getObject(ctx, getObjectRequest, primaryBucket);
 
   if (response instanceof Error) {
-    const errMessage = "Get object failed during mirroring to replica bucket";
+    const errMessage =
+      `Get object failed during mirroring to replica bucket: ${response.message}`;
     logger.error(
       errMessage,
     );
     reportToSentry(errMessage);
-    return;
+    return response;
   }
 
   if (!response.ok) {
@@ -289,6 +291,8 @@ async function mirrorDeleteObject(
       break;
     }
     default:
+      logger.critical(`Invalid replica config type: ${replica.typ}`);
+      // we wouldn't reach here since schema gets validated,
       throw new Error("Invalid replica config type");
   }
 }
@@ -330,6 +334,8 @@ async function mirrorCopyObject(
       break;
     }
     default:
+      logger.critical(`Invalid replica config type: ${replica.typ}`);
+      // we wouldn't reach here since schema gets validated,
       throw new Error("Invalid replica config type");
   }
 }

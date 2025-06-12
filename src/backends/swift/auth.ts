@@ -1,6 +1,6 @@
 import { OPENSTACK_AUTH_TOKEN_HEADER } from "./../../constants/headers.ts";
 import { SwiftConfig } from "../../config/types.ts";
-import { HTTPException } from "../../types/http-exception.ts";
+import { HeraldError } from "../../types/http-exception.ts";
 import { getLogger } from "../../utils/log.ts";
 import { retryWithExponentialBackoff } from "../../utils/url.ts";
 
@@ -21,10 +21,12 @@ export interface OpenStackEndpoint {
   url: string;
 }
 
-export async function getAuthTokenWithTimeouts(config: SwiftConfig): Promise<{
-  storageUrl: string;
-  token: string;
-}> {
+export async function getAuthTokenWithTimeouts(config: SwiftConfig): Promise<
+  {
+    storageUrl: string;
+    token: string;
+  } | Error
+> {
   const getAuthToken = async () => {
     const { auth_url, credentials, region } = config;
     const {
@@ -68,18 +70,19 @@ export async function getAuthTokenWithTimeouts(config: SwiftConfig): Promise<{
     });
 
     if (response.status === 300) {
+      const msg = await response.text();
       logger.warn("Multiple choices available for the requested resource.");
       const choices = response.headers.get("location");
       logger.info(`Available choices: ${choices}`);
       // Optionally, implement logic to handle multiple choices
-      throw new HTTPException(response.status, { res: response });
+      return new HeraldError(response.status, { message: msg });
     }
 
     if (!response.ok) {
-      const errMessage =
-        `Failed to authenticate with the auth service: ${response.statusText}`;
+      const msg = await response.text();
+      const errMessage = `Failed to authenticate with the auth service: ${msg}`;
       logger.warn(errMessage);
-      throw new HTTPException(response.status, { res: response });
+      return new HeraldError(response.status, { message: msg });
     }
     logger.info("Authorization Token and Storage URL retrieved Successfully");
 
@@ -93,7 +96,7 @@ export async function getAuthTokenWithTimeouts(config: SwiftConfig): Promise<{
     );
 
     if (storageService === undefined) {
-      throw new HTTPException(404, {
+      return new HeraldError(404, {
         message: "Object Store Service not found in OpenStack Server",
       });
     }
@@ -104,14 +107,14 @@ export async function getAuthTokenWithTimeouts(config: SwiftConfig): Promise<{
     )?.url;
 
     if (token == null) {
-      throw new HTTPException(400, {
+      return new HeraldError(400, {
         message:
           "Error Authenticating to Open Stack Server: x-subject-token header is null",
       });
     }
 
     if (storageUrl === undefined) {
-      throw new HTTPException(404, {
+      return new HeraldError(404, {
         message:
           `Storage URL not found in OpenStack Server for region ${region}`,
       });
@@ -127,7 +130,7 @@ export async function getAuthTokenWithTimeouts(config: SwiftConfig): Promise<{
   );
 
   if (res instanceof Error) {
-    throw res;
+    return res;
   }
 
   return res;

@@ -28,19 +28,10 @@ export async function createBucket(
   );
 
   if (response instanceof Error) {
-    logger.warn(`Create Bucket Failed: ${response.message}`);
-    const errorXml = `<?xml version="1.0" encoding="UTF-8"?>
-<Error>
-  <Code>${response.name}</Code>
-  <Message>Failed to connect to S3 storage: ${response.message}. Please try again later.</Message>
-</Error>`;
-
-    return new Response(errorXml, {
-      status: 500,
-      headers: {
-        "Content-Type": "application/xml",
-      },
-    });
+    logger.warn(
+      `Create Bucket Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
+    return response;
   }
 
   if (response.status != 200) {
@@ -78,19 +69,10 @@ export async function deleteBucket(
   );
 
   if (response instanceof Error) {
-    logger.warn(`Delete Bucket Failed: ${response.message}`);
-    const errorXml = `<?xml version="1.0" encoding="UTF-8"?>
-<Error>
-  <Code>${response.name}</Code>
-  <Message>Failed to connect to S3 storage: ${response.message}. Please try again later.</Message>
-</Error>`;
-
-    return new Response(errorXml, {
-      status: 500,
-      headers: {
-        "Content-Type": "application/xml",
-      },
-    });
+    logger.warn(
+      `Delete Bucket Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
+    return response;
   }
 
   if (response.status != 204) {
@@ -148,7 +130,9 @@ export async function routeQueryParamedRequest(
   }
 
   if (response instanceof Error) {
-    logger.warn(`${formatParams} Operation Failed: ${response.message}`);
+    logger.warn(
+      `${formatParams} Operation Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
@@ -198,19 +182,10 @@ export async function headBucket(
   }
 
   if (response instanceof Error) {
-    logger.warn(`Head Bucket Failed: ${response.message}`);
-    const errorXml = `<?xml version="1.0" encoding="UTF-8"?>
-<Error>
-  <Code>${response.name}</Code>
-  <Message>Failed to connect to S3 storage: ${response.message}. Please try again later.</Message>
-</Error>`;
-
-    return new Response(errorXml, {
-      status: 500,
-      headers: {
-        "Content-Type": "application/xml",
-      },
-    });
+    logger.warn(
+      `Head Bucket Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
+    return response;
   }
 
   if (response.status !== 200 && response.status !== 404) {

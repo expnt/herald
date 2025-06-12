@@ -1,5 +1,5 @@
 import { getSwiftRequestHeaders } from "./auth.ts";
-import { HTTPException } from "../../types/http-exception.ts";
+import { HeraldError } from "../../types/http-exception.ts";
 import { s3Utils } from "../../utils/mod.ts";
 import { getLogger, reportToSentry } from "../../utils/log.ts";
 import {
@@ -30,7 +30,7 @@ export async function createBucket(
 
   const { bucket } = s3Utils.extractRequestInfo(req);
   if (!bucket) {
-    return new HTTPException(404, {
+    return new HeraldError(404, {
       message: "Bucket information missing from the request",
     });
   }
@@ -56,7 +56,9 @@ export async function createBucket(
   );
 
   if (response instanceof Error) {
-    logger.warn(`Create Bucket Failed: ${response.message}`);
+    logger.warn(
+      `Create Bucket Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
@@ -88,7 +90,7 @@ export async function deleteBucket(
 
   const { bucket } = s3Utils.extractRequestInfo(req);
   if (!bucket) {
-    return new HTTPException(404, {
+    return new HeraldError(404, {
       message: "Bucket information missing from the request",
     });
   }
@@ -114,7 +116,9 @@ export async function deleteBucket(
   );
 
   if (response instanceof Error) {
-    logger.warn(`Delete Bucket Failed: ${response.message}`);
+    logger.warn(
+      `Delete Bucket Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
@@ -146,7 +150,7 @@ export async function getBucketAcl(
 
   const { bucket } = s3Utils.extractRequestInfo(req);
   if (!bucket) {
-    return new HTTPException(404, {
+    return new HeraldError(404, {
       message: "Bucket information missing from the request",
     });
   }
@@ -190,14 +194,16 @@ export async function getBucketAcl(
   }
 
   if (response instanceof Error) {
-    logger.warn(`Get bucket ACL Failed: ${response.message}`);
+    logger.warn(
+      `Get bucket ACL Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
   if (response.status >= 300) {
     const errMessage = `Get bucket ACL Failed: ${response.statusText}`;
     logger.warn(errMessage);
-    return new HTTPException(response.status, { message: response.statusText });
+    return new HeraldError(response.status, { message: response.statusText });
   }
 
   // Extract relevant headers from Swift response
@@ -248,7 +254,7 @@ export async function getBucketVersioning(
 
   const { bucket } = s3Utils.extractRequestInfo(req);
   if (!bucket) {
-    return new HTTPException(404, {
+    return new HeraldError(404, {
       message: "Bucket information missing from the request",
     });
   }
@@ -293,13 +299,15 @@ export async function getBucketVersioning(
   }
 
   if (response instanceof Error) {
-    logger.warn(`Get bucket versioning Failed: ${response.message}`);
+    logger.warn(
+      `Get bucket versioning Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
   if (response.status >= 300) {
     logger.warn(`Get bucket versioning Failed: ${response.statusText}`);
-    return new HTTPException(response.status, { message: response.statusText });
+    return new HeraldError(response.status, { message: response.statusText });
   }
 
   // Swift doesn't support bucket versioning like S3, so we return an empty configuration
@@ -410,7 +418,7 @@ export async function getBucketEncryption(
 
   const { bucket } = s3Utils.extractRequestInfo(req);
   if (!bucket) {
-    return new HTTPException(404, {
+    return new HeraldError(404, {
       message: "Bucket information missing from the request",
     });
   }
@@ -455,13 +463,15 @@ export async function getBucketEncryption(
   }
 
   if (response instanceof Error) {
-    logger.warn(`Get bucket encryption Failed: ${response.message}`);
+    logger.warn(
+      `Get bucket encryption Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
   if (response.status >= 300) {
     logger.warn(`Get bucket encryption Failed: ${response.statusText}`);
-    return new HTTPException(response.status, { message: response.statusText });
+    return new HeraldError(response.status, { message: response.statusText });
   }
 
   // Check if Swift container has encryption enabled
@@ -498,7 +508,7 @@ export async function headBucket(
 
   const { bucket } = s3Utils.extractRequestInfo(req);
   if (!bucket) {
-    return new HTTPException(404, {
+    return new HeraldError(404, {
       message: "Bucket information missing from the request",
     });
   }
@@ -543,19 +553,10 @@ export async function headBucket(
   }
 
   if (response instanceof Error) {
-    logger.warn(`Head bucket Failed: ${response.message}`);
-    const errorXml = `<?xml version="1.0" encoding="UTF-8"?>
-<Error>
-  <Code>${response.name}</Code>
-  <Message>${response.message}.</Message>
-</Error>`;
-
-    return new Response(errorXml, {
-      status: 500,
-      headers: {
-        "Content-Type": "application/xml",
-      },
-    });
+    logger.warn(
+      `Head bucket Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
+    return response;
   }
 
   logger.info(`Head bucket Successful: ${response.statusText}`);
@@ -636,7 +637,7 @@ export async function getBucketTagging(
 
   const { bucket } = s3Utils.extractRequestInfo(req);
   if (!bucket) {
-    return new HTTPException(404, {
+    return new HeraldError(404, {
       message: "Bucket information missing from the request",
     });
   }
@@ -681,13 +682,15 @@ export async function getBucketTagging(
   }
 
   if (response instanceof Error) {
-    logger.warn(`Get bucket tagging Failed: ${response.message}`);
+    logger.warn(
+      `Get bucket tagging Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
   if (response.status >= 300) {
     logger.warn(`Get bucket tagging Failed: ${response.statusText}`);
-    return new HTTPException(response.status, { message: response.statusText });
+    return new HeraldError(response.status, { message: response.statusText });
   }
 
   // Swift doesn't have a direct equivalent to S3's tagging
@@ -728,7 +731,7 @@ export async function getBucketPolicy(
 
   const { bucket } = s3Utils.extractRequestInfo(req);
   if (!bucket) {
-    return new HTTPException(404, {
+    return new HeraldError(404, {
       message: "Bucket information missing from the request",
     });
   }
@@ -773,13 +776,15 @@ export async function getBucketPolicy(
   }
 
   if (response instanceof Error) {
-    logger.warn(`Get bucket policy Failed: ${response.message}`);
+    logger.warn(
+      `Get Bucket Policy Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
   if (response.status >= 300) {
     logger.warn(`Get bucket policy Failed: ${response.statusText}`);
-    return new HTTPException(response.status, { message: response.statusText });
+    return new HeraldError(response.status, { message: response.statusText });
   }
 
   // Swift doesn't have a direct equivalent to S3's bucket policies

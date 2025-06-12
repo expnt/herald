@@ -24,7 +24,7 @@ type HTTPExceptionOptions = {
  * ```
  * @see https://hono.dev/api/exception
  */
-export class HTTPException extends Error {
+export class HeraldError extends Error {
   readonly res?: Response;
   readonly status: StatusCode | number;
 
@@ -42,8 +42,18 @@ export class HTTPException extends Error {
       });
       return newResponse;
     }
-    return new Response(this.message, {
+
+    const errorXml = `<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Error>
+  <Code>InternalServerError</Code>
+  <Message>We encountered an internal error: ${this.message}. Please try again.</Message>
+</Error>`;
+    return new Response(errorXml, {
       status: this.status,
+      headers: {
+        "Content-Type": "application/xml",
+      },
     });
   }
 }

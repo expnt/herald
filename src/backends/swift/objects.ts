@@ -1,7 +1,7 @@
 import * as xml2js from "xml2js";
 
 import { getLogger, reportToSentry } from "../../utils/log.ts";
-import { HTTPException } from "../../types/http-exception.ts";
+import { HeraldError } from "../../types/http-exception.ts";
 import { getSwiftRequestHeaders } from "./auth.ts";
 import {
   getBodyBuffer,
@@ -34,6 +34,7 @@ import {
 import { HeraldContext } from "../../types/mod.ts";
 import { getRandomUUID } from "../../utils/crypto.ts";
 import { MULTIPART_UPLOADS_PATH } from "../../constants/s3.ts";
+import { APIErrors, getAPIErrorResponse } from "../../types/api_errors.ts";
 
 const logger = getLogger(import.meta);
 
@@ -41,7 +42,7 @@ export async function putObject(
   ctx: HeraldContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Response | Error | HeraldError> {
   logger.info("[Swift backend] Proxying Put Object Request...");
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
   const body = req.body;
@@ -72,7 +73,9 @@ export async function putObject(
   );
 
   if (response instanceof Error) {
-    logger.warn(`Put Object Failed: ${response.message}`);
+    logger.warn(
+      `Put Object Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
@@ -99,7 +102,7 @@ export async function getObject(
   ctx: HeraldContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Response | Error | HeraldError> {
   logger.info("[Swift backend] Proxying Get Object Request...");
 
   const { bucket, objectKey: object, queryParams } = s3Utils.extractRequestInfo(
@@ -151,7 +154,9 @@ export async function getObject(
   }
 
   if (response instanceof Error) {
-    logger.warn(`Get Object Failed: ${response.message}`);
+    logger.warn(
+      `Get Object Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
@@ -170,7 +175,7 @@ export async function deleteObject(
   ctx: HeraldContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Response | Error | HeraldError> {
   logger.info("[Swift backend] Proxying Delete Object Request...");
 
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
@@ -202,7 +207,9 @@ export async function deleteObject(
   );
 
   if (response instanceof Error) {
-    logger.warn(`Delete Object Failed: ${response.message}`);
+    logger.warn(
+      `Delete Object Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
@@ -229,7 +236,7 @@ export async function listObjects(
   ctx: HeraldContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Response | Error | HeraldError> {
   logger.info("[Swift backend] Proxying Get List of Objects Request...");
 
   const { bucket, queryParams: query } = s3Utils.extractRequestInfo(req);
@@ -292,7 +299,9 @@ export async function listObjects(
   }
 
   if (response instanceof Error) {
-    logger.warn(`Get List of Objects Failed: ${response.message}`);
+    logger.warn(
+      `Get List of Objects Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
@@ -325,14 +334,13 @@ export async function getObjectMeta(
   ctx: HeraldContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Response | Error | HeraldError> {
   logger.info("[Swift backend] Proxying Get Object Meta Request...");
 
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
   if (!bucket) {
-    throw InvalidRequestException(
-      "Bucket information missing from the request",
-    );
+    logger.error(`Bucket information missing from request`);
+    return getAPIErrorResponse(APIErrors.ErrInvalidRequest);
   }
 
   const config = bucketConfig.config as SwiftConfig;
@@ -374,7 +382,9 @@ export async function getObjectMeta(
   }
 
   if (response instanceof Error) {
-    logger.warn(`Get Object Meta Failed: ${response.message}`);
+    logger.warn(
+      `Get Object Meta Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
@@ -393,7 +403,7 @@ export async function headObject(
   ctx: HeraldContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Response | Error | HeraldError> {
   logger.info("[Swift backend] Proxying Head Object Request...");
 
   const { bucket, objectKey } = s3Utils.extractRequestInfo(req);
@@ -441,7 +451,9 @@ export async function headObject(
   }
 
   if (response instanceof Error) {
-    logger.warn(`Head object Failed: ${response.message}`);
+    logger.warn(
+      `Head object Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
@@ -461,7 +473,7 @@ export async function copyObject(
   ctx: HeraldContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Response | Error | HeraldError> {
   logger.info("[Swift backend] Proxying Copy Object Request...");
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
   if (!bucket) {
@@ -498,7 +510,9 @@ export async function copyObject(
   );
 
   if (response instanceof Error) {
-    logger.warn(`Copy Object Failed: ${response.message}`);
+    logger.warn(
+      `Copy Object Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
@@ -525,7 +539,7 @@ export async function createMultipartUpload(
   ctx: HeraldContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Response | Error | HeraldError> {
   logger.info("[Swift backend] Proxying Create Multipart Upload Request...");
 
   const uploadId = getRandomUUID();
@@ -720,7 +734,7 @@ export async function completeMultipartUpload(
   ctx: HeraldContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Response | Error | HeraldError> {
   logger.info("[Swift backend] Proxying Complete Multipart Upload Request...");
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
   if (!bucket || !object) {
@@ -806,7 +820,9 @@ export async function completeMultipartUpload(
   );
 
   if (response instanceof Error) {
-    logger.warn(`Complete Multipart Upload Failed: ${response.message}`);
+    logger.warn(
+      `Complete Multipart Upload Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
@@ -846,7 +862,7 @@ export async function uploadPart(
   ctx: HeraldContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Response | Error | HeraldError> {
   logger.info("[Swift backend] Proxying Upload Part Request...");
   const { bucket, objectKey: object, queryParams } = s3Utils.extractRequestInfo(
     req,
@@ -883,7 +899,9 @@ export async function uploadPart(
   );
 
   if (response instanceof Error) {
-    logger.warn(`Upload Part Failed: ${response.message}`);
+    logger.warn(
+      `Upload Part Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
@@ -902,7 +920,7 @@ export function uploadPartCopy(
   _ctx: HeraldContext,
   _req: Request,
   _bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> | Response {
+): Promise<Response | Error | HeraldError> | Response {
   return NotImplementedException();
 }
 
@@ -910,7 +928,7 @@ export async function listParts(
   ctx: HeraldContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Response | Error | HeraldError> {
   logger.info("[Swift backend] Proxying ListParts Request...");
 
   const { bucket, queryParams: query, objectKey } = s3Utils.extractRequestInfo(
@@ -976,14 +994,18 @@ export async function listParts(
   }
 
   if (response instanceof Error) {
-    logger.warn(`ListParts Failed: ${response.message}`);
-    throw response;
+    logger.warn(
+      `ListParts Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
+    return response;
   }
 
   if (response.status === 404) {
     logger.warn(`ListParts Failed: ${response.statusText}`);
     const errMessage = await response.text();
-    throw new HTTPException(response.status, { message: errMessage });
+    return new HeraldError(response.status, {
+      message: `${errMessage} in Swift Storage`,
+    });
   } else {
     logger.info(`ListParts Successful: ${response.statusText}`);
   }
@@ -1008,7 +1030,7 @@ export async function abortMultipartUpload(
   ctx: HeraldContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Response | Error | HeraldError> {
   logger.info("[Swift backend] Proxying AbortMultipartUpload Request...");
 
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
@@ -1107,7 +1129,9 @@ export async function abortMultipartUpload(
   const response = await retryWithExponentialBackoff(fetchFunc);
 
   if (response instanceof Error) {
-    logger.warn(`AbortMultipartUpload Failed: ${response.message}`);
+    logger.warn(
+      `AbortMultipartUpload Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
@@ -1135,7 +1159,7 @@ export async function listMultipartUploads(
   ctx: HeraldContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Response | Error | HeraldError> {
   logger.info("[Swift backend] Proxying List Multipart Uploads Request...");
 
   const { bucket, queryParams: query } = s3Utils.extractRequestInfo(req);

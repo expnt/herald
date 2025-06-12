@@ -7,7 +7,7 @@ import {
   URLFormatStyle,
   urlFormatStyle,
 } from "./types.ts";
-import { HTTPException } from "../types/http-exception.ts";
+import { HeraldError } from "../types/http-exception.ts";
 import { isIP } from "../utils/url.ts";
 import { getLogger } from "./log.ts";
 
@@ -95,7 +95,7 @@ function extractObjectKey(request: Request): string | undefined {
 function getUrlFormat(request: Request): URLFormatStyle {
   const host = request.headers.get("host");
   if (!host) {
-    throw new HTTPException(400, {
+    throw new HeraldError(400, {
       message: `Invalid request: ${request.url}`,
     });
   }
