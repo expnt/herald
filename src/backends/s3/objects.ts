@@ -43,7 +43,9 @@ export async function getObject(
   }
 
   if (response instanceof Error) {
-    logger.warn(`Get Object Failed: ${response.message}`);
+    logger.warn(
+      `Get Object Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
@@ -90,7 +92,9 @@ export async function listObjects(
   }
 
   if (response instanceof Error) {
-    logger.warn(`List Objects Failed: ${response.message}`);
+    logger.warn(
+      `List Objects Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
@@ -121,19 +125,11 @@ export async function putObject(
   );
 
   if (response instanceof Error) {
-    logger.warn(`Put Object Failed: ${response.message}`, { response });
-    const errorXml = `<?xml version="1.0" encoding="UTF-8"?>
-<Error>
-  <Code>${response.name}</Code>
-  <Message>Failed to connect to S3 storage: ${response.message}. Please try again later.</Message>
-</Error>`;
-
-    return new Response(errorXml, {
-      status: 500,
-      headers: {
-        "Content-Type": "application/xml",
-      },
-    });
+    logger.warn(
+      `Put Object Failed. Failed to connect with Object Storage: ${response.message}`,
+      { response },
+    );
+    return response;
   }
 
   if (response.status != 200) {
@@ -172,19 +168,10 @@ export async function deleteObject(
   );
 
   if (response instanceof Error) {
-    logger.warn(`Delete Object Failed: ${response.message}`);
-    const errorXml = `<?xml version="1.0" encoding="UTF-8"?>
-<Error>
-  <Code>${response.name}</Code>
-  <Message>Failed to connect to S3 storage: ${response.message}. Please try again later.</Message>
-</Error>`;
-
-    return new Response(errorXml, {
-      status: 500,
-      headers: {
-        "Content-Type": "application/xml",
-      },
-    });
+    logger.warn(
+      `Delete Object Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
+    return response;
   }
 
   if (response.status != 204) {
@@ -222,19 +209,10 @@ export async function copyObject(
   );
 
   if (response instanceof Error) {
-    logger.warn(`Copy Object Failed: ${response.message}`);
-    const errorXml = `<?xml version="1.0" encoding="UTF-8"?>
-<Error>
-  <Code>${response.name}</Code>
-  <Message>Failed to connect to S3 storage: ${response.message}. Please try again later.</Message>
-</Error>`;
-
-    return new Response(errorXml, {
-      status: 500,
-      headers: {
-        "Content-Type": "application/xml",
-      },
-    });
+    logger.warn(
+      `Copy Object Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
+    return response;
   }
 
   if (response.status != 200) {
@@ -292,7 +270,9 @@ export async function headObject(
   }
 
   if (response instanceof Error) {
-    logger.warn(`Head Object Failed: ${response.message}`);
+    logger.warn(
+      `Head Object Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
@@ -319,7 +299,9 @@ export async function createMultipartUpload(
   );
 
   if (response instanceof Error) {
-    logger.warn(`Create Multipart Upload Failed: ${response.message}`);
+    logger.warn(
+      `Create Multipart Upload Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
@@ -348,7 +330,9 @@ export async function completeMultipartUpload(
   );
 
   if (response instanceof Error) {
-    logger.warn(`Complete Multipart Upload Failed: ${response.message}`);
+    logger.warn(
+      `Complete Multipart Upload Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
@@ -404,7 +388,9 @@ export async function listParts(
   }
 
   if (response instanceof Error) {
-    logger.warn(`List Parts Failed: ${response.message}`);
+    logger.warn(
+      `List Parts Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 
@@ -434,7 +420,9 @@ export async function abortMultipartUpload(
   );
 
   if (response instanceof Error) {
-    logger.warn(`Delete Object Failed: ${response.message}`);
+    logger.warn(
+      `Delete Object Failed. Failed to connect with Object Storage: ${response.message}`,
+    );
     return response;
   }
 

@@ -7,7 +7,7 @@ import {
   URLFormatStyle,
   urlFormatStyle,
 } from "./types.ts";
-import { HTTPException } from "../types/http-exception.ts";
+import { HeraldError } from "../types/http-exception.ts";
 import { isIP } from "../utils/url.ts";
 import { getLogger } from "./log.ts";
 
@@ -90,12 +90,12 @@ function extractObjectKey(request: Request): string | undefined {
  *
  * @param request - The HonoRequest object containing the request information.
  * @returns The URL format style (VirtualHosted or Path).
- * @throws HTTPException if the request does not have a valid host.
+ * @throws HeraldError if the request does not have a valid host.
  */
 function getUrlFormat(request: Request): URLFormatStyle {
   const host = request.headers.get("host");
   if (!host) {
-    throw new HTTPException(400, {
+    throw new HeraldError(400, {
       message: `Invalid request: ${request.url}`,
     });
   }

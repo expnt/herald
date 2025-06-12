@@ -8,6 +8,7 @@ export enum APIErrors {
   ErrInvalidSignTag,
   ErrSignatureDoesNotMatch,
   ErrExpiredPresign,
+  ErrInvalidRequest, // Added Invalid Request error
 }
 
 interface APIError {
@@ -60,6 +61,12 @@ const errorCodeMap: Record<APIErrors, APIError> = {
     description:
       "The request signature we calculated does not match the signature you provided. Check your key and signing method.",
     httpStatusCode: http.STATUS_CODE.Forbidden,
+    errorSource: "Proxy",
+  },
+  [APIErrors.ErrInvalidRequest]: { // Added Invalid Request mapping
+    code: "InvalidRequest",
+    description: "The request was malformed or contained an invalid parameter.",
+    httpStatusCode: http.STATUS_CODE.BadRequest,
     errorSource: "Proxy",
   },
 };

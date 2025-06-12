@@ -2,7 +2,7 @@ import { decode, verify } from "djwt";
 import { envVarsConfig, globalConfig } from "../config/mod.ts";
 import { getLogger } from "../utils/log.ts";
 import { retryFetchWithTimeout } from "../utils/url.ts";
-import { HTTPException } from "../types/http-exception.ts";
+import { HeraldError } from "../types/http-exception.ts";
 import { HTTP_STATUS_CODES } from "../constants/http_status_codes.ts";
 
 interface DecodedToken {
@@ -42,7 +42,7 @@ export async function verifyServiceAccountToken(
   logger.info("Verifying service account token...");
   if (!token) {
     const errMessage = "No token provided";
-    throw new HTTPException(401, {
+    throw new HeraldError(401, {
       message: errMessage,
     });
   }
@@ -55,7 +55,7 @@ export async function verifyServiceAccountToken(
   ) {
     const message = "Payload does not contain service account name field";
     logger.error(message);
-    throw new HTTPException(HTTP_STATUS_CODES.UNAUTHORIZED, {
+    throw new HeraldError(HTTP_STATUS_CODES.UNAUTHORIZED, {
       message,
     });
   }
@@ -95,20 +95,20 @@ async function verifyToken(token: string): Promise<DecodedToken> {
   } catch (e) {
     const message = `Error decoding token: ${(e as Error).message}`;
     logger.error(message);
-    throw new HTTPException(401, { message });
+    throw new HeraldError(401, { message });
   }
   const kid = header.kid;
   if (!kid) {
     const message = "Missing kid in token header";
     logger.error(message);
-    throw new HTTPException(401, { message });
+    throw new HeraldError(401, { message });
   }
 
   const cryptoKey = cryptoKeys.get(kid);
   if (!cryptoKey) {
     const message = `Key with kid ${kid} not found`;
     logger.error(message);
-    throw new HTTPException(401, { message });
+    throw new HeraldError(401, { message });
   }
 
   logger.info("Verifying token...");
@@ -151,7 +151,7 @@ async function getKeys(): Promise<KubeJWK[]> {
 
   if (fetchJWK instanceof Error) {
     logger.error(fetchJWK.message);
-    throw new HTTPException(500, { message: fetchJWK.message });
+    throw new HeraldError(500, { message: fetchJWK.message });
   }
 
   const data = await fetchJWK.json();
@@ -159,7 +159,7 @@ async function getKeys(): Promise<KubeJWK[]> {
   if (!keys) {
     const message = "Keys not found in the JWK response";
     logger.error(message);
-    throw new HTTPException(HTTP_STATUS_CODES.SERVICE_UNAVAILABLE, {
+    throw new HeraldError(HTTP_STATUS_CODES.SERVICE_UNAVAILABLE, {
       message,
     });
   }
@@ -194,12 +194,12 @@ async function getJWKURI(
 
   if (fetchJWKURI instanceof Error) {
     logger.error(fetchJWKURI.message);
-    throw new HTTPException(500, { message: fetchJWKURI.message });
+    throw new HeraldError(500, { message: fetchJWKURI.message });
   }
 
   if (fetchJWKURI.status !== 200) {
     logger.error(`Failed to fetch JWKS URI: ${fetchJWKURI.statusText}`);
-    throw new HTTPException(500, { message: fetchJWKURI.statusText });
+    throw new HeraldError(500, { message: fetchJWKURI.statusText });
   }
 
   const data = await fetchJWKURI.json();
@@ -208,7 +208,7 @@ async function getJWKURI(
   if (!jwks_uri) {
     const message = "JWKS URI not found in response";
     logger.error(message);
-    throw new HTTPException(HTTP_STATUS_CODES.SERVICE_UNAVAILABLE, { message });
+    throw new HeraldError(HTTP_STATUS_CODES.SERVICE_UNAVAILABLE, { message });
   }
 
   return jwks_uri;
@@ -231,7 +231,7 @@ export function hasBucketAccess(
     sa.name === serviceAccount
   );
   if (!sa) {
-    throw new HTTPException(401, { message: "Service Account not found" });
+    throw new HeraldError(401, { message: "Service Account not found" });
   }
 
   return sa.buckets.includes(bucket);

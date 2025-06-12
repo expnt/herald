@@ -3,7 +3,7 @@ import { Hono } from "@hono/hono";
 import { configInit, envVarsConfig, globalConfig } from "./config/mod.ts";
 import { getLogger, reportToSentry, setupLoggers } from "./utils/log.ts";
 import { resolveHandler } from "./backends/mod.ts";
-import { HTTPException } from "./types/http-exception.ts";
+import { HeraldError } from "./types/http-exception.ts";
 import * as Sentry from "sentry";
 import { getAuthType, verifyServiceAccountToken } from "./auth/mod.ts";
 import { registerWorkers } from "./workers/mod.ts";
@@ -91,7 +91,7 @@ app.notFound((c) => {
 });
 
 app.onError((err, c) => {
-  if (err instanceof HTTPException) {
+  if (err instanceof HeraldError) {
     // Get the custom response
     const errResponse = err.getResponse();
 

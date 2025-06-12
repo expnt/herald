@@ -21,4 +21,5 @@ export interface MirrorTask {
   command: MirrorableCommands;
   originalRequest: Record<string, unknown>;
   nonce: string;
+  retryCount: number;
 }

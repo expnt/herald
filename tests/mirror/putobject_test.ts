@@ -135,7 +135,7 @@ const testFailedPutObject = async (
       // the object shouldn't be inside any of the storages
       assertEquals(404, res.$metadata.httpStatusCode);
     } catch (error) {
-      if ((error as Error).name === "BadResource") {
+      if ((error as Error).name === "InternalServerError") {
         // correct path
       } else {
         throw error;

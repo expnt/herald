@@ -15,12 +15,13 @@ import {
   headBucket,
   routeQueryParamedRequest,
 } from "./buckets.ts";
-import { HTTPException } from "../../types/http-exception.ts";
+import { HeraldError } from "../../types/http-exception.ts";
 import { areQueryParamsSupported } from "../../utils/url.ts";
 import { extractRequestInfo } from "../../utils/s3.ts";
 import { getLogger } from "../../utils/log.ts";
 import { Bucket } from "../../buckets/mod.ts";
 import { HeraldContext } from "../../types/mod.ts";
+import { APIErrors, getAPIErrorResponse } from "../../types/api_errors.ts";
 
 const handlers = {
   putObject,
@@ -60,7 +61,7 @@ export async function s3Resolver(
 
       if (!areQueryParamsSupported(queryParamKeys)) {
         logger.critical("Unsupported Query Parameter Used");
-        throw new HTTPException(400, {
+        return new HeraldError(400, {
           message: "Unsupported Query Parameter Used",
         });
       }
@@ -83,7 +84,7 @@ export async function s3Resolver(
         );
       }
 
-      return new HTTPException(403, {
+      return new HeraldError(403, {
         message: "Unsupported request",
       });
     case "PUT":
@@ -112,6 +113,6 @@ export async function s3Resolver(
       return await handlers.headBucket(ctx, request, bucketConfig);
     default:
       logger.critical(`Unsupported Request Method: ${method}`);
-      throw new HTTPException(400, { message: "Unsupported Request" });
+      return getAPIErrorResponse(APIErrors.ErrInvalidRequest);
   }
 }
