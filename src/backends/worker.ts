@@ -33,6 +33,7 @@ interface MirrorTaskMessage {
   command: MirrorableCommands;
   originalRequest: Record<string, unknown>;
   nonce: string;
+  retryCount: number;
 }
 
 function convertMessageToTask(
@@ -44,6 +45,7 @@ function convertMessageToTask(
     command: msg.command,
     originalRequest: msg.originalRequest,
     nonce: msg.nonce,
+    retryCount: msg.retryCount,
   };
 }
 
@@ -112,6 +114,10 @@ async function onStart(
 ) {
   logger.info(`Worker started listening to tasks for bucket: ${name}`);
 
+  // TODO: first process any saved current stuck task before going to next tasks
+  // after fetching the stuck task from persistent storage
+  // this is usually when herald restarts after some crash
+
   ctx = prepareWorkerContext(msg.data.ctx, msg.data.serializedSwiftAuthMeta);
   const dbName = `${name}_${TASK_QUEUE_DB}`;
   const kv = await Deno.openKv(dbName);
@@ -120,14 +126,38 @@ async function onStart(
     logger.info(`Dequeued task: ${task.command}`);
 
     try {
-      const timeoutPromise = new Promise((_, reject) => {
+      const timeoutPromise: Promise<Error> = new Promise((_, reject) => {
         setTimeout(() => reject(new Error("Task timeout")), TASK_TIMEOUT);
       });
 
-      const _ = await Promise.race([
+      let res = await Promise.race([
+        // request task if this fails
         processTask(ctx, task),
         timeoutPromise,
       ]);
+
+      // if the task failed, retry after a while
+      while (res instanceof Error || res.status >= 400) {
+        // Calculate exponential backoff delay: 2^retryCount * 1000ms (starting at 1s)
+        const retryCount = task.retryCount;
+        const delay = Math.min(Math.pow(2, retryCount) * 1000, 60000); // Max 60s delay
+
+        // Update retry count and enqueue with delay
+        task.retryCount = retryCount + 1;
+        logger.critical(
+          `Task failed, retrying in ${delay}ms (attempt ${retryCount + 1})`,
+        );
+
+        // Wait for the delay before retrying
+        await new Promise((resolve) => setTimeout(resolve, delay));
+
+        // TODO: save the task data in persistent storage
+        res = await Promise.race([
+          // request task if this fails
+          processTask(ctx, task),
+          timeoutPromise,
+        ]);
+      }
 
       logger.info(`Task completed: ${task.command}`);
     } catch (error) {

@@ -168,7 +168,7 @@ const testFailedCopyObject = async (
       const copyRes = await s3.send(copyCommand);
       checkCopyObject(copyRes);
     } catch (error) {
-      if ((error as Error).name === "TypeError") {
+      if ((error as Error).name === "InternalServerError") {
         // correct path
       } else {
         throw error;

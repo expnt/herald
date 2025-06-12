@@ -139,7 +139,7 @@ const testFailedCreateBucket = async (
     try {
       await s3.send(createBucket);
     } catch (error) {
-      if ((error as Error).name === "BadResource") {
+      if ((error as Error).name === "InternalServerError") {
         // correct path
       } else {
         throw error;
@@ -248,7 +248,7 @@ const testFailedDeleteBucket = async (
       const deleteRes = await s3.send(deleteBucket);
       assertEquals(deleteRes.$metadata.httpStatusCode, 204);
     } catch (error) {
-      if ((error as Error).name === "TypeError") {
+      if ((error as Error).name === "InternalServerError") {
         // correct path
       } else {
         throw error;

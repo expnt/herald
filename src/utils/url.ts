@@ -173,13 +173,13 @@ export async function retryWithExponentialBackoff<T>(
   fn: () => Promise<T>,
   retries = 3,
   initialDelay = 100,
-  maxDelay = 1000,
+  maxDelay = 5000, // 5 Seconds
 ): Promise<T | Error> {
   let attempt = 0;
   let delayDuration = initialDelay;
   let err: Error = new Error("Unknown error");
 
-  while (attempt < retries) {
+  while (attempt <= retries) {
     try {
       return await Promise.race([
         fn(),
@@ -188,16 +188,18 @@ export async function retryWithExponentialBackoff<T>(
         ),
       ]);
     } catch (error) {
-      if (attempt >= retries - 1) {
-        logger.critical(error);
-        reportToSentry(error as Error);
+      attempt++;
+      if (attempt > retries) {
+        const errMessage = `Retry limit reached: ${Deno.inspect(error)}`;
+        logger.critical(errMessage);
+        reportToSentry(errMessage);
         err = error as Error;
-        attempt++;
+      } else {
+        logger.warn(`Retrying... attempts: ${attempt}`);
       }
 
       await delay(delayDuration);
       delayDuration = Math.min(delayDuration * 2, maxDelay);
-      attempt++;
     }
   }
 
@@ -275,16 +277,18 @@ export async function retryFetchWithTimeout<T>(
       ]);
       return result;
     } catch (error) {
-      if (attempt >= retries - 1) {
-        logger.critical(error);
-        reportToSentry(error as Error);
+      attempt++;
+      if (attempt > retries) {
+        const errMessage = `Retry limit reached: ${Deno.inspect(error)}`;
+        logger.critical(errMessage);
+        reportToSentry(errMessage);
         err = error as Error;
-        attempt++;
+      } else {
+        logger.warn(`Retrying... attempts: ${attempt}`);
       }
 
       await delay(delayDuration);
       delayDuration = Math.min(delayDuration * 2, maxDelay);
-      attempt++;
     }
   }
 

@@ -67,9 +67,10 @@ export async function resolveHandler(
   }
 
   if (response instanceof Error) {
-    return new HeraldError(500, {
+    const errResponse = new HeraldError(500, {
       message: response.message,
     }).getResponse();
+    return errResponse;
   }
 
   return response;

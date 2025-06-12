@@ -182,7 +182,7 @@ const testFailedDeleteObject = async (
       const deleteRes = await s3.send(deleteCommand);
       checkDeleteObject(deleteRes);
     } catch (error) {
-      if ((error as Error).name === "TypeError") {
+      if ((error as Error).name === "InternalServerError") {
         // correct path
       } else {
         throw error;
