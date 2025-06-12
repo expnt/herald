@@ -90,7 +90,7 @@ function extractObjectKey(request: Request): string | undefined {
  *
  * @param request - The HonoRequest object containing the request information.
  * @returns The URL format style (VirtualHosted or Path).
- * @throws HTTPException if the request does not have a valid host.
+ * @throws HeraldError if the request does not have a valid host.
  */
 function getUrlFormat(request: Request): URLFormatStyle {
   const host = request.headers.get("host");
