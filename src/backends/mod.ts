@@ -9,6 +9,7 @@ import { extractRequestInfo } from "../utils/s3.ts";
 import { getAuthType, hasBucketAccess } from "../auth/mod.ts";
 import { verifyV4Signature } from "../utils/signer.ts";
 import { APIErrors, getAPIErrorResponse } from "../types/api_errors.ts";
+import { isOk, unwrapErr, unwrapOk } from "option-t/plain_result";
 
 export async function resolveHandler(
   reqCtx: RequestContext,
@@ -64,12 +65,13 @@ export async function resolveHandler(
     return response.getResponse();
   }
 
-  if (response instanceof Error) {
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
     const errResponse = new HeraldError(500, {
-      message: response.message,
+      message: errRes.message,
     }).getResponse();
     return errResponse;
   }
 
-  return response;
+  return unwrapOk(response);
 }

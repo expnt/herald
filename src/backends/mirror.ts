@@ -12,6 +12,8 @@ import { bucketStore } from "../config/mod.ts";
 import { TASK_QUEUE_DB } from "../constants/message.ts";
 import { Bucket } from "../buckets/mod.ts";
 import { HeraldError } from "../types/http-exception.ts";
+import { Result } from "option-t/plain_result";
+import { createErr, isOk, unwrapErr, unwrapOk } from "option-t/plain_result";
 
 const logger = getLogger(import.meta);
 
@@ -113,7 +115,7 @@ async function mirrorPutObject(
   originalRequest: Request,
   primary: Bucket,
   replica: Bucket,
-): Promise<Response | Error> {
+): Promise<Result<Response, Error>> {
   if (primary.typ === "S3BucketConfig") {
     // get object from s3
     const getObjectUrl = getDownloadS3Url(
@@ -134,9 +136,10 @@ async function mirrorPutObject(
       primaryBucket,
     );
 
-    if (response instanceof Error) {
+    if (!isOk(response)) {
+      const errRes = unwrapErr(response);
       const errMessage =
-        `Get object failed during mirroring to replica bucket: ${response.message}`;
+        `Get object failed during mirroring to replica bucket: ${errRes.message}`;
       logger.error(
         errMessage,
       );
@@ -144,14 +147,17 @@ async function mirrorPutObject(
       return response;
     }
 
-    if (!response.ok) {
+    const successResponse = unwrapOk(response);
+    if (!successResponse.ok) {
       const errMessage =
-        `Get object failed during mirroing to replica bucket: ${response.statusText}`;
+        `Get object failed during mirroing to replica bucket: ${successResponse.statusText}`;
       logger.error(
         errMessage,
       );
       reportToSentry(errMessage);
-      return new HeraldError(response.status, { message: errMessage });
+      return createErr(
+        new HeraldError(successResponse.status, { message: errMessage }),
+      );
     }
 
     if (replica.typ === "ReplicaS3Config") {
@@ -160,7 +166,7 @@ async function mirrorPutObject(
       const replicaBucket = primaryBucket.getReplica(replica.name)!;
       const putToS3Request = new Request(originalRequest.url, {
         method: "PUT",
-        body: response.body,
+        body: successResponse.body,
         headers: originalRequest.headers,
       });
       return await s3.putObject(reqCtx, putToS3Request, replicaBucket);
@@ -168,7 +174,7 @@ async function mirrorPutObject(
       // put object to swift
       const replicaBucket = primaryBucket.getReplica(replica.name)!;
       const putToSwiftRequest = new Request(originalRequest.url, {
-        body: response.body,
+        body: successResponse.body,
         method: "PUT",
         redirect: originalRequest.redirect,
         headers: originalRequest.headers,
@@ -204,9 +210,10 @@ async function mirrorPutObject(
     primaryBucket,
   );
 
-  if (response instanceof Error) {
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
     const errMessage =
-      `Get object failed during mirroring to replica bucket: ${response.message}`;
+      `Get object failed during mirroring to replica bucket: ${errRes.message}`;
     logger.error(
       errMessage,
     );
@@ -214,39 +221,42 @@ async function mirrorPutObject(
     return response;
   }
 
-  if (!response.ok) {
+  const successResponse = unwrapOk(response);
+  if (!successResponse.ok) {
     const errMessage = "Get object failed during mirroring to replica bucket";
     logger.error(
       errMessage,
     );
     reportToSentry(errMessage);
-    return new HeraldError(response.status, { message: errMessage });
+    return createErr(
+      new HeraldError(successResponse.status, { message: errMessage }),
+    );
   }
 
   // this path means primary is swift
   if (replica.typ === "ReplicaS3Config") {
     // put object to s3
     const putToS3Request = new Request(originalRequest.url, {
-      body: response.body,
+      body: successResponse.body,
       headers: originalRequest.headers,
       method: "PUT",
     });
-    if (response.headers.has("accept-ranges")) {
+    if (successResponse.headers.has("accept-ranges")) {
       putToS3Request.headers.set(
         "accept-ranges",
-        response.headers.get("accept-ranges")!,
+        successResponse.headers.get("accept-ranges")!,
       );
     }
-    if (response.headers.has("content-length")) {
+    if (successResponse.headers.has("content-length")) {
       putToS3Request.headers.set(
         "content-length",
-        response.headers.get("content-length")!,
+        successResponse.headers.get("content-length")!,
       );
     }
-    if (response.headers.has("content-type")) {
+    if (successResponse.headers.has("content-type")) {
       putToS3Request.headers.set(
         "content-type",
-        response.headers.get("content-type")!,
+        successResponse.headers.get("content-type")!,
       );
     }
     const replicaBucket = primaryBucket.getReplica(replica.name)!;
@@ -257,7 +267,7 @@ async function mirrorPutObject(
     return await s3.putObject(reqCtx, putToS3Request, replicaBucket);
   } else {
     const putToSwiftRequest = new Request(originalRequest.url, {
-      body: response.body,
+      body: successResponse.body,
       method: "PUT",
       headers: originalRequest.headers,
     });
@@ -275,7 +285,7 @@ async function mirrorDeleteObject(
   reqCtx: RequestContext,
   originalRequest: Request,
   replica: Bucket,
-): Promise<Response | Error> {
+): Promise<Result<Response, Error>> {
   const primaryBucket = bucketStore.buckets.find((bucket) =>
     bucket.bucketName === replica.bucketName
   )!;
@@ -316,7 +326,7 @@ async function mirrorCopyObject(
   ctx: RequestContext,
   originalRequest: Request,
   replica: Bucket,
-): Promise<Response | Error> {
+): Promise<Result<Response, Error>> {
   const primaryBucket = bucketStore.buckets.find((bucket) =>
     bucket.bucketName === replica.bucketName
   )!;
@@ -352,7 +362,7 @@ async function mirrorCreateBucket(
   reqCtx: RequestContext,
   originalRequest: Request,
   replica: Bucket,
-): Promise<Response | Error> {
+): Promise<Result<Response, Error>> {
   const primaryBucket = bucketStore.buckets.find((bucket) =>
     bucket.bucketName === replica.bucketName
   )!;
@@ -388,7 +398,7 @@ async function mirrorDeleteBucket(
   reqCtx: RequestContext,
   originalRequest: Request,
   replica: Bucket,
-): Promise<Response | Error> {
+): Promise<Result<Response, Error>> {
   const primaryBucket = bucketStore.buckets.find((bucket) =>
     bucket.bucketName === replica.bucketName
   )!;
@@ -426,7 +436,7 @@ async function mirrorCompleteMultipartUpload(
   originalRequest: Request,
   primary: Bucket,
   replica: Bucket,
-): Promise<Response | Error> {
+): Promise<Result<Response, Error>> {
   const url = new URL(originalRequest.url);
   url.searchParams.delete("uploadId");
   const modifiedUrl = url.toString();
@@ -438,7 +448,7 @@ async function mirrorCompleteMultipartUpload(
 export async function processTask(
   reqCtx: RequestContext,
   task: MirrorTask,
-): Promise<Response | Error> {
+): Promise<Result<Response, Error>> {
   const {
     command,
     originalRequest: req,

@@ -10,6 +10,7 @@ import { Bucket } from "../buckets/mod.ts";
 import { SwiftConfig } from "../config/types.ts";
 import { KeystoneTokenStore } from "./swift/keystone_token_store.ts";
 import { getRandomUUID } from "../utils/crypto.ts";
+import { createErr, isOk, Result, unwrapOk } from "option-t/plain_result";
 
 if (inWorker()) {
   await configInit();
@@ -137,9 +138,14 @@ async function onStart(
     logger.info(`Dequeued task: ${task.command}`);
 
     try {
-      const timeoutPromise: Promise<Error> = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error("Task timeout")), TASK_TIMEOUT);
-      });
+      const timeoutPromise: Promise<Result<Response, Error>> = new Promise(
+        (_, reject) => {
+          setTimeout(
+            () => reject(createErr(new Error("Task timeout"))),
+            TASK_TIMEOUT,
+          );
+        },
+      );
 
       let res = await Promise.race([
         // request task if this fails
@@ -148,7 +154,7 @@ async function onStart(
       ]);
 
       // if the task failed, retry after a while
-      while (res instanceof Error || res.status >= 400) {
+      while (!isOk(res) || unwrapOk(res).status >= 400) {
         // Calculate exponential backoff delay: 2^retryCount * 1000ms (starting at 1s)
         const retryCount = task.retryCount;
         const delay = Math.min(Math.pow(2, retryCount) * 1000, 60000); // Max 60s delay

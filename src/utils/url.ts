@@ -5,6 +5,7 @@ import { AUTH_HEADER, HOST_HEADER } from "../constants/headers.ts";
 import { s3ReqParams } from "../constants/query-params.ts";
 import { ReplicaConfig } from "../config/types.ts";
 import { TIMEOUT } from "../constants/time.ts";
+import { createErr, createOk, Result } from "option-t/plain_result";
 
 const logger = getLogger(import.meta);
 
@@ -61,7 +62,7 @@ export async function forwardS3RequestToS3WithTimeouts(
   request: Request,
   config: S3Config,
   retries = 3,
-) {
+): Promise<Result<Response, Error>> {
   const forwardRequest = async () => {
     const redirect = getRedirectUrl(request.url, config.endpoint);
 
@@ -174,19 +175,20 @@ export async function retryWithExponentialBackoff<T>(
   retries = 3,
   initialDelay = 100,
   maxDelay = 5000, // 5 Seconds
-): Promise<T | Error> {
+): Promise<Result<T, Error>> {
   let attempt = 0;
   let delayDuration = initialDelay;
   let err: Error = new Error("Unknown error");
 
   while (attempt <= retries) {
     try {
-      return await Promise.race([
+      const res = await Promise.race([
         fn(),
         new Promise<T>((_, reject) =>
           setTimeout(() => reject(new Error("Operation timed out")), TIMEOUT)
         ),
       ]);
+      return createOk(res);
     } catch (error) {
       attempt++;
       if (attempt > retries) {
@@ -203,7 +205,7 @@ export async function retryWithExponentialBackoff<T>(
     }
   }
 
-  return err;
+  return createErr(err);
 }
 
 export function areQueryParamsSupported(queryParams: Set<string>): boolean {

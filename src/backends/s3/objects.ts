@@ -8,12 +8,13 @@ import { swiftResolver } from "../swift/mod.ts";
 import { s3Resolver } from "./mod.ts";
 import { RequestContext } from "../../types/mod.ts";
 import { extractRequestInfo } from "../../utils/s3.ts";
+import { isOk, Result, unwrapErr, unwrapOk } from "option-t/plain_result";
 
 export async function getObject(
   reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-) {
+): Promise<Result<Response, Error>> {
   const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Get Object Request...");
 
@@ -41,19 +42,21 @@ export async function getObject(
     }
   }
 
-  if (response instanceof Error) {
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
     logger.warn(
-      `Get Object Failed. Failed to connect with Object Storage: ${response.message}`,
+      `Get Object Failed. Failed to connect with Object Storage: ${errRes.message}`,
     );
     return response;
   }
 
-  if (response.status !== 200) {
-    const errMessage = `Get Object Failed: ${response.statusText}`;
+  const successResponse = unwrapOk(response);
+  if (successResponse.status !== 200) {
+    const errMessage = `Get Object Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`Get Object Successful: ${response.statusText}`);
+    logger.info(`Get Object Successful: ${successResponse.statusText}`);
   }
 
   return response;
@@ -63,7 +66,7 @@ export async function listObjects(
   reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-) {
+): Promise<Result<Response, Error>> {
   const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying List Objects Request...");
 
@@ -91,19 +94,21 @@ export async function listObjects(
     }
   }
 
-  if (response instanceof Error) {
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
     logger.warn(
-      `List Objects Failed. Failed to connect with Object Storage: ${response.message}`,
+      `List Objects Failed. Failed to connect with Object Storage: ${errRes.message}`,
     );
     return response;
   }
 
-  if (response.status !== 200) {
-    const errMessage = `List Objects Failed: ${response.statusText}`;
+  const successResponse = unwrapOk(response);
+  if (successResponse.status !== 200) {
+    const errMessage = `List Objects Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`List Objects Successful: ${response.statusText}`);
+    logger.info(`List Objects Successful: ${successResponse.statusText}`);
   }
 
   return response;
@@ -113,7 +118,7 @@ export async function putObject(
   reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-) {
+): Promise<Result<Response, Error>> {
   const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Put Object Request...");
 
@@ -125,20 +130,22 @@ export async function putObject(
     config,
   );
 
-  if (response instanceof Error) {
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
     logger.warn(
-      `Put Object Failed. Failed to connect with Object Storage: ${response.message}`,
+      `Put Object Failed. Failed to connect with Object Storage: ${errRes.message}`,
       { response },
     );
     return response;
   }
 
-  if (response.status != 200) {
-    const errMessage = `Put Object Failed: ${response.statusText}`;
-    logger.warn(errMessage, { response });
+  const successResponse = unwrapOk(response);
+  if (successResponse.status != 200) {
+    const errMessage = `Put Object Failed: ${successResponse.statusText}`;
+    logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`Put Object Successful: ${response.statusText}`);
+    logger.info(`Put Object Successful: ${successResponse.statusText}`);
     const { queryParams } = extractRequestInfo(req);
     if (mirrorOperation && !queryParams["uploadId"]) {
       await prepareMirrorRequests(
@@ -157,7 +164,7 @@ export async function deleteObject(
   reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-) {
+): Promise<Result<Response, Error>> {
   const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Delete Object Request...");
 
@@ -169,19 +176,21 @@ export async function deleteObject(
     config,
   );
 
-  if (response instanceof Error) {
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
     logger.warn(
-      `Delete Object Failed. Failed to connect with Object Storage: ${response.message}`,
+      `Delete Object Failed. Failed to connect with Object Storage: ${errRes.message}`,
     );
     return response;
   }
 
-  if (response.status != 204) {
-    const errMesage = `Delete Object Failed: ${response.statusText}`;
-    logger.warn(`Delete Object Failed: ${response.statusText}`);
+  const successResponse = unwrapOk(response);
+  if (successResponse.status != 204) {
+    const errMesage = `Delete Object Failed: ${successResponse.statusText}`;
+    logger.warn(`Delete Object Failed: ${successResponse.statusText}`);
     reportToSentry(errMesage);
   } else {
-    logger.info(`Delete Object Successful: ${response.statusText}`);
+    logger.info(`Delete Object Successful: ${successResponse.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
         reqCtx,
@@ -199,7 +208,7 @@ export async function copyObject(
   reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-) {
+): Promise<Result<Response, Error>> {
   const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Copy Object Request...");
 
@@ -211,19 +220,21 @@ export async function copyObject(
     config,
   );
 
-  if (response instanceof Error) {
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
     logger.warn(
-      `Copy Object Failed. Failed to connect with Object Storage: ${response.message}`,
+      `Copy Object Failed. Failed to connect with Object Storage: ${errRes.message}`,
     );
     return response;
   }
 
-  if (response.status != 200) {
-    const errMessage = `Copy Object Failed: ${response.statusText}`;
+  const successResponse = unwrapOk(response);
+  if (successResponse.status != 200) {
+    const errMessage = `Copy Object Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`Copy Object Successful: ${response.statusText}`);
+    logger.info(`Copy Object Successful: ${successResponse.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
         reqCtx,
@@ -245,7 +256,7 @@ export async function headObject(
   reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-) {
+): Promise<Result<Response, Error>> {
   const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Head Object Request...");
 
@@ -255,7 +266,7 @@ export async function headObject(
     bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
   );
 
-  if (response instanceof Error && bucketConfig.hasReplicas()) {
+  if (!isOk(response) && bucketConfig.hasReplicas()) {
     logger.warn(
       `Head Object Failed on Primary Bucket: ${bucketConfig.bucketName}`,
     );
@@ -273,18 +284,20 @@ export async function headObject(
     }
   }
 
-  if (response instanceof Error) {
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
     logger.warn(
-      `Head Object Failed. Failed to connect with Object Storage: ${response.message}`,
+      `Head Object Failed. Failed to connect with Object Storage: ${errRes.message}`,
     );
     return response;
   }
 
-  if (response.status != 200 && response.status !== 404) {
-    const errMessage = `Head Object Failed: ${response.statusText}`;
+  const successResponse = unwrapOk(response);
+  if (successResponse.status != 200 && successResponse.status !== 404) {
+    const errMessage = `Head Object Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
   } else {
-    logger.info(`Head Object Successful: ${response.statusText}`);
+    logger.info(`Head Object Successful: ${successResponse.statusText}`);
   }
 
   return response;
@@ -294,7 +307,7 @@ export async function createMultipartUpload(
   reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-) {
+): Promise<Result<Response, Error>> {
   const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Create Multipart Upload Request...");
 
@@ -303,19 +316,24 @@ export async function createMultipartUpload(
     bucketConfig.config as S3Config,
   );
 
-  if (response instanceof Error) {
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
     logger.warn(
-      `Create Multipart Upload Failed. Failed to connect with Object Storage: ${response.message}`,
+      `Create Multipart Upload Failed. Failed to connect with Object Storage: ${errRes.message}`,
     );
     return response;
   }
 
-  if (response.status !== 200) {
-    const errMessage = `Create Multipart Upload Failed: ${response.statusText}`;
+  const successResponse = unwrapOk(response);
+  if (successResponse.status !== 200) {
+    const errMessage =
+      `Create Multipart Upload Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`Create Multipart Upload Successful: ${response.statusText}`);
+    logger.info(
+      `Create Multipart Upload Successful: ${successResponse.statusText}`,
+    );
   }
 
   return response;
@@ -325,7 +343,7 @@ export async function completeMultipartUpload(
   reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-) {
+): Promise<Result<Response, Error>> {
   const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Complete Multipart Upload Request...");
 
@@ -335,20 +353,24 @@ export async function completeMultipartUpload(
     bucketConfig.config as S3Config,
   );
 
-  if (response instanceof Error) {
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
     logger.warn(
-      `Complete Multipart Upload Failed. Failed to connect with Object Storage: ${response.message}`,
+      `Complete Multipart Upload Failed. Failed to connect with Object Storage: ${errRes.message}`,
     );
     return response;
   }
 
-  if (response.status !== 200) {
+  const successResponse = unwrapOk(response);
+  if (successResponse.status !== 200) {
     const errMessage =
-      `Complete Multipart Upload Failed: ${response.statusText}`;
+      `Complete Multipart Upload Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`Complete Multipart Upload Successful: ${response.statusText}`);
+    logger.info(
+      `Complete Multipart Upload Successful: ${successResponse.statusText}`,
+    );
     if (mirrorOperation) {
       await prepareMirrorRequests(
         reqCtx,
@@ -366,7 +388,7 @@ export async function listParts(
   reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error> {
+): Promise<Result<Response, Error>> {
   const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying List Parts Request...");
 
@@ -376,7 +398,7 @@ export async function listParts(
     bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
   );
 
-  if (response instanceof Error && bucketConfig.hasReplicas()) {
+  if (!isOk(response) && bucketConfig.hasReplicas()) {
     logger.warn(
       `List Parts Failed on Primary Bucket: ${bucketConfig.bucketName}`,
     );
@@ -394,19 +416,21 @@ export async function listParts(
     }
   }
 
-  if (response instanceof Error) {
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
     logger.warn(
-      `List Parts Failed. Failed to connect with Object Storage: ${response.message}`,
+      `List Parts Failed. Failed to connect with Object Storage: ${errRes.message}`,
     );
     return response;
   }
 
-  if (response.status !== 200) {
-    const errMessage = `List Parts Failed: ${response.statusText}`;
+  const successResponse = unwrapOk(response);
+  if (successResponse.status !== 200) {
+    const errMessage = `List Parts Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`List Parts Successful: ${response.statusText}`);
+    logger.info(`List Parts Successful: ${successResponse.statusText}`);
   }
 
   return response;
@@ -416,7 +440,7 @@ export async function abortMultipartUpload(
   reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error> {
+): Promise<Result<Response, Error>> {
   const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Abort Multipart Upload Request...");
 
@@ -427,19 +451,24 @@ export async function abortMultipartUpload(
     config,
   );
 
-  if (response instanceof Error) {
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
     logger.warn(
-      `Delete Object Failed. Failed to connect with Object Storage: ${response.message}`,
+      `Delete Object Failed. Failed to connect with Object Storage: ${errRes.message}`,
     );
     return response;
   }
 
-  if (response.status != 204) {
-    const errMesage = `Abort Multipart Upload Failed: ${response.statusText}`;
-    logger.warn(`Abort Multipart Upload Failed: ${response.statusText}`);
+  const successResponse = unwrapOk(response);
+  if (successResponse.status != 204) {
+    const errMesage =
+      `Abort Multipart Upload Failed: ${successResponse.statusText}`;
+    logger.warn(`Abort Multipart Upload Failed: ${successResponse.statusText}`);
     reportToSentry(errMesage);
   } else {
-    logger.info(`Abort Multipart Upload Successful: ${response.statusText}`);
+    logger.info(
+      `Abort Multipart Upload Successful: ${successResponse.statusText}`,
+    );
   }
 
   return response;

@@ -120,14 +120,16 @@ await registerWorkers(ctx);
 const controller = new AbortController();
 const { signal } = controller;
 
-try {
-  Deno.serve({ port: globalConfig.port, signal }, app.fetch);
-} catch (error) {
-  if ((error as Error).name === "AbortError") {
-    // logger.info("Server shut down gracefully");
-  } else {
-    throw error;
-  }
-}
-
-export default app;
+export default {
+  fetch: app.fetch,
+  port: globalConfig.port,
+  signal,
+  // You can also add an error handler for the server itself
+  onError: (error: Error) => {
+    if ((error as Error).name === "AbortError") {
+      logger.info("Server shut down gracefully");
+    } else {
+      throw error;
+    }
+  },
+};

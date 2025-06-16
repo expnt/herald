@@ -1,5 +1,5 @@
 import { GlobalConfig, SwiftConfig } from "../../config/types.ts";
-import { reportToSentry } from "../../utils/log.ts";
+import { getLogger, reportToSentry } from "../../utils/log.ts";
 import { getAuthTokenWithTimeouts } from "./auth.ts";
 
 interface SwiftAuthMeta {
@@ -7,6 +7,7 @@ interface SwiftAuthMeta {
   storageUrl: string;
 }
 
+const logger = getLogger(import.meta);
 export class KeystoneTokenStore {
   constructor(
     private configAuthMetas: Map<string, SwiftAuthMeta>,
@@ -22,13 +23,19 @@ export class KeystoneTokenStore {
       if (configAuthMetas.has(configKey)) {
         continue;
       }
-      const configAuthMeta = await KeystoneTokenStore.#getSwiftAuthMeta(config);
-      if (configAuthMeta instanceof Error) {
-        reportToSentry(
-          `Failed to fetch Swift Auth Meta: ${configAuthMeta.message}`,
+      try {
+        const configAuthMeta = await KeystoneTokenStore.#getSwiftAuthMeta(
+          config,
         );
-      } else {
         configAuthMetas.set(configKey, configAuthMeta);
+      } catch (e) {
+        const errMsg = `Failed to fetch Swift Auth Meta: ${
+          (e as Error).message
+        }`;
+        logger.error(errMsg);
+        reportToSentry(
+          errMsg,
+        );
       }
     }
 
@@ -66,8 +73,8 @@ export class KeystoneTokenStore {
 
   static async #getSwiftAuthMeta(
     config: SwiftConfig,
-  ): Promise<SwiftAuthMeta | Error> {
-    const res: SwiftAuthMeta | Error = await getAuthTokenWithTimeouts(
+  ): Promise<SwiftAuthMeta> {
+    const res: SwiftAuthMeta = await getAuthTokenWithTimeouts(
       config,
     );
 

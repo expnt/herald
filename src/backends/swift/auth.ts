@@ -3,6 +3,7 @@ import { SwiftConfig } from "../../config/types.ts";
 import { HeraldError } from "../../types/http-exception.ts";
 import { getLogger } from "../../utils/log.ts";
 import { retryWithExponentialBackoff } from "../../utils/url.ts";
+import { isOk, unwrapErr, unwrapOk } from "option-t/plain_result";
 
 const logger = getLogger(import.meta);
 
@@ -25,7 +26,7 @@ export async function getAuthTokenWithTimeouts(config: SwiftConfig): Promise<
   {
     storageUrl: string;
     token: string;
-  } | Error
+  }
 > {
   const getAuthToken = async () => {
     const { auth_url, credentials, region } = config;
@@ -75,14 +76,14 @@ export async function getAuthTokenWithTimeouts(config: SwiftConfig): Promise<
       const choices = response.headers.get("location");
       logger.info(`Available choices: ${choices}`);
       // Optionally, implement logic to handle multiple choices
-      return new HeraldError(response.status, { message: msg });
+      throw new HeraldError(response.status, { message: msg });
     }
 
     if (!response.ok) {
       const msg = await response.text();
       const errMessage = `Failed to authenticate with the auth service: ${msg}`;
       logger.warn(errMessage);
-      return new HeraldError(response.status, { message: msg });
+      throw new HeraldError(response.status, { message: msg });
     }
     logger.info("Authorization Token and Storage URL retrieved Successfully");
 
@@ -96,7 +97,7 @@ export async function getAuthTokenWithTimeouts(config: SwiftConfig): Promise<
     );
 
     if (storageService === undefined) {
-      return new HeraldError(404, {
+      throw new HeraldError(404, {
         message: "Object Store Service not found in OpenStack Server",
       });
     }
@@ -107,14 +108,14 @@ export async function getAuthTokenWithTimeouts(config: SwiftConfig): Promise<
     )?.url;
 
     if (token == null) {
-      return new HeraldError(400, {
+      throw new HeraldError(400, {
         message:
           "Error Authenticating to Open Stack Server: x-subject-token header is null",
       });
     }
 
     if (storageUrl === undefined) {
-      return new HeraldError(404, {
+      throw new HeraldError(404, {
         message:
           `Storage URL not found in OpenStack Server for region ${region}`,
       });
@@ -129,11 +130,11 @@ export async function getAuthTokenWithTimeouts(config: SwiftConfig): Promise<
     getAuthToken,
   );
 
-  if (res instanceof Error) {
-    return res;
+  if (!isOk(res)) {
+    throw unwrapErr(res);
   }
 
-  return res;
+  return unwrapOk(res);
 }
 
 export function getSwiftRequestHeaders(authToken: string): Headers {

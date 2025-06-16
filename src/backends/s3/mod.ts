@@ -21,6 +21,7 @@ import { extractRequestInfo } from "../../utils/s3.ts";
 import { Bucket } from "../../buckets/mod.ts";
 import { RequestContext } from "../../types/mod.ts";
 import { APIErrors, getAPIErrorResponse } from "../../types/api_errors.ts";
+import { createErr, createOk, Result } from "option-t/plain_result";
 
 const handlers = {
   putObject,
@@ -42,7 +43,7 @@ export async function s3Resolver(
   reqCtx: RequestContext,
   request: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error> {
+): Promise<Result<Response, Error>> {
   const logger = reqCtx.logger;
 
   // FIXME: `resolveHandler` has already extracted request info
@@ -61,9 +62,11 @@ export async function s3Resolver(
 
       if (!areQueryParamsSupported(queryParamKeys)) {
         logger.critical("Unsupported Query Parameter Used");
-        return new HeraldError(400, {
-          message: "Unsupported Query Parameter Used",
-        });
+        return createErr(
+          new HeraldError(400, {
+            message: "Unsupported Query Parameter Used",
+          }),
+        );
       }
       return await handlers.routeQueryParamedRequest(
         reqCtx,
@@ -84,9 +87,11 @@ export async function s3Resolver(
         );
       }
 
-      return new HeraldError(403, {
-        message: "Unsupported request",
-      });
+      return createErr(
+        new HeraldError(403, {
+          message: "Unsupported request",
+        }),
+      );
     case "PUT":
       if (objectKey && request.headers.get("x-amz-copy-source")) {
         return await handlers.copyObject(reqCtx, request, bucketConfig);
@@ -117,6 +122,6 @@ export async function s3Resolver(
       return await handlers.headBucket(reqCtx, request, bucketConfig);
     default:
       logger.critical(`Unsupported Request Method: ${method}`);
-      return getAPIErrorResponse(APIErrors.ErrInvalidRequest);
+      return createOk(getAPIErrorResponse(APIErrors.ErrInvalidRequest));
   }
 }
