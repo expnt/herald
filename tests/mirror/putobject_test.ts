@@ -23,6 +23,7 @@ import { createTempFile } from "../../utils/file.ts";
 import { assertEquals } from "std/assert";
 import { swiftMirrorBuckets } from "./mod.ts";
 import { swiftMirrorConfigs } from "./mod.ts";
+import { Errors } from "../utils/mod.ts";
 
 const testSuccessfulPutObject = async (
   t: Deno.TestContext,
@@ -135,7 +136,7 @@ const testFailedPutObject = async (
       // the object shouldn't be inside any of the storages
       assertEquals(404, res.$metadata.httpStatusCode);
     } catch (error) {
-      if ((error as Error).name === "InternalServerError") {
+      if ((error as Error).name === Errors.InternalServerError) {
         // correct path
       } else {
         throw error;
@@ -175,8 +176,8 @@ const testFailedPutObject = async (
         assertEquals(404, res.$metadata.httpStatusCode);
       } catch (error) {
         if (
-          (error as Error).name === "NoSuchKey" ||
-          (error as Error).name === "NotFound"
+          (error as Error).name === Errors.NoSuchKey ||
+          (error as Error).name === Errors.NotFound
         ) {
           // correct path
         } else {

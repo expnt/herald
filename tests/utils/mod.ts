@@ -28,3 +28,10 @@ export const testConfig: S3ClientConfig = {
   region: "local",
   forcePathStyle: true,
 };
+
+export enum Errors {
+  NotFound = "NotFound",
+  InternalServerError = "InternalServerError",
+  BadResource = "BadResource",
+  NoSuchKey = "NoSuchKey",
+}

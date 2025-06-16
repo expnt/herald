@@ -20,6 +20,7 @@ import {
   swiftMirrorConfigs,
   SYNC_WAIT,
 } from "./mod.ts";
+import { Errors } from "../utils/mod.ts";
 
 const testSuccessfulCreateBucketAndDeleteBucket = async (
   t: Deno.TestContext,
@@ -139,7 +140,7 @@ const testFailedCreateBucket = async (
     try {
       await s3.send(createBucket);
     } catch (error) {
-      if ((error as Error).name === "InternalServerError") {
+      if ((error as Error).name === Errors.InternalServerError) {
         // correct path
       } else {
         throw error;
@@ -175,7 +176,7 @@ const testFailedCreateBucket = async (
           assertEquals(res.$metadata.httpStatusCode, 404);
         } catch (error) {
           // this means the error is 404
-          assertEquals((error as Error).name, "NotFound");
+          assertEquals((error as Error).name, Errors.NotFound);
         }
       }
     },
@@ -248,7 +249,7 @@ const testFailedDeleteBucket = async (
       const deleteRes = await s3.send(deleteBucket);
       assertEquals(deleteRes.$metadata.httpStatusCode, 204);
     } catch (error) {
-      if ((error as Error).name === "InternalServerError") {
+      if ((error as Error).name === Errors.InternalServerError) {
         // correct path
       } else {
         throw error;

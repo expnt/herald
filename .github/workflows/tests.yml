@@ -115,4 +115,4 @@ jobs:
           deno install
 
           # ghjk x setup-auth
-          npx start-server-and-test 'deno run -A --unstable-kv src/main.ts' http://0.0.0.0:8000/ 'deno test -A'
+          npx start-server-and-test 'deno serve -A --unstable-kv src/main.ts' http://0.0.0.0:8000/ 'deno test -A'
