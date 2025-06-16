@@ -8,9 +8,10 @@ import * as Sentry from "sentry";
 import { getAuthType, verifyServiceAccountToken } from "./auth/mod.ts";
 import { registerWorkers } from "./workers/mod.ts";
 import { registerSignalHandlers } from "./utils/signal_handlers.ts";
-import { HeraldContext } from "./types/mod.ts";
+import { HeraldContext, RequestContext } from "./types/mod.ts";
 import { initTaskStore } from "./backends/task_store.ts";
 import { InternalServerErrorException } from "./constants/errors.ts";
+import { getRandomUUID } from "./utils/crypto.ts";
 
 // setup
 await configInit();
@@ -53,16 +54,23 @@ const ctx: HeraldContext = {
 const app = new Hono();
 
 app.all("/*", async (c) => {
+  const reqId = getRandomUUID();
+  const reqLogger = getLogger(import.meta, reqId);
+  const reqCtx: RequestContext = {
+    logger: reqLogger,
+    heraldContext: ctx,
+  };
+
   const path = c.req.path;
   let logMsg = `Receieved request on ${c.req.url}`;
-  logger.debug(logMsg);
+  reqLogger.debug(logMsg);
 
   if (path === "/health-check") {
     // TODO: thorough health check,
     const healthStatus = "Ok";
     logMsg = `Health Check Complete: ${healthStatus}`;
 
-    logger.info(logMsg);
+    reqLogger.info(logMsg);
     return c.text(healthStatus, 200);
   }
 
@@ -79,13 +87,13 @@ app.all("/*", async (c) => {
     )
     : "none";
 
-  const response = await resolveHandler(ctx, c, serviceAccountName);
+  const response = await resolveHandler(reqCtx, c, serviceAccountName);
   return response;
 });
 
 app.notFound((c) => {
   const errMessage = `Resource not found: ${c.req.url}`;
-  logger.warn(errMessage);
+  // logger.warn(errMessage);
   reportToSentry(errMessage);
   return c.text("Not Found", 404);
 });
@@ -99,7 +107,7 @@ app.onError((err, c) => {
   }
 
   const errMessage = `Something went wrong in the proxy: ${err.message}`;
-  logger.error(errMessage);
+  // logger.error(errMessage);
   reportToSentry(errMessage);
   return InternalServerErrorException(
     c.req.header("x-request-id") ?? "unknown",
@@ -116,7 +124,7 @@ try {
   Deno.serve({ port: globalConfig.port, signal }, app.fetch);
 } catch (error) {
   if ((error as Error).name === "AbortError") {
-    logger.info("Server shut down gracefully");
+    // logger.info("Server shut down gracefully");
   } else {
     throw error;
   }

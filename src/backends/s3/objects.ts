@@ -1,21 +1,20 @@
 import { Context } from "@hono/hono";
 import { forwardS3RequestToS3WithTimeouts } from "../../utils/url.ts";
-import { getLogger, reportToSentry } from "../../utils/log.ts";
+import { reportToSentry } from "../../utils/log.ts";
 import { S3Config } from "../../config/mod.ts";
 import { prepareMirrorRequests } from "../mirror.ts";
 import { Bucket } from "../../buckets/mod.ts";
 import { swiftResolver } from "../swift/mod.ts";
 import { s3Resolver } from "./mod.ts";
-import { HeraldContext } from "../../types/mod.ts";
+import { RequestContext } from "../../types/mod.ts";
 import { extractRequestInfo } from "../../utils/s3.ts";
 
-const logger = getLogger(import.meta);
-
 export async function getObject(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ) {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Get Object Request...");
 
   let response = await forwardS3RequestToS3WithTimeouts(
@@ -31,8 +30,8 @@ export async function getObject(
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(`Get Object Failed on Replica: ${replica.name}`);
         continue;
@@ -61,10 +60,11 @@ export async function getObject(
 }
 
 export async function listObjects(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ) {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying List Objects Request...");
 
   let response = await forwardS3RequestToS3WithTimeouts(
@@ -80,8 +80,8 @@ export async function listObjects(
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(`List Objects Failed on Replica: ${replica.name}`);
         continue;
@@ -110,10 +110,11 @@ export async function listObjects(
 }
 
 export async function putObject(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ) {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Put Object Request...");
 
   const config: S3Config = bucketConfig.config as S3Config;
@@ -141,7 +142,7 @@ export async function putObject(
     const { queryParams } = extractRequestInfo(req);
     if (mirrorOperation && !queryParams["uploadId"]) {
       await prepareMirrorRequests(
-        ctx,
+        reqCtx,
         req,
         bucketConfig,
         "putObject",
@@ -153,10 +154,11 @@ export async function putObject(
 }
 
 export async function deleteObject(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ) {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Delete Object Request...");
 
   const config: S3Config = bucketConfig.config as S3Config;
@@ -182,7 +184,7 @@ export async function deleteObject(
     logger.info(`Delete Object Successful: ${response.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
-        ctx,
+        reqCtx,
         req,
         bucketConfig,
         "deleteObject",
@@ -194,10 +196,11 @@ export async function deleteObject(
 }
 
 export async function copyObject(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ) {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Copy Object Request...");
 
   const config: S3Config = bucketConfig.config as S3Config;
@@ -223,7 +226,7 @@ export async function copyObject(
     logger.info(`Copy Object Successful: ${response.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
-        ctx,
+        reqCtx,
         req,
         bucketConfig,
         "copyObject",
@@ -239,10 +242,11 @@ export function getObjectMeta(c: Context) {
 }
 
 export async function headObject(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ) {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Head Object Request...");
 
   let response = await forwardS3RequestToS3WithTimeouts(
@@ -258,8 +262,8 @@ export async function headObject(
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(`Head Object Failed on Replica: ${replica.name}`);
         continue;
@@ -287,10 +291,11 @@ export async function headObject(
 }
 
 export async function createMultipartUpload(
-  _ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ) {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Create Multipart Upload Request...");
 
   const response = await forwardS3RequestToS3WithTimeouts(
@@ -317,10 +322,11 @@ export async function createMultipartUpload(
 }
 
 export async function completeMultipartUpload(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ) {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Complete Multipart Upload Request...");
 
   const mirrorOperation = bucketConfig.hasReplicas();
@@ -345,7 +351,7 @@ export async function completeMultipartUpload(
     logger.info(`Complete Multipart Upload Successful: ${response.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
-        ctx,
+        reqCtx,
         req,
         bucketConfig,
         "completeMultipartUpload",
@@ -357,10 +363,11 @@ export async function completeMultipartUpload(
 }
 
 export async function listParts(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error> {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying List Parts Request...");
 
   let response = await forwardS3RequestToS3WithTimeouts(
@@ -376,8 +383,8 @@ export async function listParts(
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(`List Parts Failed on Replica: ${replica.name}`);
         continue;
@@ -406,10 +413,11 @@ export async function listParts(
 }
 
 export async function abortMultipartUpload(
-  _ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error> {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Abort Multipart Upload Request...");
 
   const config: S3Config = bucketConfig.config as S3Config;

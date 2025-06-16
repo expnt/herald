@@ -33,12 +33,12 @@ import {
   headBucket,
 } from "./buckets.ts";
 import { HeraldError } from "../../types/http-exception.ts";
-import { getLogger } from "../../utils/log.ts";
 import { s3Utils } from "../../utils/mod.ts";
 import { Bucket } from "../../buckets/mod.ts";
-import { HeraldContext } from "../../types/mod.ts";
+import { RequestContext } from "../../types/mod.ts";
 import { formatRFC3339Date } from "./utils/mod.ts";
 import { InternalServerErrorException } from "../../constants/errors.ts";
+import { Logger } from "std/log";
 
 const handlers = {
   putObject,
@@ -60,9 +60,8 @@ const handlers = {
   abortMultipartUpload,
 };
 
-const logger = getLogger(import.meta);
 export async function swiftResolver(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error> {
@@ -73,36 +72,37 @@ export async function swiftResolver(
   const url = new URL(req.url);
   const queryParam = url.searchParams.keys().next().value;
 
+  const logger = reqCtx.logger;
   logger.debug(`Resolving Swift Handler for Request...`);
   // Handle query parameter-based requests
   if (queryParam) {
     switch (queryParam) {
       case "policy":
-        return await getBucketPolicy(ctx, req, bucketConfig);
+        return await getBucketPolicy(reqCtx, req, bucketConfig);
       case "acl":
-        return await getBucketAcl(ctx, req, bucketConfig);
+        return await getBucketAcl(reqCtx, req, bucketConfig);
       case "versioning":
-        return await getBucketVersioning(ctx, req, bucketConfig);
+        return await getBucketVersioning(reqCtx, req, bucketConfig);
       case "accelerate":
-        return getBucketAccelerate(ctx, req, bucketConfig);
+        return getBucketAccelerate(reqCtx, req, bucketConfig);
       case "logging":
-        return getBucketLogging(ctx, req, bucketConfig);
+        return getBucketLogging(reqCtx, req, bucketConfig);
       case "lifecycle":
-        return getBucketLifecycle(ctx, req, bucketConfig);
+        return getBucketLifecycle(reqCtx, req, bucketConfig);
       case "website":
-        return getBucketWebsite(ctx, req, bucketConfig);
+        return getBucketWebsite(reqCtx, req, bucketConfig);
       case "requestPayment":
-        return getBucketPayment(ctx, req, bucketConfig);
+        return getBucketPayment(reqCtx, req, bucketConfig);
       case "encryption":
-        return await getBucketEncryption(ctx, req, bucketConfig);
+        return await getBucketEncryption(reqCtx, req, bucketConfig);
       case "cors":
-        return getBucketCors(ctx, req, bucketConfig);
+        return getBucketCors(reqCtx, req, bucketConfig);
       case "replication":
-        return getBucketReplication(ctx, req, bucketConfig);
+        return getBucketReplication(reqCtx, req, bucketConfig);
       case "object-lock":
-        return getBucketObjectLock(ctx, req, bucketConfig);
+        return getBucketObjectLock(reqCtx, req, bucketConfig);
       case "tagging":
-        return await getBucketTagging(ctx, req, bucketConfig);
+        return await getBucketTagging(reqCtx, req, bucketConfig);
       // ignore these as they will be handled as regular request below
       case "x-id":
       case "list-type":
@@ -117,26 +117,26 @@ export async function swiftResolver(
   switch (method) {
     case "GET":
       if (objectKey && queryParamKeys.has("uploadId")) {
-        return await handlers.listParts(ctx, req, bucketConfig);
+        return await handlers.listParts(reqCtx, req, bucketConfig);
       }
 
       if (objectKey) {
-        return await handlers.getObject(ctx, req, bucketConfig);
+        return await handlers.getObject(reqCtx, req, bucketConfig);
       }
 
       if (queryParamKeys.has("uploads")) {
-        return await handlers.listMultipartUploads(ctx, req, bucketConfig);
+        return await handlers.listMultipartUploads(reqCtx, req, bucketConfig);
       }
 
-      return await handlers.listObjects(ctx, req, bucketConfig);
+      return await handlers.listObjects(reqCtx, req, bucketConfig);
     case "POST":
       if (objectKey && queryParamKeys.has("uploads")) {
-        return await handlers.createMultipartUpload(ctx, req, bucketConfig);
+        return await handlers.createMultipartUpload(reqCtx, req, bucketConfig);
       }
 
       if (objectKey && queryParamKeys.has("uploadId")) {
         return await handlers.completeMultipartUpload(
-          ctx,
+          reqCtx,
           req,
           bucketConfig,
         );
@@ -148,37 +148,37 @@ export async function swiftResolver(
         queryParamKeys.has("uploadId") &&
         req.headers.get("x-amz-copy-source")
       ) {
-        return await handlers.uploadPartCopy(ctx, req, bucketConfig);
+        return await handlers.uploadPartCopy(reqCtx, req, bucketConfig);
       }
 
       if (objectKey && req.headers.get("x-amz-copy-source")) {
-        return await handlers.copyObject(ctx, req, bucketConfig);
+        return await handlers.copyObject(reqCtx, req, bucketConfig);
       }
 
       if (objectKey && queryParamKeys.has("partNumber")) {
-        return await handlers.uploadPart(ctx, req, bucketConfig);
+        return await handlers.uploadPart(reqCtx, req, bucketConfig);
       }
 
       if (objectKey) {
-        return await handlers.putObject(ctx, req, bucketConfig);
+        return await handlers.putObject(reqCtx, req, bucketConfig);
       }
 
-      return await handlers.createBucket(ctx, req, bucketConfig);
+      return await handlers.createBucket(reqCtx, req, bucketConfig);
     case "DELETE":
       if (objectKey && queryParamKeys.has("uploadId")) {
-        return await handlers.abortMultipartUpload(ctx, req, bucketConfig);
+        return await handlers.abortMultipartUpload(reqCtx, req, bucketConfig);
       }
       if (objectKey) {
-        return await handlers.deleteObject(ctx, req, bucketConfig);
+        return await handlers.deleteObject(reqCtx, req, bucketConfig);
       }
 
-      return await handlers.deleteBucket(ctx, req, bucketConfig);
+      return await handlers.deleteBucket(reqCtx, req, bucketConfig);
     case "HEAD":
       if (objectKey) {
-        return await handlers.headObject(ctx, req, bucketConfig);
+        return await handlers.headObject(reqCtx, req, bucketConfig);
       }
 
-      return await handlers.headBucket(ctx, req, bucketConfig);
+      return await handlers.headBucket(reqCtx, req, bucketConfig);
     default:
       logger.critical(`Unsupported Request: ${method}`);
       return new HeraldError(400, { message: "Unsupported Request" });
@@ -291,7 +291,10 @@ export function convertSwiftGetObjectToS3Response(
   });
 }
 
-export function convertSwiftUploadPartToS3Response(swiftResponse: Response) {
+export function convertSwiftUploadPartToS3Response(
+  swiftResponse: Response,
+  logger: Logger,
+) {
   if (!swiftResponse.ok) {
     return new HeraldError(swiftResponse.status, {
       message: `Upload Part Failed: ${swiftResponse.statusText}`,

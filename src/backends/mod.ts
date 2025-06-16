@@ -1,4 +1,4 @@
-import { HeraldContext } from "./../types/mod.ts";
+import { RequestContext } from "./../types/mod.ts";
 import { Context } from "@hono/hono";
 import { getBucket } from "../config/loader.ts";
 import { HeraldError } from "../types/http-exception.ts";
@@ -6,18 +6,16 @@ import { getBackendDef, globalConfig } from "../config/mod.ts";
 import { s3Resolver } from "./s3/mod.ts";
 import { swiftResolver } from "./swift/mod.ts";
 import { extractRequestInfo } from "../utils/s3.ts";
-import { getLogger } from "../utils/log.ts";
 import { getAuthType, hasBucketAccess } from "../auth/mod.ts";
 import { verifyV4Signature } from "../utils/signer.ts";
 import { APIErrors, getAPIErrorResponse } from "../types/api_errors.ts";
 
-const logger = getLogger(import.meta);
-
 export async function resolveHandler(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   c: Context,
   serviceAccountName: string,
 ): Promise<Response> {
+  const logger = reqCtx.logger;
   logger.debug("Resolving Handler for Request...");
   const reqInfo = extractRequestInfo(c.req.raw);
   const { bucket: bucketName } = reqInfo;
@@ -59,8 +57,8 @@ export async function resolveHandler(
 
   const protocol = bucketBackendDef.protocol;
   const response = protocol === "s3"
-    ? await s3Resolver(ctx, c.req.raw, bucket)
-    : await swiftResolver(ctx, c.req.raw, bucket);
+    ? await s3Resolver(reqCtx, c.req.raw, bucket)
+    : await swiftResolver(reqCtx, c.req.raw, bucket);
 
   if (response instanceof HeraldError) {
     return response.getResponse();

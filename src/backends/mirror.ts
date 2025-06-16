@@ -1,4 +1,4 @@
-import { HeraldContext } from "./../types/mod.ts";
+import { RequestContext } from "./../types/mod.ts";
 import { S3Config, SwiftConfig } from "../config/types.ts";
 import { getLogger, reportToSentry } from "../utils/log.ts";
 import { s3Utils } from "../utils/mod.ts";
@@ -27,10 +27,13 @@ function getStorageKey(config: S3Config | SwiftConfig) {
   return `s3:${config.endpoint}/${config.region}`;
 }
 
-export async function enqueueMirrorTask(ctx: HeraldContext, task: MirrorTask) {
+export async function enqueueMirrorTask(
+  reqCtx: RequestContext,
+  task: MirrorTask,
+) {
   const bucket = getBucketFromTask(task);
   const kv = await Deno.openKv(`${bucket}_${TASK_QUEUE_DB}`);
-  const lockedStorages = ctx.taskStore.lockedStorages;
+  const lockedStorages = reqCtx.heraldContext.taskStore.lockedStorages;
   const nonce = crypto.randomUUID(); // Unique identifier for the task
   task.nonce = nonce;
   logger.debug(
@@ -49,7 +52,7 @@ export async function enqueueMirrorTask(ctx: HeraldContext, task: MirrorTask) {
 }
 
 export async function prepareMirrorRequests(
-  ctx: HeraldContext,
+  ctx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
   command: MirrorableCommands,
@@ -106,7 +109,7 @@ function generateSignature(_bucketConfig: S3Config): string {
 }
 
 async function mirrorPutObject(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   originalRequest: Request,
   primary: Bucket,
   replica: Bucket,
@@ -125,7 +128,11 @@ async function mirrorPutObject(
     const primaryBucket = bucketStore.buckets.find((bucket) =>
       bucket.name === primary.bucketName
     )!;
-    const response = await s3.getObject(ctx, getObjectRequest, primaryBucket);
+    const response = await s3.getObject(
+      reqCtx,
+      getObjectRequest,
+      primaryBucket,
+    );
 
     if (response instanceof Error) {
       const errMessage =
@@ -156,7 +163,7 @@ async function mirrorPutObject(
         body: response.body,
         headers: originalRequest.headers,
       });
-      return await s3.putObject(ctx, putToS3Request, replicaBucket);
+      return await s3.putObject(reqCtx, putToS3Request, replicaBucket);
     } else {
       // put object to swift
       const replicaBucket = primaryBucket.getReplica(replica.name)!;
@@ -166,7 +173,7 @@ async function mirrorPutObject(
         redirect: originalRequest.redirect,
         headers: originalRequest.headers,
       });
-      return await swift.putObject(ctx, putToSwiftRequest, replicaBucket);
+      return await swift.putObject(reqCtx, putToSwiftRequest, replicaBucket);
     }
   }
 
@@ -191,7 +198,11 @@ async function mirrorPutObject(
   const primaryBucket = bucketStore.buckets.find((bucket) =>
     bucket.name === config.container
   )!;
-  const response = await swift.getObject(ctx, getObjectRequest, primaryBucket);
+  const response = await swift.getObject(
+    reqCtx,
+    getObjectRequest,
+    primaryBucket,
+  );
 
   if (response instanceof Error) {
     const errMessage =
@@ -243,7 +254,7 @@ async function mirrorPutObject(
       "x-amz-content-sha256",
       "UNSIGNED-PAYLOAD",
     );
-    return await s3.putObject(ctx, putToS3Request, replicaBucket);
+    return await s3.putObject(reqCtx, putToS3Request, replicaBucket);
   } else {
     const putToSwiftRequest = new Request(originalRequest.url, {
       body: response.body,
@@ -251,7 +262,7 @@ async function mirrorPutObject(
       headers: originalRequest.headers,
     });
     const replicaBucket = primaryBucket.getReplica(replica.name)!;
-    return await swift.putObject(ctx, putToSwiftRequest, replicaBucket);
+    return await swift.putObject(reqCtx, putToSwiftRequest, replicaBucket);
   }
 }
 
@@ -261,7 +272,7 @@ async function mirrorPutObject(
  * @param originalRequest
  */
 async function mirrorDeleteObject(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   originalRequest: Request,
   replica: Bucket,
 ): Promise<Response | Error> {
@@ -283,11 +294,11 @@ async function mirrorDeleteObject(
         headers: headers,
       });
       const replicaBucket = primaryBucket.getReplica(replica.name)!;
-      return await s3.deleteObject(ctx, modifiedRequest, replicaBucket);
+      return await s3.deleteObject(reqCtx, modifiedRequest, replicaBucket);
     }
     case "ReplicaSwiftConfig": {
       const replicaBucket = primaryBucket.getReplica(replica.name)!;
-      return await swift.deleteObject(ctx, originalRequest, replicaBucket);
+      return await swift.deleteObject(reqCtx, originalRequest, replicaBucket);
     }
     default:
       logger.critical(`Invalid replica config type: ${replica.typ}`);
@@ -302,7 +313,7 @@ async function mirrorDeleteObject(
  * @param originalRequest
  */
 async function mirrorCopyObject(
-  ctx: HeraldContext,
+  ctx: RequestContext,
   originalRequest: Request,
   replica: Bucket,
 ): Promise<Response | Error> {
@@ -338,7 +349,7 @@ async function mirrorCopyObject(
 }
 
 async function mirrorCreateBucket(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   originalRequest: Request,
   replica: Bucket,
 ): Promise<Response | Error> {
@@ -358,11 +369,15 @@ async function mirrorCreateBucket(
       body: xmlBody,
     });
     const replicaBucket = primaryBucket.getReplica(replica.name)!;
-    return await s3_buckets.createBucket(ctx, modifiedRequest, replicaBucket);
+    return await s3_buckets.createBucket(
+      reqCtx,
+      modifiedRequest,
+      replicaBucket,
+    );
   } else {
     const replicaBucket = primaryBucket.getReplica(replica.name)!;
     return await swift_buckets.createBucket(
-      ctx,
+      reqCtx,
       originalRequest,
       replicaBucket,
     );
@@ -370,7 +385,7 @@ async function mirrorCreateBucket(
 }
 
 async function mirrorDeleteBucket(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   originalRequest: Request,
   replica: Bucket,
 ): Promise<Response | Error> {
@@ -391,11 +406,15 @@ async function mirrorDeleteBucket(
       headers: headers,
     });
     const replicaBucket = primaryBucket.getReplica(replica.name)!;
-    return await s3_buckets.deleteBucket(ctx, modifiedRequest, replicaBucket);
+    return await s3_buckets.deleteBucket(
+      reqCtx,
+      modifiedRequest,
+      replicaBucket,
+    );
   } else {
     const replicaBucket = primaryBucket.getReplica(replica.name)!;
     return await swift_buckets.deleteBucket(
-      ctx,
+      reqCtx,
       originalRequest,
       replicaBucket,
     );
@@ -403,7 +422,7 @@ async function mirrorDeleteBucket(
 }
 
 async function mirrorCompleteMultipartUpload(
-  ctx: HeraldContext,
+  ctx: RequestContext,
   originalRequest: Request,
   primary: Bucket,
   replica: Bucket,
@@ -417,7 +436,7 @@ async function mirrorCompleteMultipartUpload(
 }
 
 export async function processTask(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   task: MirrorTask,
 ): Promise<Response | Error> {
   const {
@@ -430,22 +449,38 @@ export async function processTask(
   switch (command) {
     case "putObject":
       return await mirrorPutObject(
-        ctx,
+        reqCtx,
         originalRequest,
         mainBucketConfig,
         backupBucketConfig,
       );
     case "deleteObject":
-      return await mirrorDeleteObject(ctx, originalRequest, backupBucketConfig);
+      return await mirrorDeleteObject(
+        reqCtx,
+        originalRequest,
+        backupBucketConfig,
+      );
     case "copyObject":
-      return await mirrorCopyObject(ctx, originalRequest, backupBucketConfig);
+      return await mirrorCopyObject(
+        reqCtx,
+        originalRequest,
+        backupBucketConfig,
+      );
     case "createBucket":
-      return await mirrorCreateBucket(ctx, originalRequest, backupBucketConfig);
+      return await mirrorCreateBucket(
+        reqCtx,
+        originalRequest,
+        backupBucketConfig,
+      );
     case "deleteBucket":
-      return await mirrorDeleteBucket(ctx, originalRequest, backupBucketConfig);
+      return await mirrorDeleteBucket(
+        reqCtx,
+        originalRequest,
+        backupBucketConfig,
+      );
     case "completeMultipartUpload":
       return await mirrorCompleteMultipartUpload(
-        ctx,
+        reqCtx,
         originalRequest,
         mainBucketConfig,
         backupBucketConfig,

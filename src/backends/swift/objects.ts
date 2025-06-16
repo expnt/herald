@@ -1,6 +1,6 @@
 import * as xml2js from "xml2js";
 
-import { getLogger, reportToSentry } from "../../utils/log.ts";
+import { reportToSentry } from "../../utils/log.ts";
 import { HeraldError } from "../../types/http-exception.ts";
 import { getSwiftRequestHeaders } from "./auth.ts";
 import {
@@ -31,18 +31,17 @@ import {
   convertSwiftUploadPartToS3Response,
   swiftResolver,
 } from "./mod.ts";
-import { HeraldContext } from "../../types/mod.ts";
+import { RequestContext } from "../../types/mod.ts";
 import { getRandomUUID } from "../../utils/crypto.ts";
 import { MULTIPART_UPLOADS_PATH } from "../../constants/s3.ts";
 import { APIErrors, getAPIErrorResponse } from "../../types/api_errors.ts";
 
-const logger = getLogger(import.meta);
-
 export async function putObject(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error | HeraldError> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Put Object Request...");
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
   const body = req.body;
@@ -55,7 +54,7 @@ export async function putObject(
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
   const mirrorOperation = bucketConfig.hasReplicas();
 
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -87,7 +86,7 @@ export async function putObject(
     logger.info(`Put Object Successful: ${response.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
-        ctx,
+        reqCtx,
         req,
         bucketConfig,
         "putObject",
@@ -99,10 +98,11 @@ export async function putObject(
 }
 
 export async function getObject(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error | HeraldError> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Get Object Request...");
 
   const { bucket, objectKey: object, queryParams } = s3Utils.extractRequestInfo(
@@ -116,7 +116,7 @@ export async function getObject(
 
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
 
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -142,8 +142,8 @@ export async function getObject(
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(`Get Object Failed on Replica: ${replica.name}`);
         continue;
@@ -172,10 +172,11 @@ export async function getObject(
 }
 
 export async function deleteObject(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error | HeraldError> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Delete Object Request...");
 
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
@@ -188,7 +189,7 @@ export async function deleteObject(
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
   const mirrorOperation = bucketConfig.hasReplicas();
 
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -221,7 +222,7 @@ export async function deleteObject(
     logger.info(`Delete Object Successful: ${response.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
-        ctx,
+        reqCtx,
         req,
         bucketConfig,
         "deleteObject",
@@ -233,10 +234,11 @@ export async function deleteObject(
 }
 
 export async function listObjects(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error | HeraldError> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Get List of Objects Request...");
 
   const { bucket, queryParams: query } = s3Utils.extractRequestInfo(req);
@@ -247,7 +249,7 @@ export async function listObjects(
   }
 
   const config = bucketConfig.config as SwiftConfig;
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -285,8 +287,8 @@ export async function listObjects(
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(
           `Get List of Objects Failed on Replica: ${replica.name}`,
@@ -331,10 +333,11 @@ export async function listObjects(
 }
 
 export async function getObjectMeta(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error | HeraldError> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Get Object Meta Request...");
 
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
@@ -344,7 +347,7 @@ export async function getObjectMeta(
   }
 
   const config = bucketConfig.config as SwiftConfig;
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -370,8 +373,8 @@ export async function getObjectMeta(
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(`Get bucket ACL Failed on Replica: ${replica.name}`);
         continue;
@@ -400,10 +403,11 @@ export async function getObjectMeta(
 }
 
 export async function headObject(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error | HeraldError> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Head Object Request...");
 
   const { bucket, objectKey } = s3Utils.extractRequestInfo(req);
@@ -414,7 +418,7 @@ export async function headObject(
   }
 
   const config = bucketConfig.config as SwiftConfig;
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -439,8 +443,8 @@ export async function headObject(
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(`Head object Failed on Replica: ${replica.name}`);
         continue;
@@ -470,10 +474,11 @@ export async function headObject(
 
 // currently supports copy within the same project
 export async function copyObject(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error | HeraldError> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Copy Object Request...");
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
   if (!bucket) {
@@ -485,7 +490,7 @@ export async function copyObject(
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
   const mirrorOperation = bucketConfig.hasReplicas();
 
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -524,7 +529,7 @@ export async function copyObject(
     logger.info(`Copy Object Successful: ${response.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
-        ctx,
+        reqCtx,
         req,
         bucketConfig,
         "copyObject",
@@ -536,10 +541,11 @@ export async function copyObject(
 }
 
 export async function createMultipartUpload(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error | HeraldError> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Create Multipart Upload Request...");
 
   const uploadId = getRandomUUID();
@@ -551,7 +557,7 @@ export async function createMultipartUpload(
   }
 
   const config = bucketConfig.config as SwiftConfig;
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
 
@@ -731,10 +737,11 @@ function generateCompleteMultipartUploadResponse(
 }
 
 export async function completeMultipartUpload(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error | HeraldError> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Complete Multipart Upload Request...");
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
   if (!bucket || !object) {
@@ -746,7 +753,7 @@ export async function completeMultipartUpload(
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
   const mirrorOperation = bucketConfig.hasReplicas();
 
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
   headers.append("X-Object-Manifest", `${bucket}/${object}`);
@@ -835,7 +842,7 @@ export async function completeMultipartUpload(
     logger.info(`Complete Multipart Upload Successful: ${response.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
-        ctx,
+        reqCtx,
         req,
         bucketConfig,
         "completeMultipartUpload",
@@ -859,10 +866,11 @@ export async function completeMultipartUpload(
 }
 
 export async function uploadPart(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error | HeraldError> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Upload Part Request...");
   const { bucket, objectKey: object, queryParams } = s3Utils.extractRequestInfo(
     req,
@@ -874,7 +882,7 @@ export async function uploadPart(
   }
 
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
 
@@ -913,11 +921,11 @@ export async function uploadPart(
     logger.info(`Upload Part Successful: ${response.statusText}`);
   }
 
-  return convertSwiftUploadPartToS3Response(response);
+  return convertSwiftUploadPartToS3Response(response, logger);
 }
 
 export function uploadPartCopy(
-  _ctx: HeraldContext,
+  _reqCtx: RequestContext,
   _req: Request,
   _bucketConfig: Bucket,
 ): Promise<Response | Error | HeraldError> | Response {
@@ -925,10 +933,11 @@ export function uploadPartCopy(
 }
 
 export async function listParts(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error | HeraldError> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying ListParts Request...");
 
   const { bucket, queryParams: query, objectKey } = s3Utils.extractRequestInfo(
@@ -942,7 +951,7 @@ export async function listParts(
   }
 
   const config = bucketConfig.config as SwiftConfig;
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -980,8 +989,8 @@ export async function listParts(
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(
           `ListParts Failed on Replica: ${replica.name}`,
@@ -1027,10 +1036,11 @@ export async function listParts(
 }
 
 export async function abortMultipartUpload(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error | HeraldError> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying AbortMultipartUpload Request...");
 
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
@@ -1044,7 +1054,7 @@ export async function abortMultipartUpload(
   }
 
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -1156,10 +1166,11 @@ export async function abortMultipartUpload(
 }
 
 export async function listMultipartUploads(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error | HeraldError> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying List Multipart Uploads Request...");
 
   const { bucket, queryParams: query } = s3Utils.extractRequestInfo(req);
@@ -1170,7 +1181,7 @@ export async function listMultipartUploads(
   }
 
   const config = bucketConfig.config as SwiftConfig;
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -1197,8 +1208,8 @@ export async function listMultipartUploads(
     logger.warn("List Multipart Uploads Failed on Primary. Trying replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (!(res instanceof Error)) {
         return res; // Return the successful response from replica
       }

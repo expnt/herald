@@ -3,12 +3,13 @@ import { processTask } from "./mirror.ts";
 import { MirrorableCommands, MirrorTask } from "./types.ts";
 import { configInit, S3Config } from "../config/mod.ts";
 import { inWorker, loggerUtils } from "../utils/mod.ts";
-import { HeraldContext } from "../types/mod.ts";
+import { HeraldContext, RequestContext } from "../types/mod.ts";
 import { TASK_QUEUE_DB } from "../constants/message.ts";
 import { TASK_TIMEOUT } from "../constants/time.ts";
 import { Bucket } from "../buckets/mod.ts";
 import { SwiftConfig } from "../config/types.ts";
 import { KeystoneTokenStore } from "./swift/keystone_token_store.ts";
+import { getRandomUUID } from "../utils/crypto.ts";
 
 if (inWorker()) {
   await configInit();
@@ -76,7 +77,7 @@ interface StartMessage {
   type: "Start";
 }
 
-let ctx: HeraldContext;
+let heraldContext: HeraldContext;
 
 self.postMessage(`Worker started ${self.name}`);
 self.onmessage = onMsg;
@@ -104,7 +105,10 @@ function onUpdateContext(
   msg: MessageEvent<UpdateContextMessage>,
   logger: loggerUtils.Logger,
 ) {
-  ctx = prepareWorkerContext(msg.data.ctx, msg.data.serializedSwiftAuthMeta);
+  heraldContext = prepareWorkerContext(
+    msg.data.ctx,
+    msg.data.serializedSwiftAuthMeta,
+  );
   logger.info("Updated worker's herald context");
 }
 
@@ -118,7 +122,14 @@ async function onStart(
   // after fetching the stuck task from persistent storage
   // this is usually when herald restarts after some crash
 
-  ctx = prepareWorkerContext(msg.data.ctx, msg.data.serializedSwiftAuthMeta);
+  heraldContext = prepareWorkerContext(
+    msg.data.ctx,
+    msg.data.serializedSwiftAuthMeta,
+  );
+  const reqCtx: RequestContext = {
+    logger: getLogger(import.meta, getRandomUUID()),
+    heraldContext,
+  };
   const dbName = `${name}_${TASK_QUEUE_DB}`;
   const kv = await Deno.openKv(dbName);
   kv.listenQueue(async (item: MirrorTaskMessage) => {
@@ -132,7 +143,7 @@ async function onStart(
 
       let res = await Promise.race([
         // request task if this fails
-        processTask(ctx, task),
+        processTask(reqCtx, task),
         timeoutPromise,
       ]);
 
@@ -154,7 +165,7 @@ async function onStart(
         // TODO: save the task data in persistent storage
         res = await Promise.race([
           // request task if this fails
-          processTask(ctx, task),
+          processTask(reqCtx, task),
           timeoutPromise,
         ]);
       }

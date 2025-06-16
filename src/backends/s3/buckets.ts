@@ -2,21 +2,20 @@ import {
   formatParams,
   forwardS3RequestToS3WithTimeouts,
 } from "../../utils/url.ts";
-import { getLogger, reportToSentry } from "../../utils/log.ts";
+import { reportToSentry } from "../../utils/log.ts";
 import { S3Config } from "../../config/mod.ts";
 import { prepareMirrorRequests } from "../mirror.ts";
 import { Bucket } from "../../buckets/mod.ts";
 import { s3Resolver } from "./mod.ts";
 import { swiftResolver } from "../swift/mod.ts";
-import { HeraldContext } from "../../types/mod.ts";
-
-const logger = getLogger(import.meta);
+import { RequestContext } from "../../types/mod.ts";
 
 export async function createBucket(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ) {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Create Bucket Request...");
 
   const config: S3Config = bucketConfig.config as S3Config;
@@ -42,7 +41,7 @@ export async function createBucket(
     logger.info(`Create Bucket Successful: ${response.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
-        ctx,
+        reqCtx,
         req,
         bucketConfig,
         "createBucket",
@@ -54,10 +53,11 @@ export async function createBucket(
 }
 
 export async function deleteBucket(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ) {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Delete Bucket Request...");
 
   const config: S3Config = bucketConfig.config as S3Config;
@@ -83,7 +83,7 @@ export async function deleteBucket(
     logger.info(`Delete Bucket Successful: ${response.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
-        ctx,
+        reqCtx,
         req,
         bucketConfig,
         "deleteBucket",
@@ -95,11 +95,12 @@ export async function deleteBucket(
 }
 
 export async function routeQueryParamedRequest(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
   queryParams: Set<string>,
 ) {
+  const logger = reqCtx.logger;
   const formattedParams = formatParams(queryParams);
   logger.info(`[S3 backend] Proxying Get Bucket ${formattedParams} Request...`);
 
@@ -116,8 +117,8 @@ export async function routeQueryParamedRequest(
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(
           `${formattedParams} Operation Failed on Replica: ${replica.name}`,
@@ -151,10 +152,11 @@ export async function routeQueryParamedRequest(
 }
 
 export async function headBucket(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error> {
+  const logger = reqCtx.logger;
   logger.info(`[S3 backend] Proxying Head Bucket Request...`);
 
   let response = await forwardS3RequestToS3WithTimeouts(
@@ -170,8 +172,8 @@ export async function headBucket(
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(`Head Bucket Failed on Replica: ${replica.name}`);
         continue;

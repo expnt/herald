@@ -1,7 +1,7 @@
 import { getSwiftRequestHeaders } from "./auth.ts";
 import { HeraldError } from "../../types/http-exception.ts";
 import { s3Utils } from "../../utils/mod.ts";
-import { getLogger, reportToSentry } from "../../utils/log.ts";
+import { reportToSentry } from "../../utils/log.ts";
 import {
   getBodyFromReq,
   retryWithExponentialBackoff,
@@ -17,15 +17,14 @@ import {
   convertSwiftHeadBucketToS3Response,
   swiftResolver,
 } from "./mod.ts";
-import { HeraldContext } from "../../types/mod.ts";
-
-const logger = getLogger(import.meta);
+import { RequestContext } from "../../types/mod.ts";
 
 export async function createBucket(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Create Bucket Request...");
 
   const { bucket } = s3Utils.extractRequestInfo(req);
@@ -38,7 +37,7 @@ export async function createBucket(
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
   const mirrorOperation = bucketConfig.hasReplicas();
 
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -70,7 +69,7 @@ export async function createBucket(
     logger.info(`Create bucket Successful: ${response.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
-        ctx,
+        reqCtx,
         req,
         bucketConfig,
         "createBucket",
@@ -82,10 +81,11 @@ export async function createBucket(
 }
 
 export async function deleteBucket(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Delete Bucket Request...");
 
   const { bucket } = s3Utils.extractRequestInfo(req);
@@ -98,7 +98,7 @@ export async function deleteBucket(
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
   const mirrorOperation = bucketConfig.hasReplicas();
 
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -130,7 +130,7 @@ export async function deleteBucket(
     logger.info(`Delete bucket Successful: ${response.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
-        ctx,
+        reqCtx,
         req,
         bucketConfig,
         "deleteBucket",
@@ -142,10 +142,11 @@ export async function deleteBucket(
 }
 
 export async function getBucketAcl(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Handling Get Bucket ACL Request...");
 
   const { bucket } = s3Utils.extractRequestInfo(req);
@@ -156,7 +157,7 @@ export async function getBucketAcl(
   }
 
   const config = bucketConfig.config as SwiftConfig;
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -182,8 +183,8 @@ export async function getBucketAcl(
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(`Get bucket ACL Failed on Replica: ${replica.name}`, res);
         continue;
@@ -246,10 +247,11 @@ export async function getBucketAcl(
 }
 
 export async function getBucketVersioning(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Handling Get Bucket Versioning Request...");
 
   const { bucket } = s3Utils.extractRequestInfo(req);
@@ -260,7 +262,7 @@ export async function getBucketVersioning(
   }
 
   const config = bucketConfig.config as SwiftConfig;
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -285,8 +287,8 @@ export async function getBucketVersioning(
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(
           `Get bucket versioning Failed on Replica: ${replica.name}`,
@@ -322,10 +324,11 @@ export async function getBucketVersioning(
 }
 
 export function getBucketAccelerate(
-  _ctx: HeraldContext,
+  reqCtx: RequestContext,
   _req: Request,
   _bucketConfig: Bucket,
 ): Response | Error {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Handling Get Bucket Accelerate Request...");
 
   // Swift doesn't have an equivalent to S3's transfer acceleration
@@ -341,10 +344,11 @@ export function getBucketAccelerate(
 }
 
 export function getBucketLogging(
-  _ctx: HeraldContext,
+  reqCtx: RequestContext,
   _req: Request,
   _bucketConfig: Bucket,
 ): Response | Error {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Handling Get Bucket Logging Request...");
 
   // Swift doesn't have built-in bucket logging like S3
@@ -360,10 +364,11 @@ export function getBucketLogging(
 }
 
 export function getBucketLifecycle(
-  _ctx: HeraldContext,
+  reqCtx: RequestContext,
   _req: Request,
   _bucketConfig: Bucket,
 ): Response | Error {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Handling Get Bucket Lifecycle Request...");
 
   // Swift doesn't have a direct equivalent to S3's lifecycle policies
@@ -379,10 +384,11 @@ export function getBucketLifecycle(
 }
 
 export function getBucketWebsite(
-  _ctx: HeraldContext,
+  reqCtx: RequestContext,
   _req: Request,
   _bucketConfig: Bucket,
 ): Response | Error {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Handling Get Bucket Website Request...");
 
   // Swift doesn't have built-in static website hosting like S3
@@ -398,10 +404,11 @@ export function getBucketWebsite(
 }
 
 export function getBucketPayment(
-  _ctx: HeraldContext,
+  reqCtx: RequestContext,
   _req: Request,
   _bucketConfig: Bucket,
 ): Response | Error {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Handling Get Bucket Payment Request...");
 
   // Swift doesn't have a concept of requester pays like S3
@@ -410,10 +417,11 @@ export function getBucketPayment(
 }
 
 export async function getBucketEncryption(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Handling Get Bucket Encryption Request...");
 
   const { bucket } = s3Utils.extractRequestInfo(req);
@@ -424,7 +432,7 @@ export async function getBucketEncryption(
   }
 
   const config = bucketConfig.config as SwiftConfig;
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -449,8 +457,8 @@ export async function getBucketEncryption(
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(
           `Get bucket encryption Failed on Replica: ${replica.name}`,
@@ -500,10 +508,11 @@ export async function getBucketEncryption(
 }
 
 export async function headBucket(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Head Bucket Request...");
 
   const { bucket } = s3Utils.extractRequestInfo(req);
@@ -514,7 +523,7 @@ export async function headBucket(
   }
 
   const config = bucketConfig.config as SwiftConfig;
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -539,8 +548,8 @@ export async function headBucket(
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(
           `Head bucket Failed on Replica: ${replica.name}`,
@@ -572,10 +581,11 @@ export async function headBucket(
 }
 
 export function getBucketCors(
-  _ctx: HeraldContext,
+  reqCtx: RequestContext,
   _req: Request,
   _bucketConfig: Bucket,
 ): Response | Error {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Handling Get Bucket CORS Request...");
 
   // Swift doesn't have a direct equivalent to S3's CORS configuration
@@ -591,10 +601,11 @@ export function getBucketCors(
 }
 
 export function getBucketReplication(
-  _ctx: HeraldContext,
+  reqCtx: RequestContext,
   _req: Request,
   _bucketConfig: Bucket,
 ): Response | Error {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Handling Get Bucket Replication Request...");
 
   // Swift doesn't have a built-in replication feature like S3
@@ -610,10 +621,11 @@ export function getBucketReplication(
 }
 
 export function getBucketObjectLock(
-  _ctx: HeraldContext,
+  reqCtx: RequestContext,
   _req: Request,
   _bucketConfig: Bucket,
 ): Response | Error {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Handling Get Bucket Object Lock Request...");
 
   // Swift doesn't have an equivalent to S3's Object Lock feature
@@ -629,10 +641,11 @@ export function getBucketObjectLock(
 }
 
 export async function getBucketTagging(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Handling Get Bucket Tagging Request...");
 
   const { bucket } = s3Utils.extractRequestInfo(req);
@@ -643,7 +656,7 @@ export async function getBucketTagging(
   }
 
   const config = bucketConfig.config as SwiftConfig;
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -668,8 +681,8 @@ export async function getBucketTagging(
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(
           `Get bucket tagging Failed on Replica: ${replica.name}`,
@@ -723,10 +736,11 @@ export async function getBucketTagging(
 }
 
 export async function getBucketPolicy(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
 ): Promise<Response | Error> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Handling Get Bucket Policy Request...");
 
   const { bucket } = s3Utils.extractRequestInfo(req);
@@ -737,7 +751,7 @@ export async function getBucketPolicy(
   }
 
   const config = bucketConfig.config as SwiftConfig;
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -762,8 +776,8 @@ export async function getBucketPolicy(
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(
           `Get bucket policy Failed on Replica: ${replica.name}`,
