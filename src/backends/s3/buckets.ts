@@ -2,21 +2,21 @@ import {
   formatParams,
   forwardS3RequestToS3WithTimeouts,
 } from "../../utils/url.ts";
-import { getLogger, reportToSentry } from "../../utils/log.ts";
+import { reportToSentry } from "../../utils/log.ts";
 import { S3Config } from "../../config/mod.ts";
 import { prepareMirrorRequests } from "../mirror.ts";
 import { Bucket } from "../../buckets/mod.ts";
 import { s3Resolver } from "./mod.ts";
 import { swiftResolver } from "../swift/mod.ts";
-import { HeraldContext } from "../../types/mod.ts";
-
-const logger = getLogger(import.meta);
+import { RequestContext } from "../../types/mod.ts";
+import { isOk, Result, unwrapErr, unwrapOk } from "option-t/plain_result";
 
 export async function createBucket(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-) {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Create Bucket Request...");
 
   const config: S3Config = bucketConfig.config as S3Config;
@@ -27,31 +27,24 @@ export async function createBucket(
     config,
   );
 
-  if (response instanceof Error) {
-    logger.warn(`Create Bucket Failed: ${response.message}`);
-    const errorXml = `<?xml version="1.0" encoding="UTF-8"?>
-<Error>
-  <Code>${response.name}</Code>
-  <Message>Failed to connect to S3 storage: ${response.message}. Please try again later.</Message>
-</Error>`;
-
-    return new Response(errorXml, {
-      status: 500,
-      headers: {
-        "Content-Type": "application/xml",
-      },
-    });
+  if (!isOk(response)) {
+    const err = unwrapErr(response);
+    logger.warn(
+      `Create Bucket Failed. Failed to connect with Object Storage: ${err.message}`,
+    );
+    return response;
   }
 
-  if (response.status != 200) {
-    const errMessage = `Create Bucket Failed: ${response.statusText}`;
+  const successResponse = unwrapOk(response);
+  if (successResponse.status != 200) {
+    const errMessage = `Create Bucket Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`Create Bucket Successful: ${response.statusText}`);
+    logger.info(`Create Bucket Successful: ${successResponse.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
-        ctx,
+        reqCtx,
         req,
         bucketConfig,
         "createBucket",
@@ -63,10 +56,11 @@ export async function createBucket(
 }
 
 export async function deleteBucket(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-) {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Delete Bucket Request...");
 
   const config: S3Config = bucketConfig.config as S3Config;
@@ -77,31 +71,24 @@ export async function deleteBucket(
     config,
   );
 
-  if (response instanceof Error) {
-    logger.warn(`Delete Bucket Failed: ${response.message}`);
-    const errorXml = `<?xml version="1.0" encoding="UTF-8"?>
-<Error>
-  <Code>${response.name}</Code>
-  <Message>Failed to connect to S3 storage: ${response.message}. Please try again later.</Message>
-</Error>`;
-
-    return new Response(errorXml, {
-      status: 500,
-      headers: {
-        "Content-Type": "application/xml",
-      },
-    });
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `Delete Bucket Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
+    return response;
   }
 
-  if (response.status != 204) {
-    const errMessage = `Delete Bucket Failed: ${response.statusText}`;
+  const successResponse = unwrapOk(response);
+  if (successResponse.status != 204) {
+    const errMessage = `Delete Bucket Failed: ${successResponse.statusText}`;
     reportToSentry(errMessage);
     logger.warn(errMessage);
   } else {
-    logger.info(`Delete Bucket Successful: ${response.statusText}`);
+    logger.info(`Delete Bucket Successful: ${successResponse.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
-        ctx,
+        reqCtx,
         req,
         bucketConfig,
         "deleteBucket",
@@ -113,11 +100,12 @@ export async function deleteBucket(
 }
 
 export async function routeQueryParamedRequest(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
   queryParams: Set<string>,
-) {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   const formattedParams = formatParams(queryParams);
   logger.info(`[S3 backend] Proxying Get Bucket ${formattedParams} Request...`);
 
@@ -134,8 +122,8 @@ export async function routeQueryParamedRequest(
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(
           `${formattedParams} Operation Failed on Replica: ${replica.name}`,
@@ -147,19 +135,23 @@ export async function routeQueryParamedRequest(
     }
   }
 
-  if (response instanceof Error) {
-    logger.warn(`${formatParams} Operation Failed: ${response.message}`);
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `${formatParams} Operation Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
     return response;
   }
 
-  if (response.status != 200) {
+  const successResponse = unwrapOk(response);
+  if (successResponse.status != 200) {
     const errMessage =
-      `Get Bucket ${formattedParams} Failed: ${response.statusText}`;
+      `Get Bucket ${formattedParams} Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
     logger.info(
-      `Get Bucket ${formattedParams} Successful: ${response.statusText}`,
+      `Get Bucket ${formattedParams} Successful: ${successResponse.statusText}`,
     );
   }
 
@@ -167,10 +159,11 @@ export async function routeQueryParamedRequest(
 }
 
 export async function headBucket(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error> {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info(`[S3 backend] Proxying Head Bucket Request...`);
 
   let response = await forwardS3RequestToS3WithTimeouts(
@@ -179,15 +172,15 @@ export async function headBucket(
     bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
   );
 
-  if (response instanceof Error && bucketConfig.hasReplicas()) {
+  if (!isOk(response) && bucketConfig.hasReplicas()) {
     logger.warn(
       `Head Bucket Failed on Primary Bucket: ${bucketConfig.bucketName}`,
     );
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(`Head Bucket Failed on Replica: ${replica.name}`);
         continue;
@@ -197,29 +190,22 @@ export async function headBucket(
     }
   }
 
-  if (response instanceof Error) {
-    logger.warn(`Head Bucket Failed: ${response.message}`);
-    const errorXml = `<?xml version="1.0" encoding="UTF-8"?>
-<Error>
-  <Code>${response.name}</Code>
-  <Message>Failed to connect to S3 storage: ${response.message}. Please try again later.</Message>
-</Error>`;
-
-    return new Response(errorXml, {
-      status: 500,
-      headers: {
-        "Content-Type": "application/xml",
-      },
-    });
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `Head Bucket Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
+    return response;
   }
 
-  if (response.status !== 200 && response.status !== 404) {
-    const errMessage = `Head Bucket Failed: ${response.statusText}`;
+  const successResponse = unwrapOk(response);
+  if (successResponse.status !== 200 && successResponse.status !== 404) {
+    const errMessage = `Head Bucket Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
     logger.info(
-      `Head Bucket Successful: ${response.statusText}`,
+      `Head Bucket Successful: ${successResponse.statusText}`,
     );
   }
 

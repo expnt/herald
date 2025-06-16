@@ -1,4 +1,5 @@
 import { GlobalConfig, SwiftConfig } from "../../config/types.ts";
+import { getLogger, reportToSentry } from "../../utils/log.ts";
 import { getAuthTokenWithTimeouts } from "./auth.ts";
 
 interface SwiftAuthMeta {
@@ -6,6 +7,7 @@ interface SwiftAuthMeta {
   storageUrl: string;
 }
 
+const logger = getLogger(import.meta);
 export class KeystoneTokenStore {
   constructor(
     private configAuthMetas: Map<string, SwiftAuthMeta>,
@@ -21,8 +23,20 @@ export class KeystoneTokenStore {
       if (configAuthMetas.has(configKey)) {
         continue;
       }
-      const configAuthMeta = await KeystoneTokenStore.#getSwiftAuthMeta(config);
-      configAuthMetas.set(configKey, configAuthMeta);
+      try {
+        const configAuthMeta = await KeystoneTokenStore.#getSwiftAuthMeta(
+          config,
+        );
+        configAuthMetas.set(configKey, configAuthMeta);
+      } catch (e) {
+        const errMsg = `Failed to fetch Swift Auth Meta: ${
+          (e as Error).message
+        }`;
+        logger.error(errMsg);
+        reportToSentry(
+          errMsg,
+        );
+      }
     }
 
     return new KeystoneTokenStore(
@@ -57,7 +71,9 @@ export class KeystoneTokenStore {
     return `${config.auth_url}-${config.region}`;
   }
 
-  static async #getSwiftAuthMeta(config: SwiftConfig): Promise<SwiftAuthMeta> {
+  static async #getSwiftAuthMeta(
+    config: SwiftConfig,
+  ): Promise<SwiftAuthMeta> {
     const res: SwiftAuthMeta = await getAuthTokenWithTimeouts(
       config,
     );
@@ -73,6 +89,10 @@ export class KeystoneTokenStore {
         continue;
       }
       const authMeta = await KeystoneTokenStore.#getSwiftAuthMeta(config);
+      if (authMeta instanceof Error) {
+        reportToSentry(`Failed to fetch Swift Auth Meta: ${authMeta.message}`);
+        return;
+      }
       refreshedAuthMetas.set(configKey, authMeta);
     }
     this.configAuthMetas = refreshedAuthMetas;
@@ -83,6 +103,8 @@ export class KeystoneTokenStore {
   ): SwiftAuthMeta {
     const key = KeystoneTokenStore.#getConfigKey(config);
     const configMeta = this.configAuthMetas.get(key);
+
+    // logically unreachable
     if (!configMeta) {
       throw new Error(
         "Application error: a swift storage config with no auth tokens found",

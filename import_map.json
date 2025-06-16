@@ -44,6 +44,8 @@
     "@std/yaml": "jsr:@std/yaml@1.0.5",
     "xml2js": "npm:xml2js@0.6.2",
     "sentry": "https://deno.land/x/sentry@8.32.0/index.mjs",
-    "djwt": "jsr:@wok/djwt@3.0.2"
+    "djwt": "jsr:@wok/djwt@3.0.2",
+    "option-t": "npm:option-t@53",
+    "option-t/plain_result": "npm:option-t@53/plain_result"
   }
 }

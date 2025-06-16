@@ -1,7 +1,7 @@
 {
   "tasks": {
-    "dev": "deno run -A --unstable-kv --watch src/main.ts",
-    "start": "deno run -A --unstable-kv src/main.ts",
+    "dev": "deno serve -A --unstable-kv --watch src/main.ts",
+    "start": "deno serve -A --unstable-kv src/main.ts",
     "bench": "deno bench -A benchmarks",
     "test": "deno test -A tests",
     "save-bench": "deno run -A benchmarks/bench_saver.ts"

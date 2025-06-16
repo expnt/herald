@@ -1,7 +1,7 @@
 import * as xml2js from "xml2js";
 
-import { getLogger, reportToSentry } from "../../utils/log.ts";
-import { HTTPException } from "../../types/http-exception.ts";
+import { reportToSentry } from "../../utils/log.ts";
+import { HeraldError } from "../../types/http-exception.ts";
 import { getSwiftRequestHeaders } from "./auth.ts";
 import {
   getBodyBuffer,
@@ -31,30 +31,38 @@ import {
   convertSwiftUploadPartToS3Response,
   swiftResolver,
 } from "./mod.ts";
-import { HeraldContext } from "../../types/mod.ts";
+import { RequestContext } from "../../types/mod.ts";
 import { getRandomUUID } from "../../utils/crypto.ts";
 import { MULTIPART_UPLOADS_PATH } from "../../constants/s3.ts";
-
-const logger = getLogger(import.meta);
+import { APIErrors, getAPIErrorResponse } from "../../types/api_errors.ts";
+import {
+  createErr,
+  createOk,
+  isOk,
+  Result,
+  unwrapErr,
+  unwrapOk,
+} from "option-t/plain_result";
 
 export async function putObject(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Put Object Request...");
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
   const body = req.body;
   if (!bucket) {
-    return InvalidRequestException(
+    return createOk(InvalidRequestException(
       "Bucket information missing from the request",
-    );
+    ));
   }
 
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
   const mirrorOperation = bucketConfig.hasReplicas();
 
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -71,20 +79,24 @@ export async function putObject(
     fetchFunc,
   );
 
-  if (response instanceof Error) {
-    logger.warn(`Put Object Failed: ${response.message}`);
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `Put Object Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
     return response;
   }
 
-  if (response.status !== 201) {
-    const errMessage = `Put Object Failed: ${response.statusText}`;
-    logger.warn(errMessage, { response });
+  const successResponse = unwrapOk(response);
+  if (successResponse.status !== 201) {
+    const errMessage = `Put Object Failed: ${successResponse.statusText}`;
+    logger.warn(errMessage, { successResponse });
     reportToSentry(errMessage);
   } else {
-    logger.info(`Put Object Successful: ${response.statusText}`);
+    logger.info(`Put Object Successful: ${successResponse.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
-        ctx,
+        reqCtx,
         req,
         bucketConfig,
         "putObject",
@@ -92,28 +104,29 @@ export async function putObject(
     }
   }
 
-  return convertSwiftPutObjectToS3Response(response);
+  return convertSwiftPutObjectToS3Response(successResponse);
 }
 
 export async function getObject(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Get Object Request...");
 
   const { bucket, objectKey: object, queryParams } = s3Utils.extractRequestInfo(
     req,
   );
   if (!bucket) {
-    return InvalidRequestException(
+    return createOk(InvalidRequestException(
       "Bucket information missing from the request",
-    );
+    ));
   }
 
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
 
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -132,15 +145,15 @@ export async function getObject(
     bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
   );
 
-  if (response instanceof Error && bucketConfig.hasReplicas()) {
+  if (!isOk(response) && bucketConfig.hasReplicas()) {
     logger.warn(
       `Get Object Failed on Primary Bucket: ${bucketConfig.bucketName}`,
     );
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(`Get Object Failed on Replica: ${replica.name}`);
         continue;
@@ -150,40 +163,45 @@ export async function getObject(
     }
   }
 
-  if (response instanceof Error) {
-    logger.warn(`Get Object Failed: ${response.message}`);
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `Get Object Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
     return response;
   }
 
-  if (response.status !== 200) {
-    const errMessage = `Get Object Failed: ${response.statusText}`;
+  const successResponse = unwrapOk(response);
+  if (successResponse.status !== 200) {
+    const errMessage = `Get Object Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`Get Object Successful: ${response.statusText}`);
+    logger.info(`Get Object Successful: ${successResponse.statusText}`);
   }
 
-  return convertSwiftGetObjectToS3Response(response, queryParams);
+  return convertSwiftGetObjectToS3Response(successResponse, queryParams);
 }
 
 export async function deleteObject(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Delete Object Request...");
 
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
   if (!bucket) {
-    return InvalidRequestException(
+    return createOk(InvalidRequestException(
       "Bucket information missing from the request",
-    );
+    ));
   }
 
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
   const mirrorOperation = bucketConfig.hasReplicas();
 
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -201,20 +219,24 @@ export async function deleteObject(
     fetchFunc,
   );
 
-  if (response instanceof Error) {
-    logger.warn(`Delete Object Failed: ${response.message}`);
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `Delete Object Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
     return response;
   }
 
-  if (response.status !== 204 && response.status !== 404) {
-    const errMessage = `Delete Object Failed: ${response.statusText}`;
+  const successResponse = unwrapOk(response);
+  if (successResponse.status !== 204 && successResponse.status !== 404) {
+    const errMessage = `Delete Object Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`Delete Object Successful: ${response.statusText}`);
+    logger.info(`Delete Object Successful: ${successResponse.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
-        ctx,
+        reqCtx,
         req,
         bucketConfig,
         "deleteObject",
@@ -222,25 +244,26 @@ export async function deleteObject(
     }
   }
 
-  return convertSwiftDeleteObjectToS3Response(response);
+  return convertSwiftDeleteObjectToS3Response(successResponse);
 }
 
 export async function listObjects(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Get List of Objects Request...");
 
   const { bucket, queryParams: query } = s3Utils.extractRequestInfo(req);
   if (!bucket) {
-    return InvalidRequestException(
+    return createOk(InvalidRequestException(
       "Bucket information missing from the request",
-    );
+    ));
   }
 
   const config = bucketConfig.config as SwiftConfig;
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -271,15 +294,15 @@ export async function listObjects(
     bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
   );
 
-  if (response instanceof Error && bucketConfig.hasReplicas()) {
+  if (!isOk(response) && bucketConfig.hasReplicas()) {
     logger.warn(
       `List Objects Failed on Primary Bucket: ${bucketConfig.bucketName}`,
     );
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(
           `Get List of Objects Failed on Replica: ${replica.name}`,
@@ -291,16 +314,22 @@ export async function listObjects(
     }
   }
 
-  if (response instanceof Error) {
-    logger.warn(`Get List of Objects Failed: ${response.message}`);
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `Get List of Objects Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
     return response;
   }
 
-  if (response.status === 404) {
-    logger.warn(`Get List of Objects Failed: ${response.statusText}`);
-    return NoSuchBucketException();
+  const successResponse = unwrapOk(response);
+  if (successResponse.status === 404) {
+    logger.warn(`Get List of Objects Failed: ${successResponse.statusText}`);
+    return createOk(NoSuchBucketException());
   } else {
-    logger.info(`Get List of Objects Successful: ${response.statusText}`);
+    logger.info(
+      `Get List of Objects Successful: ${successResponse.statusText}`,
+    );
   }
 
   const delimiter = query.delimiter ? query.delimiter[0] : null;
@@ -310,7 +339,7 @@ export async function listObjects(
     ? query["continuation-token"][0]
     : null;
   const formattedResponse = await toS3XmlContent(
-    response,
+    successResponse,
     bucket,
     delimiter,
     prefix,
@@ -322,21 +351,21 @@ export async function listObjects(
 }
 
 export async function getObjectMeta(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Get Object Meta Request...");
 
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
   if (!bucket) {
-    throw InvalidRequestException(
-      "Bucket information missing from the request",
-    );
+    logger.error(`Bucket information missing from request`);
+    return createOk(getAPIErrorResponse(APIErrors.ErrInvalidRequest));
   }
 
   const config = bucketConfig.config as SwiftConfig;
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -355,15 +384,15 @@ export async function getObjectMeta(
     bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
   );
 
-  if (response instanceof Error && bucketConfig.hasReplicas()) {
+  if (!isOk(response) && bucketConfig.hasReplicas()) {
     logger.warn(
       `Get Object Meta Failed on Primary Bucket: ${bucketConfig.bucketName}`,
     );
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(`Get bucket ACL Failed on Replica: ${replica.name}`);
         continue;
@@ -373,38 +402,43 @@ export async function getObjectMeta(
     }
   }
 
-  if (response instanceof Error) {
-    logger.warn(`Get Object Meta Failed: ${response.message}`);
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `Get Object Meta Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
     return response;
   }
 
-  if (response.status !== 201) {
-    const errMessage = `Get Object Meta Failed: ${response.statusText}`;
+  const successResponse = unwrapOk(response);
+  if (successResponse.status !== 201) {
+    const errMessage = `Get Object Meta Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`Get Object Meta Successful: ${response.statusText}`);
+    logger.info(`Get Object Meta Successful: ${successResponse.statusText}`);
   }
 
   return response;
 }
 
 export async function headObject(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Head Object Request...");
 
   const { bucket, objectKey } = s3Utils.extractRequestInfo(req);
   if (!bucket || !objectKey) {
-    return InvalidRequestException(
-      "Bucket or object information missing from the request",
-    );
+    return createOk(InvalidRequestException(
+      "Bucket information missing from the request",
+    ));
   }
 
   const config = bucketConfig.config as SwiftConfig;
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -422,15 +456,15 @@ export async function headObject(
     bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
   );
 
-  if (response instanceof Error && bucketConfig.hasReplicas()) {
+  if (!isOk(response) && bucketConfig.hasReplicas()) {
     logger.warn(
       `Head Object Failed on Primary Bucket: ${bucketConfig.bucketName}`,
     );
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(`Head object Failed on Replica: ${replica.name}`);
         continue;
@@ -440,48 +474,55 @@ export async function headObject(
     }
   }
 
-  if (response instanceof Error) {
-    logger.warn(`Head object Failed: ${response.message}`);
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `Head object Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
     return response;
   }
 
-  logger.info(`Head object Successful: ${response.statusText}`);
-  if (response.status >= 300) {
-    return new Response(null, {
-      status: response.status,
-      headers: response.headers,
-    });
+  const successResponse = unwrapOk(response);
+  logger.info(`Head object Successful: ${successResponse.statusText}`);
+  if (successResponse.status >= 300) {
+    return createOk(
+      new Response(null, {
+        status: successResponse.status,
+        headers: successResponse.headers,
+      }),
+    );
   }
 
-  return convertSwiftHeadObjectToS3Response(response);
+  return convertSwiftHeadObjectToS3Response(successResponse);
 }
 
 // currently supports copy within the same project
 export async function copyObject(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Copy Object Request...");
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
   if (!bucket) {
-    return InvalidRequestException(
+    return createOk(InvalidRequestException(
       "Bucket information missing from the request",
-    );
+    ));
   }
 
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
   const mirrorOperation = bucketConfig.hasReplicas();
 
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
   const copySource = req.headers.get(S3_COPY_SOURCE_HEADER);
   if (!copySource) {
-    return InvalidRequestException(
+    return createOk(InvalidRequestException(
       `${S3_COPY_SOURCE_HEADER} missing from request`,
-    );
+    ));
   }
   headers.set("X-Copy-From", copySource);
   const reqUrl = `${swiftUrl}/${bucket}/${object}`;
@@ -497,20 +538,24 @@ export async function copyObject(
     fetchFunc,
   );
 
-  if (response instanceof Error) {
-    logger.warn(`Copy Object Failed: ${response.message}`);
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `Copy Object Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
     return response;
   }
 
-  if (response.status !== 201) {
-    const errMessage = `Copy Object Failed: ${response.statusText}`;
+  const successResponse = unwrapOk(response);
+  if (successResponse.status !== 201) {
+    const errMessage = `Copy Object Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`Copy Object Successful: ${response.statusText}`);
+    logger.info(`Copy Object Successful: ${successResponse.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
-        ctx,
+        reqCtx,
         req,
         bucketConfig,
         "copyObject",
@@ -518,26 +563,27 @@ export async function copyObject(
     }
   }
 
-  return convertSwiftCopyObjectToS3Response(response);
+  return convertSwiftCopyObjectToS3Response(successResponse);
 }
 
 export async function createMultipartUpload(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Create Multipart Upload Request...");
 
   const uploadId = getRandomUUID();
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
   if (!bucket || !object) {
-    return InvalidRequestException(
-      "Bucket or object information missing from the request",
-    );
+    return createOk(InvalidRequestException(
+      "Bucket information missing from the request",
+    ));
   }
 
   const config = bucketConfig.config as SwiftConfig;
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
 
@@ -575,10 +621,12 @@ export async function createMultipartUpload(
 
     const indexResponse = await retryWithExponentialBackoff(fetchIndexFunc);
 
-    if (indexResponse instanceof Error) {
-      logger.warn(`Failed to fetch multipart index: ${indexResponse.message}`);
-    } else if (indexResponse.ok) {
-      const indexData = await indexResponse.json();
+    if (!isOk(indexResponse)) {
+      const errRes = unwrapErr(indexResponse);
+      logger.warn(`Failed to fetch multipart index: ${errRes.message}`);
+    } else {
+      const successResponse = unwrapOk(indexResponse);
+      const indexData = await successResponse.json();
       existingUploads = Array.isArray(indexData.uploads)
         ? indexData.uploads
         : [];
@@ -589,7 +637,7 @@ export async function createMultipartUpload(
         (error as Error).message
       }`,
     );
-    return InternalServerErrorException();
+    return createOk(InternalServerErrorException());
   }
 
   // Add the new upload to the list
@@ -611,9 +659,10 @@ export async function createMultipartUpload(
 
   const updateResponse = await retryWithExponentialBackoff(updateIndexFunc);
 
-  if (updateResponse instanceof Error) {
+  if (!isOk(updateResponse)) {
+    const errRes = unwrapErr(updateResponse);
     const errMessage =
-      `Failed to update multipart uploads index: ${updateResponse.message}`;
+      `Failed to update multipart uploads index: ${errRes.message}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
 
@@ -625,19 +674,22 @@ export async function createMultipartUpload(
   <HostId>dummy-host-id</HostId>
 </Error>`;
 
-    return new Response(xmlError, {
-      status: 500,
-      headers: {
-        "Content-Type": "application/xml",
-        "x-amz-request-id": "dummy-request-id",
-        "x-amz-id-2": "dummy-host-id",
-      },
-    });
+    return createOk(
+      new Response(xmlError, {
+        status: 500,
+        headers: {
+          "Content-Type": "application/xml",
+          "x-amz-request-id": "dummy-request-id",
+          "x-amz-id-2": "dummy-host-id",
+        },
+      }),
+    );
   }
 
-  if (!updateResponse.ok) {
+  const successResponse = unwrapOk(updateResponse);
+  if (!successResponse.ok) {
     const errMessage =
-      `Failed to update multipart uploads index: ${updateResponse.statusText}`;
+      `Failed to update multipart uploads index: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
 
@@ -649,14 +701,16 @@ export async function createMultipartUpload(
   <HostId>dummy-host-id</HostId>
 </Error>`;
 
-    return new Response(xmlError, {
-      status: 500,
-      headers: {
-        "Content-Type": "application/xml",
-        "x-amz-request-id": "dummy-request-id",
-        "x-amz-id-2": "dummy-host-id",
-      },
-    });
+    return createOk(
+      new Response(xmlError, {
+        status: 500,
+        headers: {
+          "Content-Type": "application/xml",
+          "x-amz-request-id": "dummy-request-id",
+          "x-amz-id-2": "dummy-host-id",
+        },
+      }),
+    );
   }
 
   logger.info(
@@ -680,10 +734,12 @@ export async function createMultipartUpload(
     "x-amz-id-2": hostId,
   });
 
-  return new Response(xmlResponseBody, {
-    status: 200,
-    headers: responseHeaders,
-  });
+  return createOk(
+    new Response(xmlResponseBody, {
+      status: 200,
+      headers: responseHeaders,
+    }),
+  );
 }
 
 // https://docs.aws.amazon.com/AmazonS3/latest/API/API_CreateMultipartUpload.html#API_CreateMultipartUpload_ResponseSyntax
@@ -692,7 +748,7 @@ function generateCompleteMultipartUploadResponse(
   objectKey: string,
   location: string,
   eTag: string,
-): Response {
+): Result<Response, Error> {
   const quotedETag = `"${eTag}"`;
 
   const xmlResponseBody = `<?xml version="1.0" encoding="UTF-8"?>
@@ -710,29 +766,32 @@ function generateCompleteMultipartUploadResponse(
     "x-amz-id-2": "dummy-host-id", // Recommended
   });
 
-  return new Response(xmlResponseBody, {
-    status: 200,
-    headers,
-  });
+  return createOk(
+    new Response(xmlResponseBody, {
+      status: 200,
+      headers,
+    }),
+  );
 }
 
 export async function completeMultipartUpload(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Complete Multipart Upload Request...");
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
   if (!bucket || !object) {
-    return InvalidRequestException(
+    return createOk(InvalidRequestException(
       "Bucket information missing from the request",
-    );
+    ));
   }
 
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
   const mirrorOperation = bucketConfig.hasReplicas();
 
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
   headers.append("X-Object-Manifest", `${bucket}/${object}`);
@@ -743,7 +802,7 @@ export async function completeMultipartUpload(
   const { queryParams } = s3Utils.extractRequestInfo(req);
   const uploadId = queryParams["uploadId"]?.[0];
   if (!uploadId) {
-    return MissingUploadIdException();
+    return createOk(MissingUploadIdException());
   }
 
   // Define the path for the multipart uploads index file
@@ -760,8 +819,9 @@ export async function completeMultipartUpload(
     };
     const indexResponse = await retryWithExponentialBackoff(fetchIndexFunc);
 
-    if (!(indexResponse instanceof Error) && indexResponse.ok) {
-      const indexData = await indexResponse.json();
+    if (isOk(indexResponse) && unwrapOk(indexResponse).ok) {
+      const successResponse = unwrapOk(indexResponse);
+      const indexData = await successResponse.json();
       // Filter out the completed upload
       const updatedUploads = indexData.uploads.filter((
         upload: { uploadId: string },
@@ -780,9 +840,9 @@ export async function completeMultipartUpload(
     } else {
       logger.warn(
         `Failed to fetch multipart uploads index: ${
-          indexResponse instanceof Error
-            ? indexResponse.message
-            : indexResponse.statusText
+          !isOk(indexResponse)
+            ? unwrapErr(indexResponse).message
+            : unwrapOk(indexResponse).statusText
         }`,
       );
     }
@@ -792,7 +852,7 @@ export async function completeMultipartUpload(
         error instanceof Error ? error.message : String(error)
       }`,
     );
-    return InternalServerErrorException();
+    return createOk(InternalServerErrorException());
   }
 
   const fetchFunc = async () => {
@@ -805,21 +865,27 @@ export async function completeMultipartUpload(
     fetchFunc,
   );
 
-  if (response instanceof Error) {
-    logger.warn(`Complete Multipart Upload Failed: ${response.message}`);
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `Complete Multipart Upload Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
     return response;
   }
 
-  if (response.status !== 201) {
+  const successResponse = unwrapOk(response);
+  if (successResponse.status !== 201) {
     const errMessage =
-      `Complete Multipart Upload Failed: ${response.statusText}`;
+      `Complete Multipart Upload Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`Complete Multipart Upload Successful: ${response.statusText}`);
+    logger.info(
+      `Complete Multipart Upload Successful: ${successResponse.statusText}`,
+    );
     if (mirrorOperation) {
       await prepareMirrorRequests(
-        ctx,
+        reqCtx,
         req,
         bucketConfig,
         "completeMultipartUpload",
@@ -827,9 +893,9 @@ export async function completeMultipartUpload(
     }
   }
 
-  const etag = response.headers.get("eTag");
+  const etag = successResponse.headers.get("eTag");
   if (!etag) {
-    return InvalidRequestException("ETag not found in response");
+    return createOk(InvalidRequestException("ETag not found in response"));
   }
 
   const result = generateCompleteMultipartUploadResponse(
@@ -843,30 +909,31 @@ export async function completeMultipartUpload(
 }
 
 export async function uploadPart(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying Upload Part Request...");
   const { bucket, objectKey: object, queryParams } = s3Utils.extractRequestInfo(
     req,
   );
   if (!bucket) {
-    return InvalidRequestException(
+    return createOk(InvalidRequestException(
       "Bucket information missing from the request",
-    );
+    ));
   }
 
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
 
   const partNumber = queryParams["partNumber"];
   if (!partNumber) {
-    return InvalidRequestException(
+    return createOk(InvalidRequestException(
       "Bad Request: partNumber is missing from request",
-    );
+    ));
   }
 
   const reqUrl = `${swiftUrl}/${bucket}/${object}/${partNumber}`;
@@ -882,35 +949,40 @@ export async function uploadPart(
     fetchFunc,
   );
 
-  if (response instanceof Error) {
-    logger.warn(`Upload Part Failed: ${response.message}`);
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `Upload Part Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
     return response;
   }
 
-  if (response.status !== 201) {
-    const errMessage = `Upload Part Failed: ${response.statusText}`;
+  const successResponse = unwrapOk(response);
+  if (successResponse.status !== 201) {
+    const errMessage = `Upload Part Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`Upload Part Successful: ${response.statusText}`);
+    logger.info(`Upload Part Successful: ${successResponse.statusText}`);
   }
 
-  return convertSwiftUploadPartToS3Response(response);
+  return convertSwiftUploadPartToS3Response(successResponse, logger);
 }
 
 export function uploadPartCopy(
-  _ctx: HeraldContext,
+  _reqCtx: RequestContext,
   _req: Request,
   _bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> | Response {
-  return NotImplementedException();
+): Result<Response, Error> {
+  return createOk(NotImplementedException());
 }
 
 export async function listParts(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying ListParts Request...");
 
   const { bucket, queryParams: query, objectKey } = s3Utils.extractRequestInfo(
@@ -918,13 +990,13 @@ export async function listParts(
   );
 
   if (!bucket) {
-    return InvalidRequestException(
-      "Bucket or Object information missing from the request",
-    );
+    return createOk(InvalidRequestException(
+      "Bucket information missing from the request",
+    ));
   }
 
   const config = bucketConfig.config as SwiftConfig;
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -940,6 +1012,7 @@ export async function listParts(
   headers.delete("Accept");
   headers.set("Accept", "application/json");
 
+  // FIXME: cant append objectKey directly, swift doesn't allow to access the parts just like files in folders, needs to be fetched selectively
   const reqUrl = `${swiftUrl}/${bucket}?${params.toString()}`;
 
   const fetchFunc = async () => {
@@ -954,15 +1027,15 @@ export async function listParts(
     bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
   );
 
-  if (response instanceof Error && bucketConfig.hasReplicas()) {
+  if (!isOk(response) && bucketConfig.hasReplicas()) {
     logger.warn(
       `ListParts Failed on Primary Bucket: ${bucketConfig.bucketName}`,
     );
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(
           `ListParts Failed on Replica: ${replica.name}`,
@@ -974,16 +1047,25 @@ export async function listParts(
     }
   }
 
-  if (response instanceof Error) {
-    logger.warn(`ListParts Failed: ${response.message}`);
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `ListParts Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
     return response;
   }
 
-  if (response.status === 404) {
-    logger.warn(`ListParts Failed: ${response.statusText}`);
-    throw NoSuchBucketException();
+  const successResponse = unwrapOk(response);
+  if (successResponse.status === 404) {
+    logger.warn(`ListParts Failed: ${successResponse.statusText}`);
+    const errMessage = await successResponse.text();
+    return createErr(
+      new HeraldError(successResponse.status, {
+        message: `${errMessage} in Swift Storage`,
+      }),
+    );
   } else {
-    logger.info(`ListParts Successful: ${response.statusText}`);
+    logger.info(`ListParts Successful: ${successResponse.statusText}`);
   }
 
   const uploadId = query["uploadId"][0] ?? null;
@@ -992,7 +1074,7 @@ export async function listParts(
     ? parseInt(query["part-number-marker"][0])
     : null;
   const formattedResponse = await toS3ListPartXmlContent(
-    response,
+    successResponse,
     bucket,
     objectKey,
     uploadId,
@@ -1003,10 +1085,11 @@ export async function listParts(
 }
 
 export async function abortMultipartUpload(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying AbortMultipartUpload Request...");
 
   const { bucket, objectKey: object } = s3Utils.extractRequestInfo(req);
@@ -1014,13 +1097,13 @@ export async function abortMultipartUpload(
   const uploadId = url.searchParams.get("uploadId");
 
   if (!bucket || !object || !uploadId) {
-    return InvalidRequestException(
+    return createOk(InvalidRequestException(
       "Bucket, object, or uploadId information missing from the request",
-    );
+    ));
   }
 
   const config: SwiftConfig = bucketConfig.config as SwiftConfig;
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -1041,10 +1124,12 @@ export async function abortMultipartUpload(
 
     const indexResponse = await retryWithExponentialBackoff(fetchIndexFunc);
 
-    if (indexResponse instanceof Error) {
-      logger.warn(`Failed to fetch multipart index: ${indexResponse.message}`);
-    } else if (indexResponse.ok) {
-      const indexData = await indexResponse.json();
+    if (!isOk(indexResponse)) {
+      const errRes = unwrapErr(indexResponse);
+      logger.warn(`Failed to fetch multipart index: ${errRes.message}`);
+    } else {
+      const successResponse = unwrapOk(indexResponse);
+      const indexData = await successResponse.json();
       existingUploads = Array.isArray(indexData.uploads)
         ? indexData.uploads
         : [];
@@ -1071,10 +1156,14 @@ export async function abortMultipartUpload(
 
       const updateResponse = await retryWithExponentialBackoff(updateIndexFunc);
 
-      if (updateResponse instanceof Error || !updateResponse.ok) {
-        const errMessage = updateResponse instanceof Error
-          ? `Failed to update multipart uploads index: ${updateResponse.message}`
-          : `Failed to update multipart uploads index: ${updateResponse.statusText}`;
+      if (!isOk(updateResponse) || !unwrapOk(updateResponse).ok) {
+        const errMessage = !isOk(updateResponse)
+          ? `Failed to update multipart uploads index: ${
+            unwrapErr(updateResponse).message
+          }`
+          : `Failed to update multipart uploads index: ${
+            unwrapOk(updateResponse).statusText
+          }`;
         logger.warn(errMessage);
         reportToSentry(errMessage);
       } else {
@@ -1090,7 +1179,7 @@ export async function abortMultipartUpload(
     reportToSentry(
       `Error updating multipart uploads index: ${(error as Error).message}`,
     );
-    return InternalServerErrorException();
+    return createOk(InternalServerErrorException());
   }
 
   // Now delete the object parts
@@ -1104,17 +1193,24 @@ export async function abortMultipartUpload(
 
   const response = await retryWithExponentialBackoff(fetchFunc);
 
-  if (response instanceof Error) {
-    logger.warn(`AbortMultipartUpload Failed: ${response.message}`);
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `AbortMultipartUpload Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
     return response;
   }
 
-  if (response.status !== 204) {
-    const errMessage = `AbortMultipartUpload Failed: ${response.statusText}`;
+  const successResponse = unwrapOk(response);
+  if (successResponse.status !== 204) {
+    const errMessage =
+      `AbortMultipartUpload Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`AbortMultipartUpload Successful: ${response.statusText}`);
+    logger.info(
+      `AbortMultipartUpload Successful: ${successResponse.statusText}`,
+    );
   }
 
   // Return a successful response according to S3 spec
@@ -1123,28 +1219,31 @@ export async function abortMultipartUpload(
     "x-amz-id-2": getRandomUUID(),
   });
 
-  return new Response(null, {
-    status: 204,
-    headers: responseHeaders,
-  });
+  return createOk(
+    new Response(null, {
+      status: 204,
+      headers: responseHeaders,
+    }),
+  );
 }
 
 export async function listMultipartUploads(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error | HTTPException> {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[Swift backend] Proxying List Multipart Uploads Request...");
 
   const { bucket, queryParams: query } = s3Utils.extractRequestInfo(req);
   if (!bucket) {
-    return InvalidRequestException(
+    return createOk(InvalidRequestException(
       "Bucket information missing from the request",
-    );
+    ));
   }
 
   const config = bucketConfig.config as SwiftConfig;
-  const res = ctx.keystoneStore.getConfigAuthMeta(config);
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
@@ -1167,12 +1266,12 @@ export async function listMultipartUploads(
   );
 
   // Fixme: proper response not being propagated
-  if (indexResponse instanceof Error && bucketConfig.hasReplicas()) {
+  if (!isOk(indexResponse) && bucketConfig.hasReplicas()) {
     logger.warn("List Multipart Uploads Failed on Primary. Trying replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (!(res instanceof Error)) {
         return res; // Return the successful response from replica
       }
@@ -1180,21 +1279,21 @@ export async function listMultipartUploads(
     return indexResponse; // Return the original error if all replicas failed
   }
 
-  if (indexResponse instanceof Error || indexResponse.status === 404) {
+  if (!isOk(indexResponse) || unwrapOk(indexResponse).status === 404) {
     logger.error("List Multipart Uploads Failed: ", indexResponse);
-    return InternalServerErrorException();
+    return createOk(InternalServerErrorException());
   }
 
   // Parse the index file
   let uploads = [];
   try {
-    const indexData = await indexResponse.json();
+    const indexData = await unwrapOk(indexResponse).json();
     uploads = Array.isArray(indexData.uploads) ? indexData.uploads : [];
   } catch (error) {
     logger.warn(
       `Error parsing multipart uploads index: ${(error as Error).message}`,
     );
-    return InternalServerErrorException();
+    return createOk(InternalServerErrorException());
   }
 
   // Extract query parameters
@@ -1320,11 +1419,13 @@ export async function listMultipartUploads(
   const xmlBuilder = new xml2js.Builder();
   const formattedXml = xmlBuilder.buildObject(xmlResponse);
 
-  return new Response(formattedXml, {
-    headers: {
-      "Content-Type": "application/xml",
-      "x-amz-request-id": getRandomUUID(),
-      "x-amz-id-2": getRandomUUID(),
-    },
-  });
+  return createOk(
+    new Response(formattedXml, {
+      headers: {
+        "Content-Type": "application/xml",
+        "x-amz-request-id": getRandomUUID(),
+        "x-amz-id-2": getRandomUUID(),
+      },
+    }),
+  );
 }

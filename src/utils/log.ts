@@ -10,13 +10,27 @@ const loggers = new Map<string, Logger>();
 const consoleHandler = new log.ConsoleHandler("NOTSET", {
   formatter: (logRecord) => {
     const { datetime, levelName, msg, loggerName, args } = logRecord;
+    // Check if the first argument is the requestId object prepended by the proxy
+    const isRequestIdObject = args.length > 0 &&
+      typeof args[0] === "object" &&
+      args[0] !== null &&
+      "requestId" in args[0];
+
+    const requestIdObj = isRequestIdObject
+      ? (args[0] as { requestId?: string })
+      : undefined;
+    const requestId = requestIdObj?.requestId;
+
+    // Filter out the requestId object if it was detected
+    const cleanedArgs = isRequestIdObject ? args.slice(1) : args;
 
     const formattedDate = datetime
       ? datetime.toISOString().replace("T", " ").split(".")[0]
       : new Date().toISOString().replace("T", " ").split(".")[0];
+    const requestIdLog = requestId ? `[${requestId.slice(0, 7)}] ` : "";
     let finalMessasge =
-      `${formattedDate} ${levelName} [${loggerName}] -- ${msg} ${
-        args.length ? ` ${Deno.inspect(args)}` : ""
+      `${formattedDate} ${levelName} [${loggerName}] ${requestIdLog}-- ${msg} ${
+        cleanedArgs.length ? ` ${Deno.inspect(cleanedArgs)}` : ""
       }`;
     if (logRecord.level === log.LogLevels.DEBUG) {
       finalMessasge = magenta(finalMessasge);
@@ -59,6 +73,7 @@ export function getLogLevel(): LevelName {
  */
 export function getLogger(
   name: ImportMeta | string | null = null,
+  requestId?: string,
   levelName: LevelName = getLogLevel(),
 ): Logger {
   if (name && typeof name === "object") {
@@ -73,11 +88,38 @@ export function getLogger(
       });
       loggers.set(name, logger);
     }
-    return logger;
+
+    return new Proxy(logger, {
+      get(target, prop) {
+        const original = target[prop as keyof Logger];
+        if (typeof original === "function") {
+          // Capture the original logger method call (e.g., info, debug)
+          return function (msg: string, ...args: unknown[]) {
+            // Pass the original message as 'msg'
+            // Prepend the requestId object to the 'args' array
+            return original.call(target, msg, { requestId, ...args });
+          };
+        }
+        return original;
+      },
+    });
   }
 
   const logger = log.getLogger(name ?? undefined);
-  return logger;
+  return new Proxy(logger, {
+    get(target, prop) {
+      const original = target[prop as keyof Logger];
+      if (typeof original === "function") {
+        // Capture the original logger method call (e.g., info, debug)
+        return function (msg: string, ...args: unknown[]) {
+          // Pass the original message as 'msg'
+          // Prepend the requestId object to the 'args' array
+          return original.call(target, msg, { requestId, ...args });
+        };
+      }
+      return original;
+    },
+  });
 }
 
 export function reportToSentry(error: string | Error) {

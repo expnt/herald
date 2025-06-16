@@ -1,21 +1,21 @@
 import { Context } from "@hono/hono";
 import { forwardS3RequestToS3WithTimeouts } from "../../utils/url.ts";
-import { getLogger, reportToSentry } from "../../utils/log.ts";
+import { reportToSentry } from "../../utils/log.ts";
 import { S3Config } from "../../config/mod.ts";
 import { prepareMirrorRequests } from "../mirror.ts";
 import { Bucket } from "../../buckets/mod.ts";
 import { swiftResolver } from "../swift/mod.ts";
 import { s3Resolver } from "./mod.ts";
-import { HeraldContext } from "../../types/mod.ts";
+import { RequestContext } from "../../types/mod.ts";
 import { extractRequestInfo } from "../../utils/s3.ts";
-
-const logger = getLogger(import.meta);
+import { isOk, Result, unwrapErr, unwrapOk } from "option-t/plain_result";
 
 export async function getObject(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-) {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Get Object Request...");
 
   let response = await forwardS3RequestToS3WithTimeouts(
@@ -31,8 +31,8 @@ export async function getObject(
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(`Get Object Failed on Replica: ${replica.name}`);
         continue;
@@ -42,27 +42,32 @@ export async function getObject(
     }
   }
 
-  if (response instanceof Error) {
-    logger.warn(`Get Object Failed: ${response.message}`);
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `Get Object Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
     return response;
   }
 
-  if (response.status !== 200) {
-    const errMessage = `Get Object Failed: ${response.statusText}`;
+  const successResponse = unwrapOk(response);
+  if (successResponse.status !== 200) {
+    const errMessage = `Get Object Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`Get Object Successful: ${response.statusText}`);
+    logger.info(`Get Object Successful: ${successResponse.statusText}`);
   }
 
   return response;
 }
 
 export async function listObjects(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-) {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying List Objects Request...");
 
   let response = await forwardS3RequestToS3WithTimeouts(
@@ -78,8 +83,8 @@ export async function listObjects(
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(`List Objects Failed on Replica: ${replica.name}`);
         continue;
@@ -89,27 +94,32 @@ export async function listObjects(
     }
   }
 
-  if (response instanceof Error) {
-    logger.warn(`List Objects Failed: ${response.message}`);
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `List Objects Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
     return response;
   }
 
-  if (response.status !== 200) {
-    const errMessage = `List Objects Failed: ${response.statusText}`;
+  const successResponse = unwrapOk(response);
+  if (successResponse.status !== 200) {
+    const errMessage = `List Objects Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`List Objects Successful: ${response.statusText}`);
+    logger.info(`List Objects Successful: ${successResponse.statusText}`);
   }
 
   return response;
 }
 
 export async function putObject(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-) {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Put Object Request...");
 
   const config: S3Config = bucketConfig.config as S3Config;
@@ -120,32 +130,26 @@ export async function putObject(
     config,
   );
 
-  if (response instanceof Error) {
-    logger.warn(`Put Object Failed: ${response.message}`, { response });
-    const errorXml = `<?xml version="1.0" encoding="UTF-8"?>
-<Error>
-  <Code>${response.name}</Code>
-  <Message>Failed to connect to S3 storage: ${response.message}. Please try again later.</Message>
-</Error>`;
-
-    return new Response(errorXml, {
-      status: 500,
-      headers: {
-        "Content-Type": "application/xml",
-      },
-    });
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `Put Object Failed. Failed to connect with Object Storage: ${errRes.message}`,
+      { response },
+    );
+    return response;
   }
 
-  if (response.status != 200) {
-    const errMessage = `Put Object Failed: ${response.statusText}`;
-    logger.warn(errMessage, { response });
+  const successResponse = unwrapOk(response);
+  if (successResponse.status != 200) {
+    const errMessage = `Put Object Failed: ${successResponse.statusText}`;
+    logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`Put Object Successful: ${response.statusText}`);
+    logger.info(`Put Object Successful: ${successResponse.statusText}`);
     const { queryParams } = extractRequestInfo(req);
     if (mirrorOperation && !queryParams["uploadId"]) {
       await prepareMirrorRequests(
-        ctx,
+        reqCtx,
         req,
         bucketConfig,
         "putObject",
@@ -157,10 +161,11 @@ export async function putObject(
 }
 
 export async function deleteObject(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-) {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Delete Object Request...");
 
   const config: S3Config = bucketConfig.config as S3Config;
@@ -171,31 +176,24 @@ export async function deleteObject(
     config,
   );
 
-  if (response instanceof Error) {
-    logger.warn(`Delete Object Failed: ${response.message}`);
-    const errorXml = `<?xml version="1.0" encoding="UTF-8"?>
-<Error>
-  <Code>${response.name}</Code>
-  <Message>Failed to connect to S3 storage: ${response.message}. Please try again later.</Message>
-</Error>`;
-
-    return new Response(errorXml, {
-      status: 500,
-      headers: {
-        "Content-Type": "application/xml",
-      },
-    });
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `Delete Object Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
+    return response;
   }
 
-  if (response.status != 204) {
-    const errMesage = `Delete Object Failed: ${response.statusText}`;
-    logger.warn(`Delete Object Failed: ${response.statusText}`);
+  const successResponse = unwrapOk(response);
+  if (successResponse.status != 204) {
+    const errMesage = `Delete Object Failed: ${successResponse.statusText}`;
+    logger.warn(`Delete Object Failed: ${successResponse.statusText}`);
     reportToSentry(errMesage);
   } else {
-    logger.info(`Delete Object Successful: ${response.statusText}`);
+    logger.info(`Delete Object Successful: ${successResponse.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
-        ctx,
+        reqCtx,
         req,
         bucketConfig,
         "deleteObject",
@@ -207,10 +205,11 @@ export async function deleteObject(
 }
 
 export async function copyObject(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-) {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Copy Object Request...");
 
   const config: S3Config = bucketConfig.config as S3Config;
@@ -221,31 +220,24 @@ export async function copyObject(
     config,
   );
 
-  if (response instanceof Error) {
-    logger.warn(`Copy Object Failed: ${response.message}`);
-    const errorXml = `<?xml version="1.0" encoding="UTF-8"?>
-<Error>
-  <Code>${response.name}</Code>
-  <Message>Failed to connect to S3 storage: ${response.message}. Please try again later.</Message>
-</Error>`;
-
-    return new Response(errorXml, {
-      status: 500,
-      headers: {
-        "Content-Type": "application/xml",
-      },
-    });
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `Copy Object Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
+    return response;
   }
 
-  if (response.status != 200) {
-    const errMessage = `Copy Object Failed: ${response.statusText}`;
+  const successResponse = unwrapOk(response);
+  if (successResponse.status != 200) {
+    const errMessage = `Copy Object Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`Copy Object Successful: ${response.statusText}`);
+    logger.info(`Copy Object Successful: ${successResponse.statusText}`);
     if (mirrorOperation) {
       await prepareMirrorRequests(
-        ctx,
+        reqCtx,
         req,
         bucketConfig,
         "copyObject",
@@ -261,10 +253,11 @@ export function getObjectMeta(c: Context) {
 }
 
 export async function headObject(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-) {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Head Object Request...");
 
   let response = await forwardS3RequestToS3WithTimeouts(
@@ -273,15 +266,15 @@ export async function headObject(
     bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
   );
 
-  if (response instanceof Error && bucketConfig.hasReplicas()) {
+  if (!isOk(response) && bucketConfig.hasReplicas()) {
     logger.warn(
       `Head Object Failed on Primary Bucket: ${bucketConfig.bucketName}`,
     );
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(`Head Object Failed on Replica: ${replica.name}`);
         continue;
@@ -291,26 +284,31 @@ export async function headObject(
     }
   }
 
-  if (response instanceof Error) {
-    logger.warn(`Head Object Failed: ${response.message}`);
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `Head Object Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
     return response;
   }
 
-  if (response.status != 200 && response.status !== 404) {
-    const errMessage = `Head Object Failed: ${response.statusText}`;
+  const successResponse = unwrapOk(response);
+  if (successResponse.status != 200 && successResponse.status !== 404) {
+    const errMessage = `Head Object Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
   } else {
-    logger.info(`Head Object Successful: ${response.statusText}`);
+    logger.info(`Head Object Successful: ${successResponse.statusText}`);
   }
 
   return response;
 }
 
 export async function createMultipartUpload(
-  _ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-) {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Create Multipart Upload Request...");
 
   const response = await forwardS3RequestToS3WithTimeouts(
@@ -318,27 +316,35 @@ export async function createMultipartUpload(
     bucketConfig.config as S3Config,
   );
 
-  if (response instanceof Error) {
-    logger.warn(`Create Multipart Upload Failed: ${response.message}`);
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `Create Multipart Upload Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
     return response;
   }
 
-  if (response.status !== 200) {
-    const errMessage = `Create Multipart Upload Failed: ${response.statusText}`;
+  const successResponse = unwrapOk(response);
+  if (successResponse.status !== 200) {
+    const errMessage =
+      `Create Multipart Upload Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`Create Multipart Upload Successful: ${response.statusText}`);
+    logger.info(
+      `Create Multipart Upload Successful: ${successResponse.statusText}`,
+    );
   }
 
   return response;
 }
 
 export async function completeMultipartUpload(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-) {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Complete Multipart Upload Request...");
 
   const mirrorOperation = bucketConfig.hasReplicas();
@@ -347,21 +353,27 @@ export async function completeMultipartUpload(
     bucketConfig.config as S3Config,
   );
 
-  if (response instanceof Error) {
-    logger.warn(`Complete Multipart Upload Failed: ${response.message}`);
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `Complete Multipart Upload Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
     return response;
   }
 
-  if (response.status !== 200) {
+  const successResponse = unwrapOk(response);
+  if (successResponse.status !== 200) {
     const errMessage =
-      `Complete Multipart Upload Failed: ${response.statusText}`;
+      `Complete Multipart Upload Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`Complete Multipart Upload Successful: ${response.statusText}`);
+    logger.info(
+      `Complete Multipart Upload Successful: ${successResponse.statusText}`,
+    );
     if (mirrorOperation) {
       await prepareMirrorRequests(
-        ctx,
+        reqCtx,
         req,
         bucketConfig,
         "completeMultipartUpload",
@@ -373,10 +385,11 @@ export async function completeMultipartUpload(
 }
 
 export async function listParts(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error> {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying List Parts Request...");
 
   let response = await forwardS3RequestToS3WithTimeouts(
@@ -385,15 +398,15 @@ export async function listParts(
     bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
   );
 
-  if (response instanceof Error && bucketConfig.hasReplicas()) {
+  if (!isOk(response) && bucketConfig.hasReplicas()) {
     logger.warn(
       `List Parts Failed on Primary Bucket: ${bucketConfig.bucketName}`,
     );
     logger.warn("Trying on Replicas...");
     for (const replica of bucketConfig.replicas) {
       const res = replica.typ === "ReplicaS3Config"
-        ? await s3Resolver(ctx, req, replica)
-        : await swiftResolver(ctx, req, replica);
+        ? await s3Resolver(reqCtx, req, replica)
+        : await swiftResolver(reqCtx, req, replica);
       if (res instanceof Error) {
         logger.warn(`List Parts Failed on Replica: ${replica.name}`);
         continue;
@@ -403,27 +416,32 @@ export async function listParts(
     }
   }
 
-  if (response instanceof Error) {
-    logger.warn(`List Parts Failed: ${response.message}`);
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `List Parts Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
     return response;
   }
 
-  if (response.status !== 200) {
-    const errMessage = `List Parts Failed: ${response.statusText}`;
+  const successResponse = unwrapOk(response);
+  if (successResponse.status !== 200) {
+    const errMessage = `List Parts Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
   } else {
-    logger.info(`List Parts Successful: ${response.statusText}`);
+    logger.info(`List Parts Successful: ${successResponse.statusText}`);
   }
 
   return response;
 }
 
 export async function abortMultipartUpload(
-  _ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error> {
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
   logger.info("[S3 backend] Proxying Abort Multipart Upload Request...");
 
   const config: S3Config = bucketConfig.config as S3Config;
@@ -433,17 +451,24 @@ export async function abortMultipartUpload(
     config,
   );
 
-  if (response instanceof Error) {
-    logger.warn(`Delete Object Failed: ${response.message}`);
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `Delete Object Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
     return response;
   }
 
-  if (response.status != 204) {
-    const errMesage = `Abort Multipart Upload Failed: ${response.statusText}`;
-    logger.warn(`Abort Multipart Upload Failed: ${response.statusText}`);
+  const successResponse = unwrapOk(response);
+  if (successResponse.status != 204) {
+    const errMesage =
+      `Abort Multipart Upload Failed: ${successResponse.statusText}`;
+    logger.warn(`Abort Multipart Upload Failed: ${successResponse.statusText}`);
     reportToSentry(errMesage);
   } else {
-    logger.info(`Abort Multipart Upload Successful: ${response.statusText}`);
+    logger.info(
+      `Abort Multipart Upload Successful: ${successResponse.statusText}`,
+    );
   }
 
   return response;

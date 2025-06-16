@@ -25,6 +25,7 @@ import {
   SYNC_WAIT,
 } from "./mod.ts";
 import { assertEquals } from "std/assert";
+import { Errors } from "../utils/mod.ts";
 
 const testSuccessfulCopyObject = async (
   t: Deno.TestContext,
@@ -168,7 +169,7 @@ const testFailedCopyObject = async (
       const copyRes = await s3.send(copyCommand);
       checkCopyObject(copyRes);
     } catch (error) {
-      if ((error as Error).name === "TypeError") {
+      if ((error as Error).name === Errors.InternalServerError) {
         // correct path
       } else {
         throw error;
@@ -202,7 +203,7 @@ const testFailedCopyObject = async (
         const res = await s3.send(headObject);
         assertEquals(404, res.$metadata.httpStatusCode);
       } catch (error) {
-        if ((error as Error).name === "NotFound") {
+        if ((error as Error).name === Errors.NotFound) {
           // correct path
         } else {
           throw error;

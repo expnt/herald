@@ -1,4 +1,5 @@
 import * as xml2js from "xml2js";
+import { createOk, Result } from "option-t/plain_result";
 
 export function formatRFC3339Date(dateString: string): string {
   // Convert the string into a Date object
@@ -66,7 +67,7 @@ export async function toS3XmlContent(
   continuationToken: string | null,
   encodingType: string | null = null,
   startAfter: string | null = null,
-): Promise<Response> {
+): Promise<Result<Response, Error>> {
   const swiftStatus = swiftResponse.status;
   const swiftHeaders = swiftResponse.headers;
 
@@ -83,12 +84,14 @@ export async function toS3XmlContent(
   <HostId>swift-mapped-to-s3</HostId>
 </Error>`.trim();
 
-    return new Response(s3ErrorXml, {
-      status: 404,
-      headers: new Headers({
-        "Content-Type": "application/xml",
+    return createOk(
+      new Response(s3ErrorXml, {
+        status: 404,
+        headers: new Headers({
+          "Content-Type": "application/xml",
+        }),
       }),
-    });
+    );
   }
 
   const swiftBody = await swiftResponse.json();
@@ -167,12 +170,14 @@ export async function toS3XmlContent(
     s3ResponseHeaders.set("x-amz-request-id", requestId);
   }
 
-  return new Response(formattedXml, {
-    status: 200,
-    headers: {
-      "Content-Type": "application/xml",
-    },
-  });
+  return createOk(
+    new Response(formattedXml, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/xml",
+      },
+    }),
+  );
 }
 
 export async function toS3ListPartXmlContent(
@@ -182,7 +187,7 @@ export async function toS3ListPartXmlContent(
   uploadId: string | null,
   partNumberMarker: number | null,
   maxKeys: number | null,
-): Promise<Response> {
+): Promise<Result<Response, Error>> {
   const swiftBody = await swiftResponse.json();
 
   // Transforming Swift's JSON response to S3's XML format
@@ -218,9 +223,11 @@ export async function toS3ListPartXmlContent(
   const xmlBuilder = new xml2js.Builder();
   const formattedXml = xmlBuilder.buildObject(s3FormattedBody);
 
-  return new Response(formattedXml, {
-    headers: {
-      "Content-Type": "application/xml",
-    },
-  });
+  return createOk(
+    new Response(formattedXml, {
+      headers: {
+        "Content-Type": "application/xml",
+      },
+    }),
+  );
 }

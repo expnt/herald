@@ -24,6 +24,7 @@ import {
 } from "./mod.ts";
 import { createTempFile } from "../../utils/file.ts";
 import { assertEquals } from "std/assert";
+import { Errors } from "../utils/mod.ts";
 
 const testSuccessfulDeleteObject = async (
   t: Deno.TestContext,
@@ -74,7 +75,7 @@ const testSuccessfulDeleteObject = async (
       const deleteRes = await s3.send(deleteCommand);
       checkDeleteObject(deleteRes);
     } catch (error) {
-      if ((error as Error).name === "BadResource") {
+      if ((error as Error).name === Errors.BadResource) {
         // correct path
       } else {
         throw error;
@@ -101,9 +102,9 @@ const testSuccessfulDeleteObject = async (
         const res = await s3.send(getObject);
         assertEquals(404, res.$metadata.httpStatusCode);
       } catch (error) {
-        if ((error as Error).name === "NoSuchKey") {
+        if ((error as Error).name === Errors.NoSuchKey) {
           // correct path
-        } else if ((error as Error).name === "NotFound") {
+        } else if ((error as Error).name === Errors.NotFound) {
           // correct path
         } else {
           throw error;
@@ -182,7 +183,7 @@ const testFailedDeleteObject = async (
       const deleteRes = await s3.send(deleteCommand);
       checkDeleteObject(deleteRes);
     } catch (error) {
-      if ((error as Error).name === "TypeError") {
+      if ((error as Error).name === Errors.InternalServerError) {
         // correct path
       } else {
         throw error;

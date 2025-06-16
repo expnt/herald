@@ -32,12 +32,15 @@ import {
   getBucketWebsite,
   headBucket,
 } from "./buckets.ts";
-import { HTTPException } from "../../types/http-exception.ts";
-import { getLogger } from "../../utils/log.ts";
+import { HeraldError } from "../../types/http-exception.ts";
 import { s3Utils } from "../../utils/mod.ts";
 import { Bucket } from "../../buckets/mod.ts";
-import { HeraldContext } from "../../types/mod.ts";
+import { RequestContext } from "../../types/mod.ts";
 import { formatRFC3339Date } from "./utils/mod.ts";
+import { InternalServerErrorException } from "../../constants/errors.ts";
+import { Logger } from "std/log";
+import { createErr, createOk, Result } from "option-t/plain_result";
+import { APIErrors, getAPIErrorResponse } from "../../types/api_errors.ts";
 
 const handlers = {
   putObject,
@@ -59,12 +62,11 @@ const handlers = {
   abortMultipartUpload,
 };
 
-const logger = getLogger(import.meta);
 export async function swiftResolver(
-  ctx: HeraldContext,
+  reqCtx: RequestContext,
   req: Request,
   bucketConfig: Bucket,
-): Promise<Response | Error> {
+): Promise<Result<Response, Error>> {
   // FIXME: `resolveHandler` has already extracted request info
   // it is also called in other functions invoked hereafter
   // multiple times if replicas are involved
@@ -72,36 +74,37 @@ export async function swiftResolver(
   const url = new URL(req.url);
   const queryParam = url.searchParams.keys().next().value;
 
+  const logger = reqCtx.logger;
   logger.debug(`Resolving Swift Handler for Request...`);
   // Handle query parameter-based requests
   if (queryParam) {
     switch (queryParam) {
       case "policy":
-        return await getBucketPolicy(ctx, req, bucketConfig);
+        return await getBucketPolicy(reqCtx, req, bucketConfig);
       case "acl":
-        return await getBucketAcl(ctx, req, bucketConfig);
+        return await getBucketAcl(reqCtx, req, bucketConfig);
       case "versioning":
-        return await getBucketVersioning(ctx, req, bucketConfig);
+        return await getBucketVersioning(reqCtx, req, bucketConfig);
       case "accelerate":
-        return getBucketAccelerate(ctx, req, bucketConfig);
+        return getBucketAccelerate(reqCtx, req, bucketConfig);
       case "logging":
-        return getBucketLogging(ctx, req, bucketConfig);
+        return getBucketLogging(reqCtx, req, bucketConfig);
       case "lifecycle":
-        return getBucketLifecycle(ctx, req, bucketConfig);
+        return getBucketLifecycle(reqCtx, req, bucketConfig);
       case "website":
-        return getBucketWebsite(ctx, req, bucketConfig);
+        return getBucketWebsite(reqCtx, req, bucketConfig);
       case "requestPayment":
-        return getBucketPayment(ctx, req, bucketConfig);
+        return getBucketPayment(reqCtx, req, bucketConfig);
       case "encryption":
-        return await getBucketEncryption(ctx, req, bucketConfig);
+        return await getBucketEncryption(reqCtx, req, bucketConfig);
       case "cors":
-        return getBucketCors(ctx, req, bucketConfig);
+        return getBucketCors(reqCtx, req, bucketConfig);
       case "replication":
-        return getBucketReplication(ctx, req, bucketConfig);
+        return getBucketReplication(reqCtx, req, bucketConfig);
       case "object-lock":
-        return getBucketObjectLock(ctx, req, bucketConfig);
+        return getBucketObjectLock(reqCtx, req, bucketConfig);
       case "tagging":
-        return await getBucketTagging(ctx, req, bucketConfig);
+        return await getBucketTagging(reqCtx, req, bucketConfig);
       // ignore these as they will be handled as regular request below
       case "x-id":
       case "list-type":
@@ -116,26 +119,26 @@ export async function swiftResolver(
   switch (method) {
     case "GET":
       if (objectKey && queryParamKeys.has("uploadId")) {
-        return await handlers.listParts(ctx, req, bucketConfig);
+        return await handlers.listParts(reqCtx, req, bucketConfig);
       }
 
       if (objectKey) {
-        return await handlers.getObject(ctx, req, bucketConfig);
+        return await handlers.getObject(reqCtx, req, bucketConfig);
       }
 
       if (queryParamKeys.has("uploads")) {
-        return await handlers.listMultipartUploads(ctx, req, bucketConfig);
+        return await handlers.listMultipartUploads(reqCtx, req, bucketConfig);
       }
 
-      return await handlers.listObjects(ctx, req, bucketConfig);
+      return await handlers.listObjects(reqCtx, req, bucketConfig);
     case "POST":
       if (objectKey && queryParamKeys.has("uploads")) {
-        return await handlers.createMultipartUpload(ctx, req, bucketConfig);
+        return await handlers.createMultipartUpload(reqCtx, req, bucketConfig);
       }
 
       if (objectKey && queryParamKeys.has("uploadId")) {
         return await handlers.completeMultipartUpload(
-          ctx,
+          reqCtx,
           req,
           bucketConfig,
         );
@@ -144,51 +147,52 @@ export async function swiftResolver(
     case "PUT":
       if (
         objectKey && queryParamKeys.has("partNumber") &&
+        queryParamKeys.has("uploadId") &&
         req.headers.get("x-amz-copy-source")
       ) {
-        return await handlers.uploadPartCopy(ctx, req, bucketConfig);
+        return await handlers.uploadPartCopy(reqCtx, req, bucketConfig);
       }
 
       if (objectKey && req.headers.get("x-amz-copy-source")) {
-        return await handlers.copyObject(ctx, req, bucketConfig);
+        return await handlers.copyObject(reqCtx, req, bucketConfig);
       }
 
       if (objectKey && queryParamKeys.has("partNumber")) {
-        return await handlers.uploadPart(ctx, req, bucketConfig);
+        return await handlers.uploadPart(reqCtx, req, bucketConfig);
       }
 
       if (objectKey) {
-        return await handlers.putObject(ctx, req, bucketConfig);
+        return await handlers.putObject(reqCtx, req, bucketConfig);
       }
 
-      return await handlers.createBucket(ctx, req, bucketConfig);
+      return await handlers.createBucket(reqCtx, req, bucketConfig);
     case "DELETE":
       if (objectKey && queryParamKeys.has("uploadId")) {
-        return await handlers.abortMultipartUpload(ctx, req, bucketConfig);
+        return await handlers.abortMultipartUpload(reqCtx, req, bucketConfig);
       }
       if (objectKey) {
-        return await handlers.deleteObject(ctx, req, bucketConfig);
+        return await handlers.deleteObject(reqCtx, req, bucketConfig);
       }
 
-      return await handlers.deleteBucket(ctx, req, bucketConfig);
+      return await handlers.deleteBucket(reqCtx, req, bucketConfig);
     case "HEAD":
       if (objectKey) {
-        return await handlers.headObject(ctx, req, bucketConfig);
+        return await handlers.headObject(reqCtx, req, bucketConfig);
       }
 
-      return await handlers.headBucket(ctx, req, bucketConfig);
+      return await handlers.headBucket(reqCtx, req, bucketConfig);
     default:
       logger.critical(`Unsupported Request: ${method}`);
-      return new HTTPException(400, { message: "Unsupported Request" });
+      return createOk(getAPIErrorResponse(APIErrors.ErrInvalidRequest));
   }
 
-  return new HTTPException(405, { message: "Method Not Allowed" });
+  return createErr(new HeraldError(405, { message: "Method Not Allowed" }));
 }
 
 export function convertSwiftGetObjectToS3Response(
   swiftResponse: Response,
   queryParams: Record<string, string[]>,
-) {
+): Result<Response, Error> {
   const swiftStatus = swiftResponse.status;
   const swiftHeaders = swiftResponse.headers;
 
@@ -202,9 +206,11 @@ export function convertSwiftGetObjectToS3Response(
       "application/octet-stream";
 
     if (!eTag || !lastModified || !contentLength) {
-      return new HTTPException(502, {
-        message: "Missing essential headers in Swift response",
-      });
+      return createErr(
+        new HeraldError(502, {
+          message: "Missing essential headers in Swift response",
+        }),
+      );
     }
 
     const s3ContentType = queryParams["response-content-type"]
@@ -240,10 +246,12 @@ export function convertSwiftGetObjectToS3Response(
     });
 
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html#API_GetObject_ResponseSyntax
-    return new Response(swiftResponse.body, {
-      status: 200,
-      headers: s3ResponseHeaders,
-    });
+    return createOk(
+      new Response(swiftResponse.body, {
+        status: 200,
+        headers: s3ResponseHeaders,
+      }),
+    );
   }
 
   // Now handle mapped error cases
@@ -264,9 +272,11 @@ export function convertSwiftGetObjectToS3Response(
       break;
     default:
       // Unhandled Swift error
-      return new HTTPException(swiftStatus, {
-        message: `Unhandled Swift error: ${swiftResponse.statusText}`,
-      });
+      return createErr(
+        new HeraldError(swiftStatus, {
+          message: `Unhandled Swift error: ${swiftResponse.statusText}`,
+        }),
+      );
   }
 
   // Build proper S3 error XML
@@ -281,23 +291,35 @@ export function convertSwiftGetObjectToS3Response(
   <HostId>swift-mapped-to-s3</HostId>
 </Error>`.trim();
 
-  return new Response(s3ErrorXml, {
-    status: errorStatus,
-    headers: new Headers({
-      "Content-Type": "application/xml",
+  return createOk(
+    new Response(s3ErrorXml, {
+      status: errorStatus,
+      headers: new Headers({
+        "Content-Type": "application/xml",
+      }),
     }),
-  });
+  );
 }
 
-export function convertSwiftUploadPartToS3Response(swiftResponse: Response) {
+export function convertSwiftUploadPartToS3Response(
+  swiftResponse: Response,
+  logger: Logger,
+): Result<Response, Error> {
   if (!swiftResponse.ok) {
-    return new HTTPException(swiftResponse.status, {
-      message: `Upload Part Failed: ${swiftResponse.statusText}`,
-    });
+    return createErr(
+      new HeraldError(swiftResponse.status, {
+        message: `Upload Part Failed: ${swiftResponse.statusText}`,
+      }),
+    );
   }
 
   const swiftHeaders = swiftResponse.headers;
-  const eTag = swiftHeaders.get("etag")!;
+  const eTag = swiftHeaders.get("etag");
+
+  if (!eTag) {
+    logger.error("Etag not found in Upload Part response");
+    return createOk(InternalServerErrorException());
+  }
 
   const s3ResponseHeaders = new Headers();
   s3ResponseHeaders.set("ETag", eTag);
@@ -308,10 +330,12 @@ export function convertSwiftUploadPartToS3Response(swiftResponse: Response) {
     headers: s3ResponseHeaders,
   });
 
-  return s3Response;
+  return createOk(s3Response);
 }
 
-export function convertSwiftPutObjectToS3Response(swiftResponse: Response) {
+export function convertSwiftPutObjectToS3Response(
+  swiftResponse: Response,
+): Result<Response, Error> {
   const swiftStatus = swiftResponse.status;
   const swiftHeaders = swiftResponse.headers;
 
@@ -323,9 +347,11 @@ export function convertSwiftPutObjectToS3Response(swiftResponse: Response) {
       swiftHeaders.get("x-trans-id");
 
     if (!eTag) {
-      return new HTTPException(502, {
-        message: "Missing ETag in Swift response",
-      });
+      return createErr(
+        new HeraldError(502, {
+          message: "Missing ETag in Swift response",
+        }),
+      );
     }
 
     const s3ResponseHeaders = new Headers();
@@ -339,10 +365,12 @@ export function convertSwiftPutObjectToS3Response(swiftResponse: Response) {
       s3ResponseHeaders.set("x-amz-request-id", requestId);
     }
 
-    return new Response(null, {
-      status: 200, // S3 returns 200 OK
-      headers: s3ResponseHeaders,
-    });
+    return createOk(
+      new Response(null, {
+        status: 200, // S3 returns 200 OK
+        headers: s3ResponseHeaders,
+      }),
+    );
   }
 
   // Error handling based on Swift response codes
@@ -368,9 +396,11 @@ export function convertSwiftPutObjectToS3Response(swiftResponse: Response) {
       break;
     default:
       // Unknown/unexpected error
-      return new HTTPException(swiftStatus, {
-        message: `Unhandled error from Swift: ${swiftResponse.statusText}`,
-      });
+      return createErr(
+        new HeraldError(swiftStatus, {
+          message: `Unhandled error from Swift: ${swiftResponse.statusText}`,
+        }),
+      );
   }
 
   const s3ErrorXml = `
@@ -384,17 +414,19 @@ export function convertSwiftPutObjectToS3Response(swiftResponse: Response) {
   <HostId>swift-mapped-to-s3</HostId>
 </Error>`.trim();
 
-  return new Response(s3ErrorXml, {
-    status: 400, // All mapped errors use 400 except 408 timeout
-    headers: new Headers({
-      "Content-Type": "application/xml",
+  return createOk(
+    new Response(s3ErrorXml, {
+      status: 400, // All mapped errors use 400 except 408 timeout
+      headers: new Headers({
+        "Content-Type": "application/xml",
+      }),
     }),
-  });
+  );
 }
 
 export function convertSwiftCopyObjectToS3Response(
   swiftResponse: Response,
-) {
+): Result<Response, Error> {
   const swiftStatus = swiftResponse.status;
   const swiftHeaders = swiftResponse.headers;
 
@@ -407,9 +439,11 @@ export function convertSwiftCopyObjectToS3Response(
       swiftHeaders.get("x-trans-id");
 
     if (!eTag || !lastModified) {
-      return new HTTPException(502, {
-        message: "Missing essential headers in Swift response for CopyObject",
-      });
+      return createErr(
+        new HeraldError(502, {
+          message: "Missing essential headers in Swift response for CopyObject",
+        }),
+      );
     }
 
     const s3ResponseHeaders = new Headers();
@@ -421,7 +455,7 @@ export function convertSwiftCopyObjectToS3Response(
       s3ResponseHeaders.set("x-amz-request-id", requestId);
     }
 
-    s3ResponseHeaders.set("ETag", eTag); // Make sure it's quoted like S3
+    s3ResponseHeaders.set("ETag", eTag);
 
     const s3ResponseBody = `
 <?xml version="1.0" encoding="UTF-8"?>
@@ -430,10 +464,12 @@ export function convertSwiftCopyObjectToS3Response(
   <LastModified>${formatRFC3339Date(lastModified)}</LastModified>
 </CopyObjectResult>`.trim();
 
-    return new Response(s3ResponseBody, {
-      status: 200, // S3 CopyObject always returns 200 OK, not 201
-      headers: s3ResponseHeaders,
-    });
+    return createOk(
+      new Response(s3ResponseBody, {
+        status: 200, // S3 CopyObject always returns 200 OK, not 201
+        headers: s3ResponseHeaders,
+      }),
+    );
   }
 
   // Handle error mapping if CopyObject failed
@@ -454,10 +490,12 @@ export function convertSwiftCopyObjectToS3Response(
       errorStatus = 403;
       break;
     default:
-      return new HTTPException(swiftStatus, {
-        message:
-          `Unhandled Swift CopyObject error: ${swiftResponse.statusText}`,
-      });
+      return createErr(
+        new HeraldError(swiftStatus, {
+          message:
+            `Unhandled Swift CopyObject error: ${swiftResponse.statusText}`,
+        }),
+      );
   }
 
   const s3ErrorXml = `
@@ -471,19 +509,25 @@ export function convertSwiftCopyObjectToS3Response(
   <HostId>swift-mapped-to-s3</HostId>
 </Error>`.trim();
 
-  return new Response(s3ErrorXml, {
-    status: errorStatus,
-    headers: new Headers({
-      "Content-Type": "application/xml",
+  return createOk(
+    new Response(s3ErrorXml, {
+      status: errorStatus,
+      headers: new Headers({
+        "Content-Type": "application/xml",
+      }),
     }),
-  });
+  );
 }
 
-export function convertSwiftDeleteObjectToS3Response(swiftResponse: Response) {
+export function convertSwiftDeleteObjectToS3Response(
+  swiftResponse: Response,
+): Result<Response, Error> {
   if (!swiftResponse.ok) {
-    return new HTTPException(swiftResponse.status, {
-      message: `Delete Object Failed: ${swiftResponse.statusText}`,
-    });
+    return createErr(
+      new HeraldError(swiftResponse.status, {
+        message: `Delete Object Failed: ${swiftResponse.statusText}`,
+      }),
+    );
   }
 
   // https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObject.html#API_DeleteObject_ResponseSyntax
@@ -491,7 +535,7 @@ export function convertSwiftDeleteObjectToS3Response(swiftResponse: Response) {
     status: 204,
   });
 
-  return s3Response;
+  return createOk(s3Response);
 }
 
 function createBucketSuccessResponse(bucketName: string): string {
@@ -504,7 +548,7 @@ function createBucketSuccessResponse(bucketName: string): string {
 export function convertSwiftCreateBucketToS3Response(
   swiftResponse: Response,
   bucketName: string, // We need the intended bucket name for the Location header
-) {
+): Result<Response, Error> {
   const swiftStatus = swiftResponse.status;
   const swiftHeaders = swiftResponse.headers;
 
@@ -520,10 +564,12 @@ export function convertSwiftCreateBucketToS3Response(
     }
     s3ResponseHeaders.set("Location", `/${bucketName}`);
 
-    return new Response(createBucketSuccessResponse(bucketName), {
-      status: 200,
-      headers: s3ResponseHeaders,
-    });
+    return createOk(
+      new Response(createBucketSuccessResponse(bucketName), {
+        status: 200,
+        headers: s3ResponseHeaders,
+      }),
+    );
   }
 
   // Now handle mapped error cases
@@ -544,10 +590,12 @@ export function convertSwiftCreateBucketToS3Response(
         "The bucket you tried to create already exists, and you own it.";
       break;
     default:
-      return new HTTPException(swiftStatus, {
-        message:
-          `Unhandled Swift CreateBucket error: ${swiftResponse.statusText}`,
-      });
+      return createErr(
+        new HeraldError(swiftStatus, {
+          message:
+            `Unhandled Swift CreateBucket error: ${swiftResponse.statusText}`,
+        }),
+      );
   }
 
   const s3ErrorXml = `
@@ -561,18 +609,20 @@ export function convertSwiftCreateBucketToS3Response(
   <HostId>swift-mapped-to-s3</HostId>
 </Error>`.trim();
 
-  return new Response(s3ErrorXml, {
-    status: errorStatus,
-    headers: new Headers({
-      "Content-Type": "application/xml",
+  return createOk(
+    new Response(s3ErrorXml, {
+      status: errorStatus,
+      headers: new Headers({
+        "Content-Type": "application/xml",
+      }),
     }),
-  });
+  );
 }
 
 export function convertSwiftHeadBucketToS3Response(
   swiftResponse: Response,
   bucketRegion = "us-east-1", // Default region
-) {
+): Result<Response, Error> {
   const swiftStatus = swiftResponse.status;
   const swiftHeaders = swiftResponse.headers;
 
@@ -599,10 +649,12 @@ export function convertSwiftHeadBucketToS3Response(
       s3ResponseHeaders.set("accept-ranges", acceptRanges);
     }
 
-    return new Response(null, {
-      status: 200,
-      headers: s3ResponseHeaders,
-    });
+    return createOk(
+      new Response(null, {
+        status: 200,
+        headers: s3ResponseHeaders,
+      }),
+    );
   }
 
   // Handle error mapping
@@ -618,23 +670,27 @@ export function convertSwiftHeadBucketToS3Response(
   <HostId>swift-mapped-to-s3</HostId>
 </Error>`.trim();
 
-    return new Response(s3ErrorXml, {
-      status: 404,
-      headers: new Headers({
-        "Content-Type": "application/xml",
+    return createOk(
+      new Response(s3ErrorXml, {
+        status: 404,
+        headers: new Headers({
+          "Content-Type": "application/xml",
+        }),
       }),
-    });
+    );
   }
 
   // Unhandled errors fallback
-  return new HTTPException(swiftStatus, {
-    message: `Unhandled Swift HeadBucket error: ${swiftResponse.statusText}`,
-  });
+  return createErr(
+    new HeraldError(swiftStatus, {
+      message: `Unhandled Swift HeadBucket error: ${swiftResponse.statusText}`,
+    }),
+  );
 }
 
 export function convertSwiftHeadObjectToS3Response(
   swiftResponse: Response,
-) {
+): Result<Response, Error> {
   const swiftStatus = swiftResponse.status;
   const swiftHeaders = swiftResponse.headers;
 
@@ -651,9 +707,11 @@ export function convertSwiftHeadObjectToS3Response(
       swiftHeaders.get("x-trans-id");
 
     if (!eTag || !contentLength || !lastModified) {
-      return new HTTPException(502, {
-        message: "Missing essential headers in Swift response for HeadObject",
-      });
+      return createErr(
+        new HeraldError(502, {
+          message: "Missing essential headers in Swift response for HeadObject",
+        }),
+      );
     }
 
     const s3ResponseHeaders = new Headers();
@@ -682,10 +740,12 @@ export function convertSwiftHeadObjectToS3Response(
       }
     });
 
-    return new Response(null, {
-      status: 200,
-      headers: s3ResponseHeaders,
-    });
+    return createOk(
+      new Response(null, {
+        status: 200,
+        headers: s3ResponseHeaders,
+      }),
+    );
   }
 
   // Now handle error mapping
@@ -701,16 +761,20 @@ export function convertSwiftHeadObjectToS3Response(
   <HostId>swift-mapped-to-s3</HostId>
 </Error>`.trim();
 
-    return new Response(s3ErrorXml, {
-      status: 404,
-      headers: new Headers({
-        "Content-Type": "application/xml",
+    return createOk(
+      new Response(s3ErrorXml, {
+        status: 404,
+        headers: new Headers({
+          "Content-Type": "application/xml",
+        }),
       }),
-    });
+    );
   }
 
   // Fallback for unhandled Swift errors
-  return new HTTPException(swiftStatus, {
-    message: `Unhandled Swift HeadObject error: ${swiftResponse.statusText}`,
-  });
+  return createErr(
+    new HeraldError(swiftStatus, {
+      message: `Unhandled Swift HeadObject error: ${swiftResponse.statusText}`,
+    }),
+  );
 }

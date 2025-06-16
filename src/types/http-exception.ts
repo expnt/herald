@@ -1,34 +1,34 @@
 import type { StatusCode } from "../utils/http-status.ts";
 
-type HTTPExceptionOptions = {
+type HeraldErrorOptions = {
   res?: Response;
   message?: string;
   cause?: unknown;
 };
 
 /**
- * `HTTPException` must be used when a fatal error such as authentication failure occurs.
+ * `HeraldError` must be used when a fatal error such as authentication failure occurs.
  * @example
  * ```ts
- * import { HTTPException } from 'hono/http-exception'
+ * import { HeraldError } from 'hono/http-exception'
  *
  * // ...
  *
  * app.post('/auth', async (c, next) => {
  *   // authentication
  *   if (authorized === false) {
- *     throw new HTTPException(401, { message: 'Custom error message' })
+ *     throw new HeraldError(401, { message: 'Custom error message' })
  *   }
  *   await next()
  * })
  * ```
  * @see https://hono.dev/api/exception
  */
-export class HTTPException extends Error {
+export class HeraldError extends Error {
   readonly res?: Response;
   readonly status: StatusCode | number;
 
-  constructor(status: number = 500, options?: HTTPExceptionOptions) {
+  constructor(status: number = 500, options?: HeraldErrorOptions) {
     super(options?.message, { cause: options?.cause });
     this.res = options?.res;
     this.status = status;
@@ -42,8 +42,17 @@ export class HTTPException extends Error {
       });
       return newResponse;
     }
-    return new Response(this.message, {
+
+    const errorXml = `<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>InternalServerError</Code>
+  <Message>We encountered an internal error: ${this.message}. Please try again.</Message>
+</Error>`;
+    return new Response(errorXml, {
       status: this.status,
+      headers: {
+        "Content-Type": "application/xml",
+      },
     });
   }
 }

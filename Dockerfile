@@ -12,4 +12,4 @@ RUN deno cache ./src/main.ts
 RUN ls -l src/main.ts
 
 ENTRYPOINT ["deno"]
-CMD ["run", "-A", "--unstable-kv", "src/main.ts"]
+CMD ["serve", "-A", "--unstable-kv", "src/main.ts"]

@@ -3,7 +3,7 @@ import { Sha256 } from "@aws-crypto/sha256";
 import * as s from "@smithy/signature-v4";
 import { AMZ_DATE_HEADER, AUTH_HEADER } from "../constants/headers.ts";
 import { APIErrors, getAPIErrorResponse } from "../types/api_errors.ts";
-import { HTTPException } from "../types/http-exception.ts";
+import { HeraldError } from "../types/http-exception.ts";
 import { S3Config, SwiftConfig } from "../config/types.ts";
 import { getLogger } from "./log.ts";
 import { z as zod } from "zod";
@@ -72,7 +72,7 @@ const preSignedQueryParamsSchema = zod.object({
  * Extracts the signature from the request.
  *
  * @param {Request} request - The request object.
- * @throws {HTTPException} - If the authentication header is empty, the sign tag is missing, or the sign tag is invalid.
+ * @throws {HeraldError} - If the authentication header is empty, the sign tag is missing, or the sign tag is invalid.
  */
 export function extractSignature(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -90,7 +90,7 @@ export function extractSignature(request: Request) {
     const match = parsed.data["x-amz-credential"].match(sigV4Regex);
     if (!match) {
       const errResponse = getAPIErrorResponse(APIErrors.ErrInvalidSignTag);
-      throw new HTTPException(
+      throw new HeraldError(
         errResponse.status,
         { res: errResponse },
       );
@@ -128,7 +128,7 @@ export function extractSignature(request: Request) {
   const authHeader = request.headers.get(AUTH_HEADER);
   if (authHeader === null) {
     const errResponse = getAPIErrorResponse(APIErrors.ErrAuthHeaderEmpty);
-    throw new HTTPException(
+    throw new HeraldError(
       errResponse.status,
       { res: errResponse },
     );
@@ -136,7 +136,7 @@ export function extractSignature(request: Request) {
   const parsedHeader = parseAuthorizationHeader(authHeader);
   if (!parsedHeader) {
     const errResponse = getAPIErrorResponse(APIErrors.ErrMissingSignTag);
-    throw new HTTPException(
+    throw new HeraldError(
       errResponse.status,
       { res: errResponse },
     );
@@ -195,14 +195,14 @@ function parseAuthorizationHeader(
  *
  * @param request - The request object.
  * @returns The signed headers as an array of strings.
- * @throws {HTTPException} If the authentication header is empty, the signed headers tag is missing, or the signed headers are invalid.
+ * @throws {HeraldError} If the authentication header is empty, the signed headers tag is missing, or the signed headers are invalid.
  */
 function _extractSignedHeaders(request: Request) {
   const authHeader = request.headers.get(AUTH_HEADER);
 
   if (authHeader === null) {
     const errResponse = getAPIErrorResponse(APIErrors.ErrAuthHeaderEmpty);
-    throw new HTTPException(
+    throw new HeraldError(
       errResponse.status,
       { res: errResponse },
     );
@@ -213,7 +213,7 @@ function _extractSignedHeaders(request: Request) {
 
   if (signedHeaders === undefined) {
     const errResponse = getAPIErrorResponse(APIErrors.ErrMissingSignHeadersTag);
-    throw new HTTPException(
+    throw new HeraldError(
       errResponse.status,
       { res: errResponse },
     );
@@ -224,7 +224,7 @@ function _extractSignedHeaders(request: Request) {
     signedHeaders.slice(0, signedHeadersPrefix.length) !== signedHeadersPrefix
   ) {
     const errResponse = getAPIErrorResponse(APIErrors.ErrInvalidSignHeaders);
-    throw new HTTPException(
+    throw new HeraldError(
       errResponse.status,
       { res: errResponse },
     );
@@ -309,7 +309,7 @@ export async function signRequestV4(
  * Verifies the V4 signature of the original request.
  *
  * @param originalRequest - The original request to verify.
- * @throws {HTTPException} - Throws an exception if the signature does not match.
+ * @throws {HeraldError} - Throws an exception if the signature does not match.
  */
 export async function verifyV4Signature(
   originalRequest: Request,
@@ -343,7 +343,7 @@ export async function verifyV4Signature(
       const errResponse = getAPIErrorResponse(
         APIErrors.ErrExpiredPresign,
       );
-      throw new HTTPException(errResponse.status, { res: errResponse });
+      throw new HeraldError(errResponse.status, { res: errResponse });
     }
   }
 
@@ -376,7 +376,7 @@ export async function verifyV4Signature(
       originalRequest,
     });
     const errResponse = getAPIErrorResponse(APIErrors.ErrSignatureDoesNotMatch);
-    throw new HTTPException(errResponse.status, { res: errResponse });
+    throw new HeraldError(errResponse.status, { res: errResponse });
   }
 }
 

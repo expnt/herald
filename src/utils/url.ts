@@ -5,6 +5,7 @@ import { AUTH_HEADER, HOST_HEADER } from "../constants/headers.ts";
 import { s3ReqParams } from "../constants/query-params.ts";
 import { ReplicaConfig } from "../config/types.ts";
 import { TIMEOUT } from "../constants/time.ts";
+import { createErr, createOk, Result } from "option-t/plain_result";
 
 const logger = getLogger(import.meta);
 
@@ -61,7 +62,7 @@ export async function forwardS3RequestToS3WithTimeouts(
   request: Request,
   config: S3Config,
   retries = 3,
-) {
+): Promise<Result<Response, Error>> {
   const forwardRequest = async () => {
     const redirect = getRedirectUrl(request.url, config.endpoint);
 
@@ -173,35 +174,38 @@ export async function retryWithExponentialBackoff<T>(
   fn: () => Promise<T>,
   retries = 3,
   initialDelay = 100,
-  maxDelay = 1000,
-): Promise<T | Error> {
+  maxDelay = 5000, // 5 Seconds
+): Promise<Result<T, Error>> {
   let attempt = 0;
   let delayDuration = initialDelay;
   let err: Error = new Error("Unknown error");
 
-  while (attempt < retries) {
+  while (attempt <= retries) {
     try {
-      return await Promise.race([
+      const res = await Promise.race([
         fn(),
         new Promise<T>((_, reject) =>
           setTimeout(() => reject(new Error("Operation timed out")), TIMEOUT)
         ),
       ]);
+      return createOk(res);
     } catch (error) {
-      if (attempt >= retries - 1) {
-        logger.critical(error);
-        reportToSentry(error as Error);
+      attempt++;
+      if (attempt > retries) {
+        const errMessage = `Retry limit reached: ${Deno.inspect(error)}`;
+        logger.critical(errMessage);
+        reportToSentry(errMessage);
         err = error as Error;
-        attempt++;
+      } else {
+        logger.warn(`Retrying... attempts: ${attempt}`);
       }
 
       await delay(delayDuration);
       delayDuration = Math.min(delayDuration * 2, maxDelay);
-      attempt++;
     }
   }
 
-  return err;
+  return createErr(err);
 }
 
 export function areQueryParamsSupported(queryParams: Set<string>): boolean {
@@ -275,16 +279,18 @@ export async function retryFetchWithTimeout<T>(
       ]);
       return result;
     } catch (error) {
-      if (attempt >= retries - 1) {
-        logger.critical(error);
-        reportToSentry(error as Error);
+      attempt++;
+      if (attempt > retries) {
+        const errMessage = `Retry limit reached: ${Deno.inspect(error)}`;
+        logger.critical(errMessage);
+        reportToSentry(errMessage);
         err = error as Error;
-        attempt++;
+      } else {
+        logger.warn(`Retrying... attempts: ${attempt}`);
       }
 
       await delay(delayDuration);
       delayDuration = Math.min(delayDuration * 2, maxDelay);
-      attempt++;
     }
   }
 
