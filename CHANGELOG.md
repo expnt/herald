@@ -1,3 +1,11 @@
+## 0.4.0 (2025-06-16)
+
+### Fix
+
+- error propagation (#41)
+- remove creds
+- remove creds
+
 ## 0.3.0 (2025-06-11)
 
 ### Feat
