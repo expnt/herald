@@ -398,7 +398,11 @@ export function toSignableRequest(
     }
   });
 
-  // const reqBody = await req.body?.getReader().read();
+  // get the forwarded host
+  const forwardedHost = req.headers.get("x-forwarded-host");
+  if (forwardedHost) {
+    headersRecord["host"] = forwardedHost;
+  }
 
   const httpReq: HttpRequest = {
     method: req.method,
@@ -407,10 +411,6 @@ export function toSignableRequest(
     hostname: reqUrl.hostname,
     protocol: reqUrl.protocol,
     port: parseInt(reqUrl.port),
-    // password: reqUrl.password,
-    // username: reqUrl.username,
-    // body: reqBody ? reqBody.value : undefined,
-    // body: req.body,
     query: getQueryParameters(req),
   };
 
