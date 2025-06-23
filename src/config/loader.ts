@@ -4,6 +4,7 @@ import {
   EnvVarConfig,
   GlobalConfig,
   globalConfigSchema,
+  PreprocessedTrustedCidrs,
   ReplicaConfig,
   ReplicaS3Config,
   replicaS3ConfigSchema,
@@ -20,6 +21,7 @@ import { envVarConfigSchema } from "./types.ts";
 import { bucketStore, globalConfig } from "./mod.ts";
 import { red } from "std/fmt/colors";
 import { Bucket } from "../buckets/mod.ts";
+import IPCIDR from "ip-cidr";
 
 export class ConfigError extends Error {
   // deno-lint-ignore no-explicit-any
@@ -223,4 +225,18 @@ export function configOrExit<T extends z.ZodRawShape>(
     }
     Deno.exit(1);
   }
+}
+
+export function initializeTrustedCidrs(
+  trustedCidrs: string[],
+): PreprocessedTrustedCidrs {
+  // Map the validated CIDR strings to IPCIDR objects
+  const preprocessedCidrs = trustedCidrs.map((cidrString) => {
+    if (!IPCIDR.isValidCIDR(cidrString)) {
+      throw new Error(`Invalid CIDR address: ${cidrString}`);
+    }
+    return new IPCIDR(cidrString);
+  });
+
+  return preprocessedCidrs;
 }

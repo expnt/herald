@@ -7,8 +7,7 @@ import { HeraldError } from "../types/http-exception.ts";
 import { S3Config, SwiftConfig } from "../config/types.ts";
 import { getLogger } from "./log.ts";
 import { z as zod } from "zod";
-import { globalConfig } from "../config/mod.ts";
-import IPCIDR from "ip-cidr";
+import { globalConfig, trustedCidrs } from "../config/mod.ts";
 
 const logger = getLogger(import.meta);
 
@@ -314,18 +313,9 @@ export async function signRequestV4(
  */
 export function isIpInMultipleCidrRanges(
   ipAddress: string,
-  cidrAddresses: string[],
 ): boolean {
-  for (const cidrAddress of cidrAddresses) {
-    // Validate the CIDR address first
-    if (!IPCIDR.isValidCIDR(cidrAddress)) {
-      logger.warn(`Skipping invalid CIDR address: ${cidrAddress}`);
-      continue; // Skip to the next CIDR if invalid
-    }
-
-    // Create a new IPCIDR instance
-    const cidr = new IPCIDR(cidrAddress);
-
+  const cidrs = trustedCidrs;
+  for (const cidr of cidrs) {
     // Check if the IP address is contained within the current CIDR range
     return cidr.contains(ipAddress);
   }
@@ -432,9 +422,9 @@ export function toSignableRequest(
   if (globalConfig.trust_proxy && forwardedHost) {
     const lastIp = req.headers.get("x-forwarded-for")?.split(",").pop()?.trim();
     if (
-      !lastIp || !isIpInMultipleCidrRanges(lastIp, globalConfig.trusted_ips)
+      !lastIp || !isIpInMultipleCidrRanges(lastIp)
     ) {
-      logger.critical(
+      logger.warn(
         "Request from untrusted IP",
         { lastIp, forwardedHost, headers: headersRecord },
       );

@@ -55,7 +55,8 @@
     "npm:option-t@53": "53.0.0",
     "npm:xml2js@0.6.2": "0.6.2",
     "npm:zod-validation-error@3.3.0": "3.3.0_zod@3.23.8",
-    "npm:zod@3.23.8": "3.23.8"
+    "npm:zod@3.23.8": "3.23.8",
+    "npm:zod@3.25.67": "3.25.67"
   },
   "jsr": {
     "@david/dax@0.41.0": {
@@ -1399,11 +1400,14 @@
     "zod-validation-error@3.3.0_zod@3.23.8": {
       "integrity": "sha512-Syib9oumw1NTqEv4LT0e6U83Td9aVRk9iTXPUQr1otyV1PuXQKOvOwhMNqZIq5hluzHP2pMgnOmHEo7kPdI2mw==",
       "dependencies": [
-        "zod"
+        "zod@3.23.8"
       ]
     },
     "zod@3.23.8": {
       "integrity": "sha512-XBx9AXhXktjUqnepgTiE5flcKIYWi/rme0Eaj+5Y0lftuGBq+jyRu/md4WnuxqgP1ubdpNCsYEYPxrzVHD8d6g=="
+    },
+    "zod@3.25.67": {
+      "integrity": "sha512-idA2YXwpCdqUSKRCACDE6ItZD9TZzy3OZMtpfLoh6oPR47lipysRrJfjzMqFxQ3uJuUPyUeWe1r9vLH33xO/Qw=="
     }
   },
   "redirects": {
@@ -1917,7 +1921,8 @@
       "npm:@smithy/types@3.7.1",
       "npm:ip-cidr@4.0.2",
       "npm:option-t@53",
-      "npm:xml2js@0.6.2"
+      "npm:xml2js@0.6.2",
+      "npm:zod@3.25.67"
     ]
   }
 }

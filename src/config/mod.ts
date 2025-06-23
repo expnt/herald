@@ -1,8 +1,14 @@
 import { BucketStore, initializeBucketStore } from "../buckets/mod.ts";
-import { getBucket, loadConfig, loadEnvConfig } from "./loader.ts";
+import {
+  getBucket,
+  initializeTrustedCidrs,
+  loadConfig,
+  loadEnvConfig,
+} from "./loader.ts";
 import {
   EnvVarConfig,
   GlobalConfig,
+  PreprocessedTrustedCidrs,
   S3BucketConfig,
   SwiftBucketConfig,
 } from "./types.ts";
@@ -19,6 +25,7 @@ export let envVarsConfig: EnvVarConfig;
 export { getBackendDef } from "./loader.ts";
 export let proxyUrl: string;
 export let bucketStore: BucketStore;
+export let trustedCidrs: PreprocessedTrustedCidrs = [];
 
 export async function configInit() {
   globalConfig = await loadConfig();
@@ -28,6 +35,7 @@ export async function configInit() {
   });
   proxyUrl = `http://localhost:${globalConfig.port}`;
   bucketStore = initializeBucketStore(globalConfig);
+  trustedCidrs = initializeTrustedCidrs(globalConfig.trusted_ips);
 }
 
 await configInit();

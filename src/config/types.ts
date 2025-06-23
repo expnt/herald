@@ -1,4 +1,5 @@
 import { z } from "zod";
+import IPCIDR from "ip-cidr";
 
 const backendSchema = z.object({
   protocol: z.enum(["s3", "swift"]),
@@ -109,15 +110,18 @@ export const globalConfigSchema = z.object({
   service_accounts: z.array(serviceAccountAccessSchema),
   trust_proxy: z.boolean().default(false),
   trusted_ips: z.array(
-    z.string().regex(/^(?:\d{1,3}\.){3}\d{1,3}(?:\/\d{1,2})?$/),
+    z.cidrv4(),
   ).default([]),
   temp_dir: z.string(),
   task_store_backend: s3ConfigSchema,
-  backends: z.record(backendSchema),
-  buckets: z.record(z.union([
-    s3BucketConfigSchema,
-    swiftBucketConfigSchema,
-  ])),
+  backends: z.record(z.string(), backendSchema),
+  buckets: z.record(
+    z.string(),
+    z.union([
+      s3BucketConfigSchema,
+      swiftBucketConfigSchema,
+    ]),
+  ),
   replicas: z.array(replicaConfigSchema),
 });
 
@@ -167,3 +171,5 @@ export function convertReplicaToPrimary(replica: ReplicaConfig): BucketConfig {
     };
   }
 }
+
+export type PreprocessedTrustedCidrs = IPCIDR[];
