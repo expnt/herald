@@ -317,7 +317,9 @@ export function isIpInMultipleCidrRanges(
   const cidrs = trustedCidrs;
   for (const cidr of cidrs) {
     // Check if the IP address is contained within the current CIDR range
-    return cidr.contains(ipAddress);
+    if (cidr.contains(ipAddress)) {
+      return true; // Match found in this CIDR range
+    }
   }
 
   return false; // No match found in any of the CIDR ranges
