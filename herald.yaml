@@ -1,5 +1,7 @@
 port: 8000
 temp_dir: "./tmp"
+trust_proxy: false
+trusted_ips: []
 backends:
   minio_s3:
     protocol: s3

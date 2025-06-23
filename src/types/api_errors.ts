@@ -9,6 +9,7 @@ export enum APIErrors {
   ErrSignatureDoesNotMatch,
   ErrExpiredPresign,
   ErrInvalidRequest, // Added Invalid Request error
+  ErrAccessDenied,
 }
 
 interface APIError {
@@ -67,6 +68,13 @@ const errorCodeMap: Record<APIErrors, APIError> = {
     code: "InvalidRequest",
     description: "The request was malformed or contained an invalid parameter.",
     httpStatusCode: http.STATUS_CODE.BadRequest,
+    errorSource: "Proxy",
+  },
+  [APIErrors.ErrAccessDenied]: {
+    code: "AccessDenied", // The standard S3 error code
+    description:
+      "Direct access to this S3 proxy is not allowed. Requests must originate from a trusted network or proxy.",
+    httpStatusCode: http.STATUS_CODE.Forbidden, // http.STATUS_CODE.Forbidden
     errorSource: "Proxy",
   },
 };
