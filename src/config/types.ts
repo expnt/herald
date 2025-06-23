@@ -107,6 +107,8 @@ export type ServiceAccountAccess = z.infer<
 export const globalConfigSchema = z.object({
   port: z.number().int(),
   service_accounts: z.array(serviceAccountAccessSchema),
+  trust_proxy: z.boolean().default(false),
+  trusted_ips: z.array(z.string()).default([]),
   temp_dir: z.string(),
   task_store_backend: s3ConfigSchema,
   backends: z.record(backendSchema),

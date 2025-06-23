@@ -7,6 +7,7 @@ import { HeraldError } from "../types/http-exception.ts";
 import { S3Config, SwiftConfig } from "../config/types.ts";
 import { getLogger } from "./log.ts";
 import { z as zod } from "zod";
+import { globalConfig } from "../config/mod.ts";
 
 const logger = getLogger(import.meta);
 
@@ -400,7 +401,17 @@ export function toSignableRequest(
 
   // get the forwarded host
   const forwardedHost = req.headers.get("x-forwarded-host");
-  if (forwardedHost) {
+  if (globalConfig.trust_proxy && forwardedHost) {
+    const lastIp = req.headers.get("x-forwarded-for")?.split(",").pop()?.trim();
+    if (!lastIp || !globalConfig.trusted_ips.includes(lastIp)) {
+      throw new HeraldError(
+        403,
+        {
+          res: getAPIErrorResponse(APIErrors.ErrAccessDenied),
+        },
+      );
+    }
+
     headersRecord["host"] = forwardedHost;
   }
 
