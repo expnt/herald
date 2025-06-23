@@ -50,6 +50,7 @@
     "npm:@smithy/signature-v4@4.2.3": "4.2.3",
     "npm:@smithy/types@3.7.1": "3.7.1",
     "npm:@types/node@*": "22.13.10",
+    "npm:ip-cidr@4.0.2": "4.0.2",
     "npm:multiformats@13.1.0": "13.1.0",
     "npm:option-t@53": "53.0.0",
     "npm:xml2js@0.6.2": "0.6.2",
@@ -1317,6 +1318,22 @@
     "inherits@2.0.4": {
       "integrity": "sha512-k/vGaX4/Yla3WzyMCvTQOXYeIHvqOKtnqBduzTHpzpQZzAskKMhZ2K+EnBiSM9zGSoIFeMpXKxa4dYeZIQqewQ=="
     },
+    "ip-address@9.0.5": {
+      "integrity": "sha512-zHtQzGojZXTwZTHQqra+ETKd4Sn3vgi7uBmlPoXVWZqYvuKmtI0l/VZTjqGmJY9x88GGOaZ9+G9ES8hC4T4X8g==",
+      "dependencies": [
+        "jsbn",
+        "sprintf-js"
+      ]
+    },
+    "ip-cidr@4.0.2": {
+      "integrity": "sha512-KifhLKBjdS/hB3TD4UUOalVp1BpzPFvRpgJvXcP0Ya98tuSQTUQ71iI7EW7CKddkBJTYB3GfTWl5eJwpLOXj2A==",
+      "dependencies": [
+        "ip-address"
+      ]
+    },
+    "jsbn@1.1.0": {
+      "integrity": "sha512-4bYVV3aAMtDTTu4+xsDYa6sy9GyJ69/amsu9sYF2zqjiEoZA5xJi3BrfX3uY+/IekIu7MwdObdbDWpoZdBv3/A=="
+    },
     "multiformats@13.1.0": {
       "integrity": "sha512-HzdtdBwxsIkzpeXzhQ5mAhhuxcHbjEHH+JQoxt7hG/2HGFjjwyolLo7hbaexcnhoEuV4e0TNJ8kkpMjiEYY4VQ=="
     },
@@ -1336,6 +1353,9 @@
     },
     "sax@1.4.1": {
       "integrity": "sha512-+aWOz7yVScEGoKNd4PA10LZ8sk0A/z5+nXQG5giUO5rprX9jgYsTdov9qCchZiPIZezbZH+jRut8nPodFAX4Jg=="
+    },
+    "sprintf-js@1.1.3": {
+      "integrity": "sha512-Oo+0REFV59/rz3gfJNKQiBlwfHaSESl1pcGyABQsnnIfWOFt6JNj5gCog2U6MLZ//IGYD+nA8nI+mTShREReaA=="
     },
     "stream-browserify@3.0.0": {
       "integrity": "sha512-H73RAHsVBapbim0tU2JwwOiXUj+fikfiaoYAKHF3VJfA0pe2BCzkhAHBlLG6REzE+2WNZcxOXjK7lkso+9euLA==",
@@ -1895,6 +1915,7 @@
       "npm:@aws-sdk/s3-request-presigner@3.712.0",
       "npm:@smithy/signature-v4@4.2.3",
       "npm:@smithy/types@3.7.1",
+      "npm:ip-cidr@4.0.2",
       "npm:option-t@53",
       "npm:xml2js@0.6.2"
     ]

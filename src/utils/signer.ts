@@ -8,6 +8,7 @@ import { S3Config, SwiftConfig } from "../config/types.ts";
 import { getLogger } from "./log.ts";
 import { z as zod } from "zod";
 import { globalConfig } from "../config/mod.ts";
+import IPCIDR from "ip-cidr";
 
 const logger = getLogger(import.meta);
 
@@ -305,6 +306,33 @@ export async function signRequestV4(
   return newReq;
 }
 
+/**
+ * Verifies if an IP address is within the range of any of the given CIDR addresses.
+ * @param ipAddress The IP address to check (e.g., "192.168.1.10").
+ * @param cidrAddresses An array of CIDR address ranges (e.g., ["192.168.1.0/24", "10.0.0.0/8"]).
+ * @returns True if the IP address is within any of the CIDR ranges, false otherwise.
+ */
+export function isIpInMultipleCidrRanges(
+  ipAddress: string,
+  cidrAddresses: string[],
+): boolean {
+  for (const cidrAddress of cidrAddresses) {
+    // Validate the CIDR address first
+    if (!IPCIDR.isValidCIDR(cidrAddress)) {
+      logger.warn(`Skipping invalid CIDR address: ${cidrAddress}`);
+      continue; // Skip to the next CIDR if invalid
+    }
+
+    // Create a new IPCIDR instance
+    const cidr = new IPCIDR(cidrAddress);
+
+    // Check if the IP address is contained within the current CIDR range
+    return cidr.contains(ipAddress);
+  }
+
+  return false; // No match found in any of the CIDR ranges
+}
+
 // TODO: check if access key has access to object
 /**
  * Verifies the V4 signature of the original request.
@@ -403,7 +431,13 @@ export function toSignableRequest(
   const forwardedHost = req.headers.get("x-forwarded-host");
   if (globalConfig.trust_proxy && forwardedHost) {
     const lastIp = req.headers.get("x-forwarded-for")?.split(",").pop()?.trim();
-    if (!lastIp || !globalConfig.trusted_ips.includes(lastIp)) {
+    if (
+      !lastIp || !isIpInMultipleCidrRanges(lastIp, globalConfig.trusted_ips)
+    ) {
+      logger.critical(
+        "Request from untrusted IP",
+        { lastIp, forwardedHost, headers: headersRecord },
+      );
       throw new HeraldError(
         403,
         {
