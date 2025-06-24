@@ -1,3 +1,9 @@
+## 0.5.0 (2025-06-23)
+
+### Fix
+
+- use forwarded host during routed requests for signature verification (#45)
+
 ## 0.4.0 (2025-06-16)
 
 ### Fix
