@@ -97,6 +97,25 @@ export function initializeBucketStore(config: GlobalConfig): BucketStore {
     buckets.push(bucket);
   }
 
+  // task store bucket
+  const taskStoreConfig = config.task_store_backend;
+  const taskStoreBucket = taskStoreConfig.typ === "S3Config"
+    ? new Bucket(
+      "task-store",
+      taskStoreConfig,
+      [],
+      taskStoreConfig.typ,
+      "s3",
+    )
+    : new Bucket(
+      "task-store",
+      taskStoreConfig,
+      [],
+      taskStoreConfig.typ,
+      "swift",
+    );
+  buckets.push(taskStoreBucket);
+
   return {
     buckets,
   };

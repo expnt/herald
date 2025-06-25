@@ -171,13 +171,13 @@ export class TaskStore {
     // Manually construct the HTTP PUT request to upload the object
     const bucket = "task-store";
     const objectKey = key;
-    const s3Url = `http://localhost:${globalConfig.port}/${bucket}/${
-      encodeURIComponent(objectKey)
-    }`;
+    const s3Url =
+      `http://localhost:${globalConfig.port}/${bucket}/${objectKey}`;
 
     // Prepare headers (add authentication if needed)
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
+      host: `localhost:${globalConfig.port}`,
       // Add any required headers here, e.g., for authentication
       // For public buckets, this may be empty
     };
@@ -195,6 +195,7 @@ export class TaskStore {
           keystoneStore: this.keystoneStore,
         },
       };
+
       const response = await this.s3.putObject(
         reqCtx,
         request,
@@ -204,23 +205,23 @@ export class TaskStore {
       if (!isOk(response)) {
         const errRes = unwrapErr(response);
         const errMessage =
-          `Failed to upload object with key: ${key} to remote task store (HTTP ${errRes.message})`;
+          `Error uploading object with key: ${key} to remote task store (HTTP ${errRes.message})`;
         logger.critical(errMessage);
         reportToSentry(errMessage);
-        return;
+        throw errRes;
       }
 
       const successResponse = unwrapOk(response);
-
-      if (!successResponse.ok) {
+      if (successResponse.status !== 200) {
         const errMessage =
           `Failed to upload object with key: ${key} to remote store (HTTP ${successResponse.status})`;
-        logger.critical(errMessage);
+        logger.warn(errMessage);
         reportToSentry(errMessage);
+        throw new Error(errMessage);
       }
     } catch (error) {
       const errMessage =
-        `Failed to upload object with key: ${key} to remote store: ${error}`;
+        `Error uploading object with key: ${key} to remote store: ${error}`;
       logger.critical(errMessage);
       reportToSentry(errMessage);
     }
@@ -237,12 +238,12 @@ export class TaskStore {
     // You may need to adjust these based on your environment/config
 
     // Example: https://{bucket}.s3.{region}.amazonaws.com/{key}
-    const s3Url = `http://localhost:${globalConfig.port}/${bucket}/${
-      encodeURIComponent(objectKey)
-    }`;
+    const s3Url =
+      `http://localhost:${globalConfig.port}/${bucket}/${objectKey}`;
 
     // Prepare headers (add authentication if needed)
     const headers: Record<string, string> = {
+      host: `localhost:${globalConfig.port}`,
       // Add any required headers here, e.g., for authentication
       // For public buckets, this may be empty
     };
@@ -268,21 +269,21 @@ export class TaskStore {
       if (!isOk(response)) {
         const errRes = unwrapErr(response);
         const errMessage =
-          `Failed to upload object with key: ${key} to remote task store (HTTP ${errRes.message})`;
+          `Error fetching object with key: ${key} to remote task store (HTTP ${errRes.message})`;
         logger.critical(errMessage);
         reportToSentry(errMessage);
-        return;
+        throw errRes;
       }
 
       const successResponse = unwrapOk(response);
-
-      if (!successResponse.ok) {
+      if (successResponse.status !== 200) {
         const errMessage =
           `Failed to fetch object with key: ${key} from remote task store (HTTP ${successResponse.status})`;
-        logger.critical(
+        logger.warn(
           errMessage,
         );
         reportToSentry(errMessage);
+        throw new Error(errMessage);
       }
 
       if (!successResponse.body) {
