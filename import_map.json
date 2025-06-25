@@ -25,7 +25,7 @@
     "http2": "node:http2",
     "aws-sdk/lib-storage": "npm:@aws-sdk/lib-storage@3.712.0",
     "@hono/hono": "jsr:@hono/hono@^4.6.11",
-    "zod": "https://deno.land/x/zod@v3.22.2/mod.ts",
+    "zod": "npm:zod@3.25.67/v4",
     "std/path/": "jsr:/@std/path@1.0.1/",
     "std/assert": "jsr:@std/assert@1.0.8",
     "std/collections": "jsr:@std/collections@1.0.9",
@@ -46,6 +46,7 @@
     "sentry": "https://deno.land/x/sentry@8.32.0/index.mjs",
     "djwt": "jsr:@wok/djwt@3.0.2",
     "option-t": "npm:option-t@53",
-    "option-t/plain_result": "npm:option-t@53/plain_result"
+    "option-t/plain_result": "npm:option-t@53/plain_result",
+    "ip-cidr": "npm:ip-cidr@4.0.2"
   }
 }

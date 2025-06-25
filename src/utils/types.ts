@@ -15,7 +15,7 @@ export const requestMeta = z.object({
   objectKey: z.string().nullable(),
   method: HttpMethod,
   urlFormat: urlFormatStyle,
-  queryParams: z.record(z.array(z.string())),
+  queryParams: z.record(z.string(), z.array(z.string())),
 });
 export type RequestMeta = z.infer<typeof requestMeta>;
 

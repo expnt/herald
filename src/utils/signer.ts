@@ -7,6 +7,7 @@ import { HeraldError } from "../types/http-exception.ts";
 import { S3Config, SwiftConfig } from "../config/types.ts";
 import { getLogger } from "./log.ts";
 import { z as zod } from "zod";
+import { globalConfig, trustedCidrs } from "../config/mod.ts";
 
 const logger = getLogger(import.meta);
 
@@ -304,6 +305,26 @@ export async function signRequestV4(
   return newReq;
 }
 
+/**
+ * Verifies if an IP address is within the range of any of the given CIDR addresses.
+ * @param ipAddress The IP address to check (e.g., "192.168.1.10").
+ * @param cidrAddresses An array of CIDR address ranges (e.g., ["192.168.1.0/24", "10.0.0.0/8"]).
+ * @returns True if the IP address is within any of the CIDR ranges, false otherwise.
+ */
+export function isIpInMultipleCidrRanges(
+  ipAddress: string,
+): boolean {
+  const cidrs = trustedCidrs;
+  for (const cidr of cidrs) {
+    // Check if the IP address is contained within the current CIDR range
+    if (cidr.contains(ipAddress)) {
+      return true; // Match found in this CIDR range
+    }
+  }
+
+  return false; // No match found in any of the CIDR ranges
+}
+
 // TODO: check if access key has access to object
 /**
  * Verifies the V4 signature of the original request.
@@ -398,7 +419,27 @@ export function toSignableRequest(
     }
   });
 
-  // const reqBody = await req.body?.getReader().read();
+  // get the forwarded host
+  const forwardedHost = req.headers.get("x-forwarded-host");
+  if (globalConfig.trust_proxy && forwardedHost) {
+    const lastIp = req.headers.get("x-forwarded-for")?.split(",").pop()?.trim();
+    if (
+      !lastIp || !isIpInMultipleCidrRanges(lastIp)
+    ) {
+      logger.warn(
+        "Request from untrusted IP",
+        { lastIp, forwardedHost, headers: headersRecord },
+      );
+      throw new HeraldError(
+        403,
+        {
+          res: getAPIErrorResponse(APIErrors.ErrAccessDenied),
+        },
+      );
+    }
+
+    headersRecord["host"] = forwardedHost;
+  }
 
   const httpReq: HttpRequest = {
     method: req.method,
@@ -407,10 +448,6 @@ export function toSignableRequest(
     hostname: reqUrl.hostname,
     protocol: reqUrl.protocol,
     port: parseInt(reqUrl.port),
-    // password: reqUrl.password,
-    // username: reqUrl.username,
-    // body: reqBody ? reqBody.value : undefined,
-    // body: req.body,
     query: getQueryParameters(req),
   };
 

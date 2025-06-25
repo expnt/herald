@@ -16,13 +16,14 @@ OpenTofu will perform the following actions:
       [32m+[0m[0m bucket                      = "iac-swift"
       [32m+[0m[0m bucket_domain_name          = (known after apply)
       [32m+[0m[0m bucket_prefix               = (known after apply)
+      [32m+[0m[0m bucket_region               = (known after apply)
       [32m+[0m[0m bucket_regional_domain_name = (known after apply)
       [32m+[0m[0m force_destroy               = false
       [32m+[0m[0m hosted_zone_id              = (known after apply)
       [32m+[0m[0m id                          = (known after apply)
       [32m+[0m[0m object_lock_enabled         = (known after apply)
       [32m+[0m[0m policy                      = (known after apply)
-      [32m+[0m[0m region                      = (known after apply)
+      [32m+[0m[0m region                      = "dc3-a"
       [32m+[0m[0m request_payer               = (known after apply)
       [32m+[0m[0m tags_all                    = (known after apply)
       [32m+[0m[0m website_domain              = (known after apply)
@@ -64,6 +65,7 @@ OpenTofu will perform the following actions:
       [32m+[0m[0m id                     = (known after apply)
       [32m+[0m[0m key                    = "new_object_key"
       [32m+[0m[0m kms_key_id             = (known after apply)
+      [32m+[0m[0m region                 = "dc3-a"
       [32m+[0m[0m server_side_encryption = (known after apply)
       [32m+[0m[0m source                 = "sample.txt"
       [32m+[0m[0m storage_class          = (known after apply)
