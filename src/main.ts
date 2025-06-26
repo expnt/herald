@@ -46,9 +46,10 @@ self.addEventListener("unhandledrejection", (event: PromiseRejectionEvent) => {
   Sentry.captureException(event.reason);
 });
 
+const keystoneTokenStore = await initKeystoneStore(globalConfig);
 const ctx: HeraldContext = {
-  taskStore: await initTaskStore(globalConfig),
-  keystoneStore: await initKeystoneStore(globalConfig),
+  taskStore: await initTaskStore(globalConfig, keystoneTokenStore),
+  keystoneStore: keystoneTokenStore,
 };
 
 const app = new Hono();

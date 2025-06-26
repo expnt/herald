@@ -1,16 +1,36 @@
-import {
-  GetObjectCommand,
-  HeadObjectCommand,
-  PutObjectCommand,
-  S3Client,
-} from "aws-sdk/client-s3";
 import { getLogger, reportToSentry } from "../utils/log.ts";
 import { MirrorTask } from "./types.ts";
-import { S3Config } from "../config/mod.ts";
 import { GlobalConfig } from "../config/types.ts";
 import { TASK_QUEUE_DB } from "../constants/message.ts";
+import { isOk, Result, unwrapErr, unwrapOk } from "option-t/plain_result";
+import { RequestContext } from "../types/mod.ts";
+import {
+  getObject as swiftGetObject,
+  putObject as swiftPutObject,
+} from "./swift/objects.ts";
+import { Bucket } from "../buckets/mod.ts";
+import {
+  getObject as s3GetObject,
+  putObject as s3PutObject,
+} from "./s3/objects.ts";
+import { getBucket } from "../config/loader.ts";
+import { globalConfig } from "../config/mod.ts";
+import { KeystoneTokenStore } from "./swift/keystone_token_store.ts";
 
 const logger = getLogger(import.meta);
+
+interface TaskStoreStorage {
+  putObject: (
+    reqCtx: RequestContext,
+    req: Request,
+    bucketConfig: Bucket,
+  ) => Promise<Result<Response, Error>>;
+  getObject: (
+    reqCtx: RequestContext,
+    req: Request,
+    bucketConfig: Bucket,
+  ) => Promise<Result<Response, Error>>;
+}
 
 /**
  * The TaskStore class is responsible for managing tasks and their states,
@@ -31,11 +51,42 @@ export class TaskStore {
   private static instance: Promise<TaskStore> | null = null;
 
   public static getInstance(
-    remoteStorageConfig: S3Config,
     buckets: string[],
+    keystoneStore: KeystoneTokenStore,
   ): Promise<TaskStore> {
     async function inner() {
-      const s3 = new S3Client(remoteStorageConfig);
+      const remoteStorage = getBucket("task-store");
+      if (!remoteStorage) {
+        logger.error(
+          "Remote storage configuration for 'task-store' bucket not found",
+        );
+        throw new Error(
+          "Remote storage configuration for 'task-store' bucket not found",
+        );
+      }
+      let storage: TaskStoreStorage;
+      switch (remoteStorage.typ) {
+        case "S3Config":
+          storage = {
+            putObject: s3PutObject,
+            getObject: s3GetObject,
+          };
+          break;
+        case "SwiftConfig":
+          storage = {
+            putObject: swiftPutObject,
+            getObject: swiftGetObject,
+          };
+          break;
+        default:
+          logger.error(
+            `Unknown remote storage type: ${remoteStorage.typ}`,
+          );
+          throw new Error(
+            `Unknown remote storage type: ${remoteStorage.typ}`,
+          );
+      }
+
       const taskQueues: [string, Deno.Kv][] = [];
       for (const bucket of buckets) {
         const kv = await Deno.openKv(`${bucket}_${TASK_QUEUE_DB}`);
@@ -44,10 +95,12 @@ export class TaskStore {
       const lockedStorages = new Map<string, number>();
 
       const newInstance = new TaskStore(
-        s3,
+        storage,
         taskQueues,
         lockedStorages,
         buckets,
+        keystoneStore,
+        remoteStorage,
       );
       await newInstance.#syncFromRemote();
 
@@ -60,10 +113,12 @@ export class TaskStore {
   }
 
   constructor(
-    private s3: S3Client,
+    private s3: TaskStoreStorage,
     private _queues: [string, Deno.Kv][],
     private _lockedStorages: Map<string, number>,
     private buckets: string[],
+    private keystoneStore: KeystoneTokenStore,
+    private remoteStorage: Bucket,
   ) {}
 
   async #serializeQueue(queue: Deno.Kv) {
@@ -113,58 +168,125 @@ export class TaskStore {
   }
 
   async #uploadToS3(body: string, key: string) {
-    const uploadCommand = new PutObjectCommand({
-      Bucket: "task-store",
-      Body: body,
-      Key: key,
+    // Manually construct the HTTP PUT request to upload the object
+    const bucket = "task-store";
+    const objectKey = key;
+    const s3Url =
+      `http://localhost:${globalConfig.port}/${bucket}/${objectKey}`;
+
+    // Prepare headers (add authentication if needed)
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      host: `localhost:${globalConfig.port}`,
+      // Add any required headers here, e.g., for authentication
+      // For public buckets, this may be empty
+    };
+
+    const request = new Request(s3Url, {
+      method: "PUT",
+      headers,
+      body: body,
     });
     try {
-      await this.s3.send(uploadCommand);
-    } catch (error) {
-      const errMesage =
-        `Failed to upload object with key: ${key} to remote store: ${error}`;
-      logger.critical(
-        errMesage,
+      const reqCtx: RequestContext = {
+        logger,
+        heraldContext: {
+          taskStore: this,
+          keystoneStore: this.keystoneStore,
+        },
+      };
+
+      const response = await this.s3.putObject(
+        reqCtx,
+        request,
+        this.remoteStorage,
       );
-      reportToSentry(errMesage);
+
+      if (!isOk(response)) {
+        const errRes = unwrapErr(response);
+        const errMessage =
+          `Error uploading object with key: ${key} to remote task store (HTTP ${errRes.message})`;
+        logger.critical(errMessage);
+        reportToSentry(errMessage);
+        throw errRes;
+      }
+
+      const successResponse = unwrapOk(response);
+      if (successResponse.status !== 200) {
+        const errMessage =
+          `Failed to upload object with key: ${key} to remote store (HTTP ${successResponse.status})`;
+        logger.warn(errMessage);
+        reportToSentry(errMessage);
+        throw new Error(errMessage);
+      }
+    } catch (error) {
+      const errMessage =
+        `Error uploading object with key: ${key} to remote store: ${error}`;
+      logger.critical(errMessage);
+      reportToSentry(errMessage);
     }
   }
 
   async #getObject(key: string) {
-    const headObject = new HeadObjectCommand({
-      Bucket: "task-store",
-      Key: key,
-    });
+    // Instead of using the SDK, manually construct the HTTP request for S3 GetObject
+    const bucket = "task-store";
+    const objectKey = key;
 
+    // Construct the S3 GetObject URL (assuming AWS S3, adjust endpoint as needed)
+    // This assumes the region and endpoint are available as this.s3Endpoint and this.s3Region
+    // and credentials as this.s3AccessKeyId and this.s3SecretAccessKey
+    // You may need to adjust these based on your environment/config
+
+    // Example: https://{bucket}.s3.{region}.amazonaws.com/{key}
+    const s3Url =
+      `http://localhost:${globalConfig.port}/${bucket}/${objectKey}`;
+
+    // Prepare headers (add authentication if needed)
+    const headers: Record<string, string> = {
+      host: `localhost:${globalConfig.port}`,
+      // Add any required headers here, e.g., for authentication
+      // For public buckets, this may be empty
+    };
+
+    const request = new Request(s3Url, {
+      method: "GET",
+      headers,
+    });
     try {
-      const _ = await this.s3.send(headObject);
-    } catch (error) {
-      const errMessage =
-        `Object with key: ${key} doesn't exist in task store: ${error}`;
-      logger.warn(
-        errMessage,
+      const reqCtx: RequestContext = {
+        logger,
+        heraldContext: {
+          taskStore: this,
+          keystoneStore: this.keystoneStore,
+        },
+      };
+      const response = await this.s3.getObject(
+        reqCtx,
+        request,
+        this.remoteStorage,
       );
-      reportToSentry(errMessage);
-      return;
-    }
 
-    const getCommand = new GetObjectCommand({
-      Bucket: "task-store",
-      Key: key,
-    });
-
-    try {
-      const response = await this.s3.send(getCommand);
-      if (!response || response.$metadata.httpStatusCode !== 200) {
+      if (!isOk(response)) {
+        const errRes = unwrapErr(response);
         const errMessage =
-          `Failed to fetch object with key: ${key} from remote task store`;
-        logger.critical(
+          `Error fetching object with key: ${key} to remote task store (HTTP ${errRes.message})`;
+        logger.critical(errMessage);
+        reportToSentry(errMessage);
+        throw errRes;
+      }
+
+      const successResponse = unwrapOk(response);
+      if (successResponse.status !== 200) {
+        const errMessage =
+          `Failed to fetch object with key: ${key} from remote task store (HTTP ${successResponse.status})`;
+        logger.warn(
           errMessage,
         );
         reportToSentry(errMessage);
+        throw new Error(errMessage);
       }
 
-      if (!response.Body) {
+      if (!successResponse.body) {
         const errMessage =
           `Failed to read the body of ${key} from remote task store`;
         logger.critical(
@@ -173,7 +295,23 @@ export class TaskStore {
         reportToSentry(errMessage);
       }
 
-      return await response.Body?.transformToString();
+      if (successResponse.body) {
+        const reader = successResponse.body.getReader();
+        const decoder = new TextDecoder();
+        let result = "";
+        let done = false;
+
+        while (!done) {
+          const { value, done: streamDone } = await reader.read();
+          done = streamDone;
+          if (value) {
+            result += decoder.decode(value, { stream: true });
+          }
+        }
+
+        return result;
+      }
+      return undefined;
     } catch (error) {
       const errMessage =
         `Failed to fetch object with key: ${key} from remote task store: ${error}`;
@@ -297,10 +435,13 @@ export class TaskStore {
   }
 }
 
-export const initTaskStore = async (config: GlobalConfig) => {
+export const initTaskStore = async (
+  config: GlobalConfig,
+  keystoneStore: KeystoneTokenStore,
+) => {
   const taskStore = await TaskStore.getInstance(
-    config.task_store_backend,
     Object.keys(config.buckets),
+    keystoneStore,
   );
   // update the remote task queue store every 5 minutes
   setInterval(async () => {
