@@ -370,8 +370,11 @@ export async function verifyV4Signature(
 
   const signableRequest = toSignableRequest(
     originalRequest,
-    originalSignature.signedHeaders,
+    [...originalSignature.signedHeaders],
   );
+  // console.log("original request", originalRequest);
+  // console.log("signableRequest", signableRequest);
+  // console.log("originalSignature", originalSignature);
   const signedRequest = originalSignature.source == "pre-sign"
     ? await signer.presign(signableRequest, {
       signableHeaders: new Set(originalSignature.signedHeaders),
@@ -411,6 +414,7 @@ export function toSignableRequest(
   signedHeaders: string[],
 ): HttpRequest {
   const reqUrl = new URL(req.url);
+  // console.log("***********", signedHeaders);
   const headersRecord = {} as Record<string, string>;
   req.headers.forEach((val, key) => {
     const lower = key.toLowerCase();
@@ -426,6 +430,7 @@ export function toSignableRequest(
     if (
       !lastIp || !isIpInMultipleCidrRanges(lastIp)
     ) {
+      // console.log("************", lastIp);
       logger.warn(
         "Request from untrusted IP",
         { lastIp, forwardedHost, headers: headersRecord },
