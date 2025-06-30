@@ -2,7 +2,14 @@ import { getLogger, reportToSentry } from "../utils/log.ts";
 import { MirrorTask } from "./types.ts";
 import { GlobalConfig } from "../config/types.ts";
 import { TASK_QUEUE_DB } from "../constants/message.ts";
-import { isOk, Result, unwrapErr, unwrapOk } from "option-t/plain_result";
+import {
+  createErr,
+  createOk,
+  isOk,
+  Result,
+  unwrapErr,
+  unwrapOk,
+} from "option-t/plain_result";
 import { RequestContext } from "../types/mod.ts";
 import {
   getObject as swiftGetObject,
@@ -160,11 +167,18 @@ export class TaskStore {
     return newQueue;
   }
 
-  #deserializeLocks(queueString: string): Map<string, number> {
-    const locks = JSON.parse(queueString);
-    const newLocks = new Map<string, number>(locks);
-
-    return newLocks;
+  #deserializeLocks(queueString: string): Result<Map<string, number>, Error> {
+    try {
+      const locks = JSON.parse(queueString);
+      const newLocks = new Map<string, number>(locks);
+      return createOk(newLocks);
+    } catch (err) {
+      const errMessage =
+        `Failed to deserialize locks from remote storage: ${err}`;
+      logger.critical(errMessage);
+      reportToSentry(errMessage);
+      return createErr(err as Error);
+    }
   }
 
   async #uploadToS3(body: string, key: string) {
@@ -376,7 +390,9 @@ export class TaskStore {
     }
 
     const locks = this.#deserializeLocks(lockStr);
-    return locks;
+    if (isOk(locks)) {
+      return unwrapOk(locks);
+    }
   }
 
   /**
