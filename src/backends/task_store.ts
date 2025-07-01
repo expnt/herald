@@ -1,6 +1,6 @@
 import { getLogger, reportToSentry } from "../utils/log.ts";
 import { MirrorTask } from "./types.ts";
-import { GlobalConfig } from "../config/types.ts";
+import { GlobalConfig, S3Config } from "../config/types.ts";
 import { TASK_QUEUE_DB } from "../constants/message.ts";
 import {
   createErr,
@@ -16,15 +16,129 @@ import {
   putObject as swiftPutObject,
 } from "./swift/objects.ts";
 import { Bucket } from "../buckets/mod.ts";
-import {
-  getObject as s3GetObject,
-  putObject as s3PutObject,
-} from "./s3/objects.ts";
 import { getBucket } from "../config/loader.ts";
 import { globalConfig } from "../config/mod.ts";
 import { KeystoneTokenStore } from "./swift/keystone_token_store.ts";
+import {
+  GetObjectCommand,
+  PutObjectCommand,
+  PutObjectCommandInput,
+  S3Client,
+} from "aws-sdk/client-s3";
+import { s3Utils } from "../utils/mod.ts";
 
 const logger = getLogger(import.meta);
+
+async function s3GetObject(
+  _reqCtx: RequestContext,
+  req: Request,
+  bucketConfig: Bucket,
+): Promise<Result<Response, Error>> {
+  // Use the AWS SDK for JavaScript v3 (deno compatible) to get an object from S3
+  // Assume bucketConfig.config contains the S3 config (endpoint, region, credentials, bucket, etc.)
+
+  // Importing here for Deno compatibility (if not already imported at the top)
+  // import { S3Client, GetObjectCommand } from "npm:@aws-sdk/client-s3";
+
+  try {
+    const config = bucketConfig.config as S3Config;
+    const s3Client = new S3Client({
+      endpoint: config.endpoint,
+      region: config.region,
+      credentials: config.credentials,
+      forcePathStyle: true,
+    });
+
+    const { objectKey: key, bucket } = s3Utils.extractRequestInfo(req);
+    if (!key || !bucket) {
+      return createErr(new Error("Object key or bucket is required"));
+    }
+
+    const command = new GetObjectCommand({
+      Bucket: bucket,
+      Key: key,
+    });
+
+    const s3Response = await s3Client.send(command);
+
+    // Convert S3 GetObjectCommandOutput to a Response object
+    const body = s3Response.Body
+      ? (typeof s3Response.Body.transformToWebStream === "function"
+        ? s3Response.Body.transformToWebStream()
+        : s3Response.Body)
+      : null;
+
+    const headers = new Headers();
+    if (s3Response.ContentType) {
+      headers.set("content-type", s3Response.ContentType);
+    }
+    if (s3Response.ContentLength !== undefined) {
+      headers.set("content-length", String(s3Response.ContentLength));
+    }
+    if (s3Response.ETag) headers.set("etag", s3Response.ETag);
+
+    // Add any other headers from s3Response as needed
+
+    const response = new Response(body, {
+      status: 200,
+      headers,
+    });
+
+    return createOk(response);
+  } catch (err) {
+    logger.error(`s3GetObject error: ${err}`);
+    reportToSentry(err as Error);
+    return createErr(err instanceof Error ? err : new Error(String(err)));
+  }
+}
+
+async function s3PutObject(
+  _reqCtx: RequestContext,
+  req: Request,
+  bucketConfig: Bucket,
+): Promise<Result<Response, Error>> {
+  try {
+    const config = bucketConfig.config as S3Config;
+    const s3Client = new S3Client({
+      endpoint: config.endpoint,
+      region: config.region,
+      credentials: config.credentials,
+      forcePathStyle: true,
+    });
+
+    const { objectKey: key, bucket } = s3Utils.extractRequestInfo(req);
+    if (!key || !bucket) {
+      return createErr(new Error("Object key or bucket is required"));
+    }
+
+    const putParams: PutObjectCommandInput = {
+      Bucket: bucket,
+      Key: key,
+      Body: await req.text(),
+    };
+
+    const command = new PutObjectCommand(putParams);
+
+    const s3Response = await s3Client.send(command);
+
+    // Construct a minimal Response to satisfy the Result<Response, Error> type
+    const headers = new Headers();
+    if (s3Response.ETag) headers.set("etag", s3Response.ETag);
+
+    // You may add more headers from s3Response as needed
+
+    const response = new Response(null, {
+      status: 200,
+      headers,
+    });
+
+    return createOk(response);
+  } catch (err) {
+    logger.error(`s3PutObject error: ${err}`);
+    reportToSentry(err as Error);
+    return createErr(err instanceof Error ? err : new Error(String(err)));
+  }
+}
 
 interface TaskStoreStorage {
   putObject: (
@@ -182,25 +296,31 @@ export class TaskStore {
   }
 
   async #uploadToS3(body: string, key: string) {
-    // Manually construct the HTTP PUT request to upload the object
     const bucket = "task-store";
     const objectKey = key;
     const s3Url =
       `http://localhost:${globalConfig.port}/${bucket}/${objectKey}`;
 
-    // Prepare headers (add authentication if needed)
+    // Convert Blob to ArrayBuffer
+    const encoder = new TextEncoder();
+    const bodyBuffer = encoder.encode(body);
+    const contentLength = bodyBuffer.byteLength.toString();
+
+    // Prepare headers
     const headers: Record<string, string> = {
-      "Content-Type": "application/json",
       host: `localhost:${globalConfig.port}`,
-      // Add any required headers here, e.g., for authentication
-      // For public buckets, this may be empty
+      "Content-Type": "application/json", // Explicitly set content type
+      "X-Amz-Content-Sha256": "UNSIGNED-PAYLOAD", // Add the pre-calculated SHA256 hash
+      "Content-Length": contentLength,
     };
 
+    // Create the Request object
     const request = new Request(s3Url, {
       method: "PUT",
       headers,
-      body: body,
+      body: ReadableStream.from([bodyBuffer]),
     });
+
     try {
       const reqCtx: RequestContext = {
         logger,
@@ -210,6 +330,9 @@ export class TaskStore {
         },
       };
 
+      // If this.s3.putObject respects the X-Amz-Content-Sha256 header,
+      // it won't need to consume the body stream to calculate it again.
+      // It should just use the stream for the actual network send.
       const response = await this.s3.putObject(
         reqCtx,
         request,
@@ -220,8 +343,8 @@ export class TaskStore {
         const errRes = unwrapErr(response);
         const errMessage =
           `Error uploading object with key: ${key} to remote task store (HTTP ${errRes.message})`;
-        logger.critical(errMessage);
-        reportToSentry(errMessage);
+        logger.warn(errMessage);
+        // reportToSentry(errMessage); // Uncomment if Sentry is configured
         throw errRes;
       }
 
@@ -230,14 +353,16 @@ export class TaskStore {
         const errMessage =
           `Failed to upload object with key: ${key} to remote store (HTTP ${successResponse.status})`;
         logger.warn(errMessage);
-        reportToSentry(errMessage);
+        // reportToSentry(errMessage); // Uncomment if Sentry is configured
         throw new Error(errMessage);
       }
     } catch (error) {
       const errMessage =
         `Error uploading object with key: ${key} to remote store: ${error}`;
       logger.critical(errMessage);
-      reportToSentry(errMessage);
+      // reportToSentry(errMessage); // Uncomment if Sentry is configured
+      // Re-throw the error if you want it to propagate further
+      throw error;
     }
   }
 
@@ -246,12 +371,6 @@ export class TaskStore {
     const bucket = "task-store";
     const objectKey = key;
 
-    // Construct the S3 GetObject URL (assuming AWS S3, adjust endpoint as needed)
-    // This assumes the region and endpoint are available as this.s3Endpoint and this.s3Region
-    // and credentials as this.s3AccessKeyId and this.s3SecretAccessKey
-    // You may need to adjust these based on your environment/config
-
-    // Example: https://{bucket}.s3.{region}.amazonaws.com/{key}
     const s3Url =
       `http://localhost:${globalConfig.port}/${bucket}/${objectKey}`;
 
@@ -284,7 +403,7 @@ export class TaskStore {
         const errRes = unwrapErr(response);
         const errMessage =
           `Error fetching object with key: ${key} to remote task store (HTTP ${errRes.message})`;
-        logger.critical(errMessage);
+        logger.warn(errMessage);
         reportToSentry(errMessage);
         throw errRes;
       }
@@ -303,7 +422,7 @@ export class TaskStore {
       if (!successResponse.body) {
         const errMessage =
           `Failed to read the body of ${key} from remote task store`;
-        logger.critical(
+        logger.warn(
           errMessage,
         );
         reportToSentry(errMessage);
