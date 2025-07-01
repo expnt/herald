@@ -100,9 +100,11 @@ jobs:
           docker compose -f tools/compose/compose.s3.yml up -d --wait
       - name: Install s5cmd
         run: |
-          curl -sSL https://github.com/peak/s5cmd/releases/download/v2.5.0/s5cmd_linux_amd64.tar.gz \
-          | tar -xz -C /usr/local/bin s5cmd
+          curl -sSL -o s5cmd_linux_amd64.tar.gz https://github.com/peak/s5cmd/releases/download/v2.5.0/s5cmd_linux_amd64.tar.gz
+          tar -xzf s5cmd_linux_amd64.tar.gz s5cmd
+          mv s5cmd /usr/local/bin/s5cmd
           chmod +x /usr/local/bin/s5cmd
+          rm s5cmd_linux_amd64.tar.gz
       - name: Check task-store bucket
         env:
           AWS_ACCESS_KEY_ID:     ${{ secrets.S3_ACCESS_KEY }}
