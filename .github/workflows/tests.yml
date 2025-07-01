@@ -97,7 +97,7 @@ jobs:
         run: npm install -g start-server-and-test
       - shell: bash
         env:
-          AUTH_TYPE: "none"
+          AUTH_TYPE: "default"
           LOG_LEVEL: "DEBUG"
           ENV: "DEV"
           S3_ACCESS_KEY: ${{ secrets.S3_ACCESS_KEY }}
