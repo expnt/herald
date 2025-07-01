@@ -95,21 +95,6 @@ jobs:
           node-version: 18
       - name: setup start-server-and-test
         run: npm install -g start-server-and-test
-      - name: Start services
-        run: |
-          docker compose -f tools/compose/compose.s3.yml up -d --wait
-      - name: Set-up s5cmd
-        uses: peak/action-setup-s5cmd@main
-        with:
-          version: v2.0.0
-      - name: Check task-store bucket
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_KEY }}
-          AWS_S3_ADDRESSING_STYLE: path
-        run: |
-          sleep 15
-          s5cmd --endpoint-url http://localhost:9000 ls
       - shell: bash
         env:
           AUTH_TYPE: "none"
@@ -125,7 +110,8 @@ jobs:
         run: |
           # run all tests
           deno --version
-          # ghjk x dev-compose all
+          ghjk x dev-compose s3
+          sleep 20
 
           deno install
 
