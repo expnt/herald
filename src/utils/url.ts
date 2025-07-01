@@ -185,7 +185,13 @@ export async function retryWithExponentialBackoff<T>(
       const res = await Promise.race([
         fn(),
         new Promise<T>((_, reject) =>
-          setTimeout(() => reject(new Error("Operation timed out")), TIMEOUT)
+          setTimeout(
+            () =>
+              reject(
+                new Error(`Operation timed out after ${TIMEOUT / 1000}seconds`),
+              ),
+            TIMEOUT,
+          )
         ),
       ]);
       return createOk(res);
@@ -198,6 +204,7 @@ export async function retryWithExponentialBackoff<T>(
         err = error as Error;
       } else {
         logger.warn(`Retrying... attempts: ${attempt}`);
+        logger.warn(`Error: ${(error as Error).message}`);
       }
 
       await delay(delayDuration);
