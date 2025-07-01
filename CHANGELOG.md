@@ -1,3 +1,9 @@
+## 0.6.0 (2025-07-01)
+
+### Feat
+
+- generic object storage for task queue (#49)
+
 ## 0.5.0 (2025-06-23)
 
 ### Fix
