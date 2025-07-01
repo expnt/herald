@@ -128,6 +128,11 @@ export const initKeystoneStore = async (config: GlobalConfig) => {
     }
   }
 
+  // add taskstore if it's swift storage
+  if (config.task_store_backend.typ === "SwiftConfig") {
+    swiftConfigs.push(config.task_store_backend);
+  }
+
   const keystoneStore = await KeystoneTokenStore.initializeStore(
     swiftConfigs,
   );

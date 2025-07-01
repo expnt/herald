@@ -113,7 +113,7 @@ export const globalConfigSchema = z.object({
     z.cidrv4(),
   ).default([]),
   temp_dir: z.string(),
-  task_store_backend: s3ConfigSchema,
+  task_store_backend: z.union([s3ConfigSchema, swiftConfigSchema]),
   backends: z.record(z.string(), backendSchema),
   buckets: z.record(
     z.string(),

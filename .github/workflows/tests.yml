@@ -110,7 +110,8 @@ jobs:
         run: |
           # run all tests
           deno --version
-          ghjk x dev-compose all
+          ghjk x dev-compose s3
+          sleep 20
 
           deno install
 
