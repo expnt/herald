@@ -17,9 +17,6 @@ import { getRandomUUID } from "./utils/crypto.ts";
 await configInit();
 setupLoggers();
 const logger = getLogger(import.meta);
-if (envVarsConfig.auth_type === "none") {
-  logger.warn("Auth Scheme set to none");
-}
 
 // Sentry setup
 Sentry.init({
