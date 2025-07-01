@@ -154,7 +154,8 @@ async function onStart(
       ]);
 
       // if the task failed, retry after a while
-      while (!isOk(res) || unwrapOk(res).status >= 400) {
+      // FIXME: filter out which errors can be ignored and which should be retried
+      while (!isOk(res) || unwrapOk(res).status >= 500) {
         // Calculate exponential backoff delay: 2^retryCount * 1000ms (starting at 1s)
         const retryCount = task.retryCount;
         const delay = Math.min(Math.pow(2, retryCount) * 1000, 60000); // Max 60s delay

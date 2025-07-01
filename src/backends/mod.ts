@@ -26,16 +26,18 @@ export async function resolveHandler(
     return getAPIErrorResponse(APIErrors.ErrInvalidRequest);
   }
 
-  await verifyV4Signature(
-    c.req.raw,
-    globalConfig.buckets[bucketName].config,
-    {
-      // FIXME: properly source the credential lists
-    },
-  );
-
   const auth = getAuthType();
-  if (auth !== "none" && !hasBucketAccess(serviceAccountName, bucketName)) {
+  if (auth === "default") {
+    await verifyV4Signature(
+      c.req.raw,
+      globalConfig.buckets[bucketName].config,
+      {
+        // FIXME: properly source the credential lists
+      },
+    );
+  }
+
+  if (auth !== "default" && !hasBucketAccess(serviceAccountName, bucketName)) {
     logger.critical(
       `Service Account: ${serviceAccountName} does not have access to bucket: ${bucketName}`,
     );
