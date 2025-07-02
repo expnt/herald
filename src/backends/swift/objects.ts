@@ -587,11 +587,11 @@ export async function createMultipartUpload(
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
 
-  // Define the path for the multipart uploads index file
-  const multipartIndexPath = `${MULTIPART_UPLOADS_PATH}/index.json`;
-  const multipartIndexUrl = `${swiftUrl}/${bucket}/${multipartIndexPath}`;
+  // Define the path for the multipart upload session file
+  const multipartSessionPath = `${MULTIPART_UPLOADS_PATH}/${uploadId}.json`;
+  const multipartSessionUrl = `${swiftUrl}/${bucket}/${multipartSessionPath}`;
 
-  // Create new upload metadata
+  // Create new upload metadata (same schema as before)
   const now = new Date().toISOString();
   const newUploadMetadata = {
     uploadId,
@@ -609,70 +609,26 @@ export async function createMultipartUpload(
     storageClass: "STANDARD",
   };
 
-  // Try to fetch the existing index file
-  let existingUploads = [];
-  try {
-    const fetchIndexFunc = async () => {
-      return await fetch(multipartIndexUrl, {
-        method: "GET",
-        headers: headers,
-      });
-    };
-
-    const indexResponse = await retryWithExponentialBackoff(fetchIndexFunc);
-
-    if (!isOk(indexResponse)) {
-      const errRes = unwrapErr(indexResponse);
-      logger.warn(`Failed to fetch multipart index: ${errRes.message}`);
-    } else {
-      const successResponse = unwrapOk(indexResponse);
-      const indexData = await successResponse.json();
-      existingUploads = Array.isArray(indexData.uploads)
-        ? indexData.uploads
-        : [];
-    }
-  } catch (error) {
-    logger.info(
-      `No existing multipart uploads index found, creating new one: ${
-        (error as Error).message
-      }`,
-    );
-    return createOk(InternalServerErrorException());
-  }
-
-  // Add the new upload to the list
-  existingUploads.push(newUploadMetadata);
-
-  // Update the index file
-  const updatedIndex = {
-    lastUpdated: now,
-    uploads: existingUploads,
-  };
-
-  const updateIndexFunc = async () => {
-    return await fetch(multipartIndexUrl, {
+  // Write the new upload session to its own file
+  const putSessionFunc = async () => {
+    return await fetch(multipartSessionUrl, {
       method: "PUT",
       headers: headers,
-      body: JSON.stringify(updatedIndex),
+      body: JSON.stringify(newUploadMetadata),
     });
   };
 
-  const updateResponse = await retryWithExponentialBackoff(updateIndexFunc);
+  const putResponse = await retryWithExponentialBackoff(putSessionFunc);
 
-  if (!isOk(updateResponse)) {
-    const errRes = unwrapErr(updateResponse);
+  if (!isOk(putResponse)) {
+    const errRes = unwrapErr(putResponse);
     const errMessage =
-      `Failed to update multipart uploads index: ${errRes.message}`;
+      `Failed to save multipart upload session: ${errRes.message}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
 
-    const xmlError = `<?xml version="1.0" encoding="UTF-8"?>
-<Error>
-  <Code>InternalError</Code>
-  <Message>Failed to save multipart upload metadata</Message>
-  <RequestId>dummy-request-id</RequestId>
-  <HostId>dummy-host-id</HostId>
-</Error>`;
+    const xmlError =
+      `<?xml version="1.0" encoding="UTF-8"?>\n<Error>\n  <Code>InternalError</Code>\n  <Message>Failed to save multipart upload metadata</Message>\n  <RequestId>dummy-request-id</RequestId>\n  <HostId>dummy-host-id</HostId>\n</Error>`;
 
     return createOk(
       new Response(xmlError, {
@@ -686,20 +642,15 @@ export async function createMultipartUpload(
     );
   }
 
-  const successResponse = unwrapOk(updateResponse);
+  const successResponse = unwrapOk(putResponse);
   if (!successResponse.ok) {
     const errMessage =
-      `Failed to update multipart uploads index: ${successResponse.statusText}`;
+      `Failed to save multipart upload session: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
 
-    const xmlError = `<?xml version="1.0" encoding="UTF-8"?>
-<Error>
-  <Code>InternalError</Code>
-  <Message>Failed to save multipart upload metadata</Message>
-  <RequestId>dummy-request-id</RequestId>
-  <HostId>dummy-host-id</HostId>
-</Error>`;
+    const xmlError =
+      `<?xml version="1.0" encoding="UTF-8"?>\n<Error>\n  <Code>InternalError</Code>\n  <Message>Failed to save multipart upload metadata</Message>\n  <RequestId>dummy-request-id</RequestId>\n  <HostId>dummy-host-id</HostId>\n</Error>`;
 
     return createOk(
       new Response(xmlError, {
@@ -714,16 +665,13 @@ export async function createMultipartUpload(
   }
 
   logger.info(
-    `Create Multipart Upload Successful: Updated index at ${multipartIndexPath}`,
+    `Create Multipart Upload Successful: Created session at ${multipartSessionPath}`,
   );
 
   // Generate S3-compatible response
-  const xmlResponseBody = `<?xml version="1.0" encoding="UTF-8"?>
-<InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
-  <Bucket>${bucket}</Bucket>
-  <Key>${object}</Key>
-  <UploadId>${uploadId}</UploadId>
-</InitiateMultipartUploadResult>`.trim();
+  const xmlResponseBody =
+    `<?xml version="1.0" encoding="UTF-8"?>\n<InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">\n  <Bucket>${bucket}</Bucket>\n  <Key>${object}</Key>\n  <UploadId>${uploadId}</UploadId>\n</InitiateMultipartUploadResult>`
+      .trim();
 
   const requestId = getRandomUUID();
   const hostId = getRandomUUID();
@@ -805,14 +753,10 @@ export async function completeMultipartUpload(
     return createOk(MissingUploadIdException());
   }
 
-  // Define the path for the multipart uploads index file
-  const multipartIndexPath = `${MULTIPART_UPLOADS_PATH}/index.json`;
-  const multipartIndexUrl = `${swiftUrl}/${bucket}/${multipartIndexPath}`;
-
   // Fetch the existing index file to remove the upload metadata
   try {
     const fetchIndexFunc = async () => {
-      return await fetch(multipartIndexUrl, {
+      return await fetch(reqUrl, {
         method: "GET",
         headers: headers,
       });
@@ -829,7 +773,7 @@ export async function completeMultipartUpload(
 
       // Update the index file
       const updateIndexFunc = async () => {
-        return await fetch(multipartIndexUrl, {
+        return await fetch(reqUrl, {
           method: "PUT",
           headers: headers,
           body: JSON.stringify(updatedUploads),
