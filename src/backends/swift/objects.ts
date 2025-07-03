@@ -753,50 +753,43 @@ export async function completeMultipartUpload(
     return createOk(MissingUploadIdException());
   }
 
-  // Fetch the existing index file to remove the upload metadata
+  // Define the path for the multipart upload session file
+  const multipartSessionPath = `${MULTIPART_UPLOADS_PATH}/${uploadId}.json`;
+  const multipartSessionUrl = `${swiftUrl}/${bucket}/${multipartSessionPath}`;
+
+  // Delete the per-upload JSON file
   try {
-    const fetchIndexFunc = async () => {
-      return await fetch(reqUrl, {
-        method: "GET",
+    const deleteSessionFunc = async () => {
+      return await fetch(multipartSessionUrl, {
+        method: "DELETE",
         headers: headers,
       });
     };
-    const indexResponse = await retryWithExponentialBackoff(fetchIndexFunc);
-
-    if (isOk(indexResponse) && unwrapOk(indexResponse).ok) {
-      const successResponse = unwrapOk(indexResponse);
-      const indexData = await successResponse.json();
-      // Filter out the completed upload
-      const updatedUploads = indexData.uploads.filter((
-        upload: { uploadId: string },
-      ) => upload.uploadId !== uploadId);
-
-      // Update the index file
-      const updateIndexFunc = async () => {
-        return await fetch(reqUrl, {
-          method: "PUT",
-          headers: headers,
-          body: JSON.stringify(updatedUploads),
-        });
-      };
-      await retryWithExponentialBackoff(updateIndexFunc);
-      logger.info(`Removed upload ${uploadId} from multipart uploads index`);
-    } else {
+    const deleteResponse = await retryWithExponentialBackoff(deleteSessionFunc);
+    if (!isOk(deleteResponse) || unwrapOk(deleteResponse).status === 404) {
+      logger.error(
+        `Multipart upload session file not found for uploadId ${uploadId} at ${multipartSessionPath}`,
+      );
+      // Continue to next step
+    } else if (!unwrapOk(deleteResponse).ok) {
       logger.warn(
-        `Failed to fetch multipart uploads index: ${
-          !isOk(indexResponse)
-            ? unwrapErr(indexResponse).message
-            : unwrapOk(indexResponse).statusText
+        `Failed to delete multipart upload session file for uploadId ${uploadId}: ${
+          unwrapOk(deleteResponse).statusText
         }`,
+      );
+      // Continue to next step
+    } else {
+      logger.info(
+        `Deleted multipart upload session file for uploadId ${uploadId}`,
       );
     }
   } catch (error) {
-    logger.warn(
-      `Error updating multipart uploads index: ${
+    logger.error(
+      `Error deleting multipart upload session file for uploadId ${uploadId}: ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
-    return createOk(InternalServerErrorException());
+    // Continue to next step
   }
 
   const fetchFunc = async () => {
@@ -874,9 +867,15 @@ export async function uploadPart(
   const headers = getSwiftRequestHeaders(authToken);
 
   const partNumber = queryParams["partNumber"];
+  const uploadId = queryParams["uploadId"]?.[0];
   if (!partNumber) {
     return createOk(InvalidRequestException(
       "Bad Request: partNumber is missing from request",
+    ));
+  }
+  if (!uploadId) {
+    return createOk(InvalidRequestException(
+      "Bad Request: uploadId is missing from request",
     ));
   }
 
@@ -908,6 +907,75 @@ export async function uploadPart(
     reportToSentry(errMessage);
   } else {
     logger.info(`Upload Part Successful: ${successResponse.statusText}`);
+    // --- Update the per-upload JSON file with part metadata ---
+    const multipartSessionPath = `${MULTIPART_UPLOADS_PATH}/${uploadId}.json`;
+    const multipartSessionUrl = `${swiftUrl}/${bucket}/${multipartSessionPath}`;
+    try {
+      // Fetch the current session JSON
+      const getSessionFunc = async () => {
+        return await fetch(multipartSessionUrl, {
+          method: "GET",
+          headers: headers,
+        });
+      };
+      const getSessionResponse = await retryWithExponentialBackoff(
+        getSessionFunc,
+      );
+      if (
+        !isOk(getSessionResponse) || unwrapOk(getSessionResponse).status === 404
+      ) {
+        logger.error(
+          `Multipart upload session file not found for uploadId ${uploadId} at ${multipartSessionPath}`,
+        );
+      } else {
+        const sessionJson = await unwrapOk(getSessionResponse).json();
+        // Prepare part metadata
+        const eTag = successResponse.headers.get("etag") ||
+          successResponse.headers.get("ETag") || "";
+        const size = bodyBuffer?.byteLength || 0;
+        const lastModified = new Date().toISOString();
+        const partMeta = {
+          partNumber: Array.isArray(partNumber) ? partNumber[0] : partNumber,
+          eTag,
+          size,
+          lastModified,
+        };
+        // Update or create the parts array
+        if (!Array.isArray(sessionJson.parts)) sessionJson.parts = [];
+        // Remove any existing entry for this partNumber
+        sessionJson.parts = sessionJson.parts.filter((
+          p: { partNumber: string },
+        ) => p.partNumber !== partMeta.partNumber);
+        sessionJson.parts.push(partMeta);
+        // Save the updated session JSON
+        const putSessionFunc = async () => {
+          return await fetch(multipartSessionUrl, {
+            method: "PUT",
+            headers: headers,
+            body: JSON.stringify(sessionJson),
+          });
+        };
+        const putSessionResponse = await retryWithExponentialBackoff(
+          putSessionFunc,
+        );
+        if (!isOk(putSessionResponse) || !unwrapOk(putSessionResponse).ok) {
+          logger.error(
+            `Failed to update multipart upload session file for uploadId ${uploadId} at ${multipartSessionPath}`,
+          );
+        } else {
+          logger.info(
+            `Updated multipart upload session file for uploadId ${uploadId} with part ${partMeta.partNumber}`,
+          );
+        }
+      }
+    } catch (error) {
+      logger.error(
+        `Error updating multipart upload session file for uploadId ${uploadId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+    // --- End update per-upload JSON ---
   }
 
   return convertSwiftUploadPartToS3Response(successResponse, logger);
