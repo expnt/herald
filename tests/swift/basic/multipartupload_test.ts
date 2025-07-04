@@ -6,7 +6,6 @@ import {
   HeadObjectCommand,
   ListMultipartUploadsCommand,
   ListPartsCommand,
-  PutObjectCommand,
   S3Client,
   UploadPartCommand,
 } from "aws-sdk/client-s3";
@@ -19,7 +18,6 @@ import { SYNC_WAIT } from "../../mirror/mod.ts";
 
 const containerName = "swift-test";
 const objectKey = "test-object.txt";
-const multipartIndexPath = ".herald-state/multipart-uploads/index.json";
 
 await configInit();
 const containerConfig = globalConfig.buckets[containerName].config;
@@ -51,20 +49,6 @@ Deno.test("Multipart Upload Flow", async (t) => {
       }),
     );
     assertEquals(result.$metadata.httpStatusCode, 200);
-
-    // Create empty index.json file for multipart uploads
-    const createIndexResult = await s3.send(
-      new PutObjectCommand({
-        Bucket: containerName,
-        Key: multipartIndexPath,
-        Body: JSON.stringify({
-          lastUpdated: new Date().toISOString(),
-          uploads: [],
-        }),
-        ContentType: "application/json",
-      }),
-    );
-    assertEquals(createIndexResult.$metadata.httpStatusCode, 200);
   });
 
   let uploadId = "";
@@ -160,20 +144,6 @@ Deno.test("Abort Multipart Upload Flow", async (t) => {
       }),
     );
     assertEquals(result.$metadata.httpStatusCode, 200);
-
-    // Create empty index.json file for multipart uploads
-    const createIndexResult = await s3.send(
-      new PutObjectCommand({
-        Bucket: containerName,
-        Key: multipartIndexPath,
-        Body: JSON.stringify({
-          lastUpdated: new Date().toISOString(),
-          uploads: [],
-        }),
-        ContentType: "application/json",
-      }),
-    );
-    assertEquals(createIndexResult.$metadata.httpStatusCode, 200);
   });
 
   let uploadId = "";
@@ -262,21 +232,6 @@ const testMPULargeFile = async (t: Deno.TestContext, containerName: string) => {
       }),
     );
     assertEquals(result.$metadata.httpStatusCode, 200);
-
-    // Create empty index.json file for multipart uploads
-    // This is a Swift-specific requirement for the Herald backend
-    const createIndexResult = await s3.send(
-      new PutObjectCommand({
-        Bucket: containerName,
-        Key: multipartIndexPath,
-        Body: JSON.stringify({
-          lastUpdated: new Date().toISOString(),
-          uploads: [],
-        }),
-        ContentType: "application/json",
-      }),
-    );
-    assertEquals(createIndexResult.$metadata.httpStatusCode, 200);
   });
 
   let uploadId = "";
