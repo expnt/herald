@@ -1280,7 +1280,7 @@ export async function listMultipartUploads(
 
   const uploads: MultipartUploadSession[] = [];
   for (const jsonFile of uploadJsonFiles) {
-    const jsonUrl = `${swiftUrl}/${bucket}/${multipartIndexPrefix}/${jsonFile}`;
+    const jsonUrl = `${swiftUrl}/${bucket}/${jsonFile}`;
     try {
       const fetchJsonFunc = async () => {
         return await fetch(jsonUrl, {
