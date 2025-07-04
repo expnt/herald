@@ -1,3 +1,13 @@
+## 0.6.0 (2025-07-04)
+
+### Feat
+
+- generic object storage for task queue (#49)
+
+### Refactor
+
+- mpu redesign (#54)
+
 ## 0.5.0 (2025-06-23)
 
 ### Fix
