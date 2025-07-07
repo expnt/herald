@@ -4,6 +4,7 @@ import {
   copyObject,
   createMultipartUpload,
   deleteObject,
+  deleteObjects,
   getObject,
   headObject,
   listObjects,
@@ -37,6 +38,7 @@ const handlers = {
   createMultipartUpload,
   completeMultipartUpload,
   abortMultipartUpload,
+  deleteObjects,
 };
 
 export async function s3Resolver(
@@ -75,6 +77,14 @@ export async function s3Resolver(
         queryParamKeys,
       );
     case "POST":
+      if (queryParamKeys.has("delete")) {
+        return await handlers.deleteObjects(
+          reqCtx,
+          request,
+          bucketConfig,
+        );
+      }
+
       if (objectKey && queryParamKeys.has("uploads")) {
         return handlers.createMultipartUpload(reqCtx, request, bucketConfig);
       }

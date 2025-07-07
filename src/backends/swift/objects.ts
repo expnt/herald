@@ -8,7 +8,11 @@ import {
   getBodyFromReq,
   retryWithExponentialBackoff,
 } from "../../utils/url.ts";
-import { toS3ListPartXmlContent, toS3XmlContent } from "./utils/mod.ts";
+import {
+  toS3ListPartXmlContent,
+  toS3XmlContent,
+  toSwiftBulkDeleteBody,
+} from "./utils/mod.ts";
 import {
   InternalServerErrorException,
   InvalidRequestException,
@@ -23,6 +27,7 @@ import { prepareMirrorRequests } from "../mirror.ts";
 import { Bucket } from "../../buckets/mod.ts";
 import { s3Resolver } from "../s3/mod.ts";
 import {
+  convertSwiftBulkDeleteObjectsToS3Response,
   convertSwiftCopyObjectToS3Response,
   convertSwiftDeleteObjectToS3Response,
   convertSwiftGetObjectToS3Response,
@@ -245,6 +250,83 @@ export async function deleteObject(
   }
 
   return convertSwiftDeleteObjectToS3Response(successResponse);
+}
+
+export async function deleteObjects(
+  reqCtx: RequestContext,
+  req: Request,
+  bucketConfig: Bucket,
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
+  logger.info("[Swift backend] Proxying Delete Object Request...");
+
+  const { bucket } = s3Utils.extractRequestInfo(req);
+  if (!bucket) {
+    return createOk(InvalidRequestException(
+      "Bucket information missing from the request",
+    ));
+  }
+
+  const config: SwiftConfig = bucketConfig.config as SwiftConfig;
+  const mirrorOperation = bucketConfig.hasReplicas();
+
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
+
+  const { storageUrl: swiftUrl, token: authToken } = res;
+  const headers = getSwiftRequestHeaders(authToken);
+  const reqUrl = `${swiftUrl}/${bucket}?bulk-delete`;
+
+  const requestBody = await toSwiftBulkDeleteBody(req);
+  if (!isOk(requestBody)) {
+    const errMessage = unwrapErr(requestBody);
+    logger.warn(
+      `Error reading request body for bulk delete: ${errMessage.message}`,
+    );
+    return requestBody;
+  }
+  const bulkDeleteObjects = unwrapOk(requestBody);
+  const fetchFunc = async () => {
+    return await fetch(reqUrl, {
+      method: "POST",
+      headers: headers,
+      body: bulkDeleteObjects,
+    });
+  };
+
+  const response = await retryWithExponentialBackoff(
+    fetchFunc,
+  );
+
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `Delete Objects Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
+    return response;
+  }
+
+  const successResponse = unwrapOk(response);
+  if (successResponse.status !== 204 && successResponse.status !== 404) {
+    const errMessage = `Delete Objects Failed: ${successResponse.statusText}`;
+    logger.warn(errMessage);
+    reportToSentry(errMessage);
+  } else {
+    logger.info(`Delete Objects Successful: ${successResponse.statusText}`);
+    if (mirrorOperation) {
+      await prepareMirrorRequests(
+        reqCtx,
+        req,
+        bucketConfig,
+        "deleteObjects",
+        bulkDeleteObjects,
+      );
+    }
+  }
+
+  return convertSwiftBulkDeleteObjectsToS3Response(
+    successResponse,
+    bulkDeleteObjects.split("\n"),
+  );
 }
 
 export async function listObjects(
