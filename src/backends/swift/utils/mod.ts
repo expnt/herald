@@ -234,6 +234,7 @@ export async function toS3ListPartXmlContent(
 
 export async function toSwiftBulkDeleteBody(
   request: Request,
+  bucket: string,
 ): Promise<Result<string, Error>> {
   try {
     // Read the request body as text
@@ -246,13 +247,14 @@ export async function toSwiftBulkDeleteBody(
     if (result && result.Delete && Array.isArray(result.Delete.Object)) {
       for (const obj of result.Delete.Object) {
         if (obj.Key && typeof obj.Key[0] === "string") {
-          objectsToDelete.push(obj.Key[0]);
+          objectsToDelete.push(bucket + "/" + obj.Key[0]);
         }
       }
     }
 
     // Swift bulk delete expects a newline-separated list of object names
-    const swiftBody = objectsToDelete.join("\n");
+    let swiftBody = objectsToDelete.join("\n");
+    swiftBody += "\n";
 
     return createOk(swiftBody);
   } catch (error) {

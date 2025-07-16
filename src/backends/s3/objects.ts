@@ -217,7 +217,10 @@ export async function deleteObjects(
   const mirrorOperation = bucketConfig.hasReplicas();
 
   const clonedReq = req.clone();
-  const requestBody = await toSwiftBulkDeleteBody(clonedReq);
+  const requestBody = await toSwiftBulkDeleteBody(
+    clonedReq,
+    bucketConfig.bucketName,
+  );
   if (!isOk(requestBody)) {
     const errMessage = `Error reading request body for bulk delete: ${
       unwrapErr(requestBody).message

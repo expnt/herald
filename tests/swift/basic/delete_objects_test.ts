@@ -55,6 +55,8 @@ Deno.test("DeleteObjects operation deletes multiple objects", async (t) => {
     }
   });
 
+  await new Promise((resolve) => setTimeout(resolve, 10000));
+
   // Check objects exist
   await t.step("check objects exist", async () => {
     for (const key of objectKeys) {
@@ -105,6 +107,8 @@ Deno.test("DeleteObjects operation deletes multiple objects", async (t) => {
       }
     }
   });
+
+  await new Promise((resolve) => setTimeout(resolve, 10000));
 
   // Cleanup after test
   await t.step("cleanup after", async () => {

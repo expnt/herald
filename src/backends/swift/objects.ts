@@ -27,7 +27,6 @@ import { prepareMirrorRequests } from "../mirror.ts";
 import { Bucket } from "../../buckets/mod.ts";
 import { s3Resolver } from "../s3/mod.ts";
 import {
-  convertSwiftBulkDeleteObjectsToS3Response,
   convertSwiftCopyObjectToS3Response,
   convertSwiftDeleteObjectToS3Response,
   convertSwiftGetObjectToS3Response,
@@ -48,6 +47,112 @@ import {
   unwrapErr,
   unwrapOk,
 } from "option-t/plain_result";
+
+// Utility: Send raw HTTP POST using Deno.connect (manual HTTP)
+async function sendManualBulkDeleteRequest(
+  host: string,
+  path: string,
+  token: string,
+  body: string,
+  accept = "application/json",
+) {
+  const port = 443;
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  // Ensure trailing newline
+  if (!body.endsWith("\n")) body += "\n";
+  const contentLength = encoder.encode(body).length;
+  const request = [
+    `POST ${path} HTTP/1.1`,
+    `Host: ${host}`,
+    `X-Auth-Token: ${token}`,
+    `Content-Type: text/plain`,
+    `Accept: ${accept}`,
+    `Content-Length: ${contentLength}`,
+    "Connection: close",
+    "",
+    body,
+  ].join("\r\n");
+
+  const conn = await Deno.connectTls({ hostname: host, port });
+  await conn.write(encoder.encode(request));
+  let response = "";
+  const buf = new Uint8Array(4096);
+  while (true) {
+    const n = await conn.read(buf);
+    if (n === null) break;
+    response += decoder.decode(buf.subarray(0, n));
+  }
+  conn.close();
+  // Return as a Response object for consistency
+  return response;
+}
+
+/**
+ * Converts a raw HTTP response string from Swift bulk delete
+ * into an S3-compatible DeleteObjects XML response.
+ */
+function convertManualBulkDeleteToS3Response(
+  raw: string,
+  deletedKeys: string[],
+): Result<Response, Error> {
+  // 1. Parse the HTTP response string
+  const [headerPart, ...bodyParts] = raw.split("\r\n\r\n");
+  let body = bodyParts.join("\r\n\r\n").trim();
+
+  // Extract status code from the first line of the header
+  let status = 200;
+  const statusLine = headerPart.split("\r\n")[0];
+  const statusMatch = statusLine.match(/^HTTP\/\d\.\d\s+(\d+)/);
+  if (statusMatch) {
+    status = parseInt(statusMatch[1], 10);
+  }
+
+  // Handle chunked encoding (remove chunk size lines)
+  if (/^[0-9A-Fa-f]+\r?\n/.test(body)) {
+    // Remove chunk size lines
+    body = body.replace(/^[0-9A-Fa-f]+\r?\n/mg, "");
+    body = body.replace(/\r?\n0\r?\n?$/, ""); // Remove ending 0
+    body = body.trim();
+  }
+
+  // deno-lint-ignore no-explicit-any
+  let json: any = {};
+  try {
+    json = JSON.parse(body);
+  } catch {
+    return createErr(
+      new Error(
+        "Failed to parse JSON response from Swift bulk delete",
+      ),
+    );
+  }
+
+  // 3. Build S3 DeleteResult XML
+  const deleted = [];
+  for (let i = 0; i < (json["Number Deleted"] || 0); i++) {
+    // Use deletedKeys if available, else just <Deleted/>
+    deleted.push(`<Deleted><Key>${deletedKeys[i] || ""}</Key></Deleted>`);
+  }
+  const errors = (json.Errors || []).map((err: Record<string, unknown>) =>
+    `<Error><Key>${err["Key"] || ""}</Key><Code>${
+      err["Code"] || "Error"
+    }</Code><Message>${err["Message"] || ""}</Message></Error>`
+  );
+
+  const xml =
+    `<?xml version="1.0" encoding="UTF-8"?>\n<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">\n  ${
+      deleted.join("\n  ")
+    }\n  ${errors.join("\n  ")}\n</DeleteResult>`;
+
+  // 4. Return as a Response, using the parsed status code
+  return createOk(
+    new Response(xml, {
+      status,
+      headers: { "Content-Type": "application/xml" },
+    }),
+  );
+}
 
 export async function putObject(
   reqCtx: RequestContext,
@@ -273,10 +378,15 @@ export async function deleteObjects(
   const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
 
   const { storageUrl: swiftUrl, token: authToken } = res;
-  const headers = getSwiftRequestHeaders(authToken);
-  const reqUrl = `${swiftUrl}/${bucket}?bulk-delete`;
+  const url = new URL(swiftUrl);
+  const host = url.hostname;
+  // Path should be /v1/ACCOUNT?bulk-delete
+  const path = url.pathname + "?bulk-delete";
+  const headers = getSwiftRequestHeaders("fake-auth-token");
+  headers.set("Content-Type", "text/plain");
+  headers.set("Accept", "application/json");
 
-  const requestBody = await toSwiftBulkDeleteBody(req);
+  const requestBody = await toSwiftBulkDeleteBody(req, bucket);
   if (!isOk(requestBody)) {
     const errMessage = unwrapErr(requestBody);
     logger.warn(
@@ -285,48 +395,58 @@ export async function deleteObjects(
     return requestBody;
   }
   const bulkDeleteObjects = unwrapOk(requestBody);
+  // If USE_MANUAL_HTTP env var is set, use manual HTTP
+  logger.info("Using manual HTTP bulk delete via Deno.connect...");
   const fetchFunc = async () => {
-    return await fetch(reqUrl, {
-      method: "POST",
-      headers: headers,
-      body: bulkDeleteObjects,
-    });
+    return await sendManualBulkDeleteRequest(
+      host,
+      path,
+      authToken,
+      bulkDeleteObjects,
+      "application/json",
+    );
   };
-
   const response = await retryWithExponentialBackoff(
     fetchFunc,
+    bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
   );
+  logger.info("Manual HTTP response:\n" + Deno.inspect(response));
 
   if (!isOk(response)) {
-    const errRes = unwrapErr(response);
-    logger.warn(
-      `Delete Objects Failed. Failed to connect with Object Storage: ${errRes.message}`,
-    );
+    const errMsg = `Error in manual HTTP bulk delete: ${
+      unwrapErr(response).message
+    }`;
+    logger.error(errMsg);
+    reportToSentry(errMsg);
     return response;
   }
 
   const successResponse = unwrapOk(response);
-  if (successResponse.status !== 204 && successResponse.status !== 404) {
-    const errMessage = `Delete Objects Failed: ${successResponse.statusText}`;
-    logger.warn(errMessage);
-    reportToSentry(errMessage);
-  } else {
-    logger.info(`Delete Objects Successful: ${successResponse.statusText}`);
-    if (mirrorOperation) {
-      await prepareMirrorRequests(
-        reqCtx,
-        req,
-        bucketConfig,
-        "deleteObjects",
-        bulkDeleteObjects,
-      );
-    }
+  // Parse the keys that were requested for deletion
+  const keys = bulkDeleteObjects.split("\n").filter(Boolean);
+
+  const convertedResponse = convertManualBulkDeleteToS3Response(
+    successResponse,
+    keys,
+  );
+
+  if (!isOk(convertedResponse)) {
+    const errMsg = `Error converting manual HTTP response: ${
+      unwrapErr(convertedResponse).message
+    }`;
+    logger.error(errMsg);
+    reportToSentry(errMsg);
+  } else if (mirrorOperation && unwrapOk(convertedResponse).status === 200) {
+    // TODO(needs thinking): operation failure and success is not for the whole objects, needs to be handled for each object seprately since one may fail and others may succeed
+    await prepareMirrorRequests(
+      reqCtx,
+      req,
+      bucketConfig,
+      "deleteObjects",
+    );
   }
 
-  return convertSwiftBulkDeleteObjectsToS3Response(
-    successResponse,
-    bulkDeleteObjects.split("\n"),
-  );
+  return convertedResponse;
 }
 
 export async function listObjects(
