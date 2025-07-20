@@ -115,6 +115,9 @@ export const globalConfigSchema = z.object({
   temp_dir: z.string(),
   task_store_backend: z.union([s3ConfigSchema, swiftConfigSchema]),
   backends: z.record(z.string(), backendSchema),
+  default_bucket: z.string().nonoptional().describe(
+    "The main bucket where operations with no bucket specified will be directed to.",
+  ),
   buckets: z.record(
     z.string(),
     z.union([

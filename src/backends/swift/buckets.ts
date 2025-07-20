@@ -15,6 +15,7 @@ import { s3Resolver } from "../s3/mod.ts";
 import {
   convertSwiftCreateBucketToS3Response,
   convertSwiftHeadBucketToS3Response,
+  convertSwiftListBucketsToS3Response,
   swiftResolver,
 } from "./mod.ts";
 import { RequestContext } from "../../types/mod.ts";
@@ -26,6 +27,65 @@ import {
   unwrapErr,
   unwrapOk,
 } from "option-t/plain_result";
+
+export async function listBuckets(
+  reqCtx: RequestContext,
+  _req: Request,
+  bucketConfig: Bucket,
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
+  logger.info("[Swift backend] Proxying List Buckets Request...");
+
+  const config: SwiftConfig = bucketConfig.config as SwiftConfig;
+
+  // Get auth metadata (storage URL and token)
+  const { storageUrl: swiftUrl, token: authToken } = reqCtx.heraldContext
+    .keystoneStore.getConfigAuthMeta(config);
+
+  const headers = getSwiftRequestHeaders(authToken);
+  headers.set("accept", "application/json");
+
+  // In Swift, listing buckets is a GET on the account URL (no bucket name)
+  const reqUrl = swiftUrl;
+
+  const fetchFunc = async () => {
+    return await fetch(reqUrl, {
+      method: "GET",
+      headers: headers,
+    });
+  };
+
+  const response = await retryWithExponentialBackoff(fetchFunc);
+
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `List Buckets Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
+    return response;
+  }
+
+  const swiftRes = unwrapOk(response);
+
+  if (swiftRes.status >= 300) {
+    const errMessage = `List Buckets Failed: ${swiftRes.statusText}`;
+    logger.warn(errMessage);
+    return createErr(
+      new HeraldError(swiftRes.status, {
+        message: errMessage,
+      }),
+    );
+  }
+
+  // Convert Swift response to S3 ListBuckets XML
+  const s3Response = await convertSwiftListBucketsToS3Response(swiftRes);
+
+  logger.info("List Buckets Successful", s3Response.statusText);
+
+  return createOk(
+    s3Response,
+  );
+}
 
 export async function createBucket(
   reqCtx: RequestContext,

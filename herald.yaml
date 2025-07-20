@@ -23,6 +23,8 @@ service_accounts:
       - s3-test
       - swift-test
 
+default_bucket: "swift-test"
+
 buckets:
   # not mirrored
   s3-test:

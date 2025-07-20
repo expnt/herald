@@ -7,8 +7,7 @@ import { s3Resolver } from "./s3/mod.ts";
 import { swiftResolver } from "./swift/mod.ts";
 import { extractRequestInfo } from "../utils/s3.ts";
 import { getAuthType, hasBucketAccess } from "../auth/mod.ts";
-import { verifyV4Signature } from "../utils/signer.ts";
-import { APIErrors, getAPIErrorResponse } from "../types/api_errors.ts";
+// import { verifyV4Signature } from "../utils/signer.ts";
 import { isOk, unwrapErr, unwrapOk } from "option-t/plain_result";
 
 export async function resolveHandler(
@@ -19,23 +18,25 @@ export async function resolveHandler(
   const logger = reqCtx.logger;
   logger.debug("Resolving Handler for Request...");
   const reqInfo = extractRequestInfo(c.req.raw);
-  const { bucket: bucketName } = reqInfo;
+  let { bucket: bucketName } = reqInfo;
 
   if (!bucketName) {
-    logger.critical("Bucket not specified in the request");
-    return getAPIErrorResponse(APIErrors.ErrInvalidRequest);
+    logger.warn(
+      "Bucket not specified in the request. Setting to default bucket.",
+    );
+    bucketName = globalConfig.default_bucket;
   }
 
   const auth = getAuthType();
-  if (auth === "default") {
-    await verifyV4Signature(
-      c.req.raw,
-      globalConfig.buckets[bucketName].config,
-      {
-        // FIXME: properly source the credential lists
-      },
-    );
-  }
+  // if (auth === "default") {
+  //   await verifyV4Signature(
+  //     c.req.raw,
+  //     globalConfig.buckets[bucketName].config,
+  //     {
+  //       // FIXME: properly source the credential lists
+  //     },
+  //   );
+  // }
 
   if (auth !== "default" && !hasBucketAccess(serviceAccountName, bucketName)) {
     logger.critical(

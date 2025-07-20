@@ -32,6 +32,7 @@ import {
   getBucketVersioning,
   getBucketWebsite,
   headBucket,
+  listBuckets,
 } from "./buckets.ts";
 import { HeraldError } from "../../types/http-exception.ts";
 import { s3Utils } from "../../utils/mod.ts";
@@ -62,6 +63,7 @@ const handlers = {
   uploadPartCopy,
   abortMultipartUpload,
   deleteObjects,
+  listBuckets,
 };
 
 export async function swiftResolver(
@@ -130,6 +132,10 @@ export async function swiftResolver(
 
       if (queryParamKeys.has("uploads")) {
         return await handlers.listMultipartUploads(reqCtx, req, bucketConfig);
+      }
+
+      if (url.pathname === "/") {
+        return await handlers.listBuckets(reqCtx, req, bucketConfig);
       }
 
       return await handlers.listObjects(reqCtx, req, bucketConfig);
@@ -627,6 +633,56 @@ export function convertSwiftCreateBucketToS3Response(
       }),
     }),
   );
+}
+
+export async function convertSwiftListBucketsToS3Response(
+  swiftResponse: Response,
+): Promise<Response> {
+  // Parse the JSON body
+  const buckets = await swiftResponse.json();
+
+  // Get request id from headers if available
+  const swiftHeaders = swiftResponse.headers;
+  const requestId = swiftHeaders.get("x-openstack-request-id") ||
+    swiftHeaders.get("x-trans-id") ||
+    "Unknown";
+
+  const bucketsXml = buckets.map((b: {
+    last_modified: string;
+    name: string;
+  }) => {
+    // S3 expects ISO8601 UTC with 'Z' at the end
+    let creationDate = b.last_modified;
+    if (creationDate && !creationDate.endsWith("Z")) {
+      creationDate = creationDate + "Z";
+    }
+    return `
+      <Bucket>
+        <Name>${b.name}</Name>
+        <CreationDate>${creationDate || ""}</CreationDate>
+      </Bucket>
+    `.trim();
+  }).join("");
+
+  const s3Xml = `
+<ListAllMyBucketsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Owner>
+    <ID>swift</ID>
+    <DisplayName>swift</DisplayName>
+  </Owner>
+  <Buckets>
+    ${bucketsXml}
+  </Buckets>
+  <RequestId>${requestId}</RequestId>
+</ListAllMyBucketsResult>
+  `.trim();
+
+  return new Response(s3Xml, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/xml",
+    },
+  });
 }
 
 export function convertSwiftHeadBucketToS3Response(

@@ -263,7 +263,7 @@ export async function retryFetchWithTimeout<T>(
   retries = 5,
   initialDelay = 100,
   maxDelay = 1000,
-  timeout = 10000,
+  timeout = 30000,
 ): Promise<T | Error> {
   let attempt = 0;
   let delayDuration = initialDelay;

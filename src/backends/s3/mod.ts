@@ -14,6 +14,7 @@ import {
   createBucket,
   deleteBucket,
   headBucket,
+  listBuckets,
   routeQueryParamedRequest,
 } from "./buckets.ts";
 import { HeraldError } from "../../types/http-exception.ts";
@@ -39,6 +40,7 @@ const handlers = {
   completeMultipartUpload,
   abortMultipartUpload,
   deleteObjects,
+  listBuckets,
 };
 
 export async function s3Resolver(
@@ -50,6 +52,7 @@ export async function s3Resolver(
 
   // FIXME: `resolveHandler` has already extracted request info
   const { method, objectKey, queryParams } = extractRequestInfo(request);
+  const url = new URL(request.url);
   const queryParamKeys = new Set(Object.keys(queryParams));
 
   logger.debug(`Resolving S3 Handler for Request...`);
@@ -62,20 +65,20 @@ export async function s3Resolver(
         return await handlers.listObjects(reqCtx, request, bucketConfig);
       }
 
-      if (!areQueryParamsSupported(queryParamKeys)) {
-        logger.critical("Unsupported Query Parameter Used");
-        return createErr(
-          new HeraldError(400, {
-            message: "Unsupported Query Parameter Used",
-          }),
+      if (areQueryParamsSupported(queryParamKeys)) {
+        return await handlers.routeQueryParamedRequest(
+          reqCtx,
+          request,
+          bucketConfig,
+          queryParamKeys,
         );
       }
-      return await handlers.routeQueryParamedRequest(
-        reqCtx,
-        request,
-        bucketConfig,
-        queryParamKeys,
-      );
+
+      if (url.pathname === "/") {
+        return await handlers.listBuckets(reqCtx, request, bucketConfig);
+      }
+
+      return createOk(getAPIErrorResponse(APIErrors.ErrInvalidRequest));
     case "POST":
       if (queryParamKeys.has("delete")) {
         return await handlers.deleteObjects(

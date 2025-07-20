@@ -1,6 +1,7 @@
 import {
   CreateBucketCommand,
   DeleteBucketCommand,
+  ListBucketsCommand,
   S3Client,
 } from "aws-sdk/client-s3";
 import { assertEquals } from "std/assert";
@@ -48,4 +49,37 @@ Deno.test(async function deleteContainer() {
 
   const result = await s3.send(command);
   assertEquals(204, result.$metadata.httpStatusCode);
+});
+
+Deno.test(async function listBucketsReturnsS3Schema() {
+  const listCommand = new ListBucketsCommand({});
+  // List buckets using the S3 client
+  const result = await s3.send(listCommand);
+
+  // S3 protocol: result.Buckets is an array, result.Owner is an object
+  // See: https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/clients/client-s3/interfaces/listbucketsoutput.html
+  assertEquals(typeof result, "object");
+  // Buckets should be an array
+  if (!Array.isArray(result.Buckets)) {
+    throw new Error("Buckets is not an array in S3 ListBuckets response");
+  }
+  // Each bucket should have Name and CreationDate
+  for (const bucket of result.Buckets) {
+    if (typeof bucket.Name !== "string") {
+      throw new Error("Bucket.Name is not a string");
+    }
+    if (
+      typeof bucket.CreationDate !== "string" &&
+      !(bucket.CreationDate instanceof Date)
+    ) {
+      throw new Error("Bucket.CreationDate is not a string or Date");
+    }
+  }
+  // Owner should be present and have ID and DisplayName
+  if (
+    !result.Owner || typeof result.Owner.ID !== "string" ||
+    typeof result.Owner.DisplayName !== "string"
+  ) {
+    throw new Error("Owner is missing or malformed in S3 ListBuckets response");
+  }
 });
