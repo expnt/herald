@@ -382,9 +382,6 @@ export async function deleteObjects(
   const host = url.hostname;
   // Path should be /v1/ACCOUNT?bulk-delete
   const path = url.pathname + "?bulk-delete";
-  const headers = getSwiftRequestHeaders("fake-auth-token");
-  headers.set("Content-Type", "text/plain");
-  headers.set("Accept", "application/json");
 
   const requestBody = await toSwiftBulkDeleteBody(req, bucket);
   if (!isOk(requestBody)) {
@@ -1322,7 +1319,7 @@ export async function abortMultipartUpload(
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
 
-  // Delete the per-upload JSON file
+  // Delete the per-upload JSON file (session file)
   const multipartSessionPath = `${MULTIPART_UPLOADS_PATH}/${uploadId}.json`;
   const multipartSessionUrl = `${swiftUrl}/${bucket}/${multipartSessionPath}`;
   try {
@@ -1359,35 +1356,60 @@ export async function abortMultipartUpload(
     // Continue to next step
   }
 
-  // Now delete the object parts
-  const reqUrl = `${swiftUrl}/${bucket}/${object}`;
-  const fetchFunc = async () => {
-    return await fetch(reqUrl, {
-      method: "DELETE",
+  // List all objects with the prefix for this multipart upload
+  const prefix = `${object}/`;
+  const listParams = new URLSearchParams();
+  listParams.append("prefix", prefix);
+  listParams.append("format", "json");
+  const listUrl = `${swiftUrl}/${bucket}?${listParams.toString()}`;
+  const listFunc = async () => {
+    return await fetch(listUrl, {
+      method: "GET",
       headers: headers,
     });
   };
-
-  const response = await retryWithExponentialBackoff(fetchFunc);
-
-  if (!isOk(response)) {
-    const errRes = unwrapErr(response);
+  const listResponse = await retryWithExponentialBackoff(listFunc);
+  if (!isOk(listResponse)) {
+    const errRes = unwrapErr(listResponse);
     logger.warn(
-      `AbortMultipartUpload Failed. Failed to connect with Object Storage: ${errRes.message}`,
+      `AbortMultipartUpload Failed. Could not list parts: ${errRes.message}`,
     );
-    return response;
+    return listResponse;
   }
-
-  const successResponse = unwrapOk(response);
-  if (successResponse.status !== 204) {
-    const errMessage =
-      `AbortMultipartUpload Failed: ${successResponse.statusText}`;
-    logger.warn(errMessage);
-    reportToSentry(errMessage);
-  } else {
-    logger.info(
-      `AbortMultipartUpload Successful: ${successResponse.statusText}`,
+  const listOk = unwrapOk(listResponse);
+  if (!listOk.ok) {
+    logger.warn(
+      `AbortMultipartUpload Failed. Could not list parts: ${listOk.statusText}`,
     );
+    return createErr(new Error(listOk.statusText));
+  }
+  const objectsJson = await listOk.json();
+  const objectsToDelete = (objectsJson || [])
+    .filter((item: { name: string }) =>
+      item.name && item.name.startsWith(prefix)
+    )
+    .map((item: { name: string }) => `${bucket}/${item.name}`);
+
+  if (objectsToDelete.length === 0) {
+    logger.info(`No parts found for multipart upload with prefix ${prefix}`);
+  } else {
+    // Bulk delete all parts
+    const urlObj = new URL(swiftUrl);
+    const host = urlObj.hostname;
+    const path = urlObj.pathname + "?bulk-delete";
+    const bulkDeleteBody = objectsToDelete.join("\n");
+    logger.info(
+      `Bulk deleting ${objectsToDelete.length} parts for prefix ${prefix}`,
+    );
+    const bulkDeleteResponse = await sendManualBulkDeleteRequest(
+      host,
+      path,
+      authToken,
+      bulkDeleteBody,
+      "application/json",
+    );
+    // Optionally, handle/parse the response, but for abort we just log
+    logger.info(`Bulk delete response: ${JSON.stringify(bulkDeleteResponse)}`);
   }
 
   // Return a successful response according to S3 spec
@@ -1623,6 +1645,8 @@ export async function listMultipartUploads(
 
   const xmlBuilder = new xml2js.Builder();
   const formattedXml = xmlBuilder.buildObject(xmlResponse);
+
+  logger.info("List MultipartUploads Successful.");
 
   return createOk(
     new Response(formattedXml, {
