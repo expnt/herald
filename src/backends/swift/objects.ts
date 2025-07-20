@@ -47,6 +47,7 @@ import {
   unwrapErr,
   unwrapOk,
 } from "option-t/plain_result";
+import { Logger } from "std/log";
 
 // Utility: Send raw HTTP POST using Deno.connect (manual HTTP)
 async function sendManualBulkDeleteRequest(
@@ -86,6 +87,31 @@ async function sendManualBulkDeleteRequest(
   conn.close();
   // Return as a Response object for consistency
   return response;
+}
+
+function getBulkDeleteJsonBody(
+  raw: string,
+  logger: Logger,
+) {
+  const [_headerPart, ...bodyParts] = raw.split("\r\n\r\n");
+  let body = bodyParts.join("\r\n\r\n").trim();
+
+  if (/^[0-9A-Fa-f]+\r?\n/.test(body)) {
+    // Remove chunk size lines
+    body = body.replace(/^[0-9A-Fa-f]+\r?\n/mg, "");
+    body = body.replace(/\r?\n0\r?\n?$/, ""); // Remove ending 0
+    body = body.trim();
+  }
+
+  // deno-lint-ignore no-explicit-any
+  let json: any = {};
+  try {
+    json = JSON.parse(body);
+  } catch {
+    logger.warn("Failed parsing bulk delete json body");
+  }
+
+  return json;
 }
 
 /**
@@ -1371,14 +1397,14 @@ export async function abortMultipartUpload(
   const listResponse = await retryWithExponentialBackoff(listFunc);
   if (!isOk(listResponse)) {
     const errRes = unwrapErr(listResponse);
-    logger.warn(
+    logger.error(
       `AbortMultipartUpload Failed. Could not list parts: ${errRes.message}`,
     );
     return listResponse;
   }
   const listOk = unwrapOk(listResponse);
   if (!listOk.ok) {
-    logger.warn(
+    logger.error(
       `AbortMultipartUpload Failed. Could not list parts: ${listOk.statusText}`,
     );
     return createErr(new Error(listOk.statusText));
@@ -1401,16 +1427,33 @@ export async function abortMultipartUpload(
     logger.info(
       `Bulk deleting ${objectsToDelete.length} parts for prefix ${prefix}`,
     );
-    const bulkDeleteResponse = await sendManualBulkDeleteRequest(
-      host,
-      path,
-      authToken,
-      bulkDeleteBody,
-      "application/json",
+    const bulkDeleteFunc = async () => {
+      return await sendManualBulkDeleteRequest(
+        host,
+        path,
+        authToken,
+        bulkDeleteBody,
+        "application/json",
+      );
+    };
+    const bulkDeleteResponseResult = await retryWithExponentialBackoff(
+      bulkDeleteFunc,
     );
-    // Optionally, handle/parse the response, but for abort we just log
-    logger.info(`Bulk delete response: ${JSON.stringify(bulkDeleteResponse)}`);
+    if (!isOk(bulkDeleteResponseResult)) {
+      logger.error(
+        `Bulk delete failed for prefix ${prefix}: ${
+          unwrapErr(bulkDeleteResponseResult).message
+        }`,
+      );
+      return bulkDeleteResponseResult;
+    }
+
+    const deleteResBody = unwrapOk(bulkDeleteResponseResult);
+    const jsonBody = getBulkDeleteJsonBody(deleteResBody, logger);
+    logger.info(`Bulk Delete Parts Successful: \n ${Deno.inspect(jsonBody)}`);
   }
+
+  logger.info(`Abort MultipartUpload Successful`);
 
   // Return a successful response according to S3 spec
   const responseHeaders = new Headers({
