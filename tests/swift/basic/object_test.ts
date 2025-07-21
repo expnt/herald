@@ -9,7 +9,7 @@ import {
 } from "aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import * as path from "std/path/";
-import { assert, assertEquals } from "std/assert";
+import { assert, assertEquals, assertStringIncludes } from "std/assert";
 import { loggingMiddleware } from "../../utils/mod.ts";
 import { deleteBucketIfExists, setupBucket } from "../../../utils/s3.ts";
 import { configInit, globalConfig, proxyUrl } from "../../../src/config/mod.ts";
@@ -230,4 +230,42 @@ Deno.test(async function presignDelete() {
     throw new Error("error deleting through presign: ", { cause: res });
   }
   assert(await res.blob());
+});
+
+Deno.test("Ranged GET returns partial content (AWS SDK)", async (t) => {
+  await t.step(async function setup() {
+    await setupBucket(s3, containerName);
+  });
+
+  const testData = "Hello, this is a test file for range requests!";
+
+  // Upload the object
+  const putRes = await s3.send(
+    new PutObjectCommand({
+      Bucket: containerName,
+      Key: objectKey,
+      Body: testData,
+      ContentType: "text/plain",
+    }),
+  );
+  assertEquals(putRes.$metadata.httpStatusCode, 200);
+
+  // Perform a ranged GET (bytes 7-18)
+  const getRes = await s3.send(
+    new GetObjectCommand({
+      Bucket: containerName,
+      Key: objectKey,
+      Range: "bytes=7-18",
+    }),
+  );
+  assertEquals(getRes.$metadata.httpStatusCode, 206);
+  assertStringIncludes(getRes.ContentRange ?? "", "bytes 7-18/");
+  const partialContent = new TextDecoder().decode(
+    await getRes.Body?.transformToByteArray(),
+  );
+  assertEquals(partialContent, "this is a t");
+
+  await t.step(async function setup() {
+    await deleteBucketIfExists(s3, containerName);
+  });
 });

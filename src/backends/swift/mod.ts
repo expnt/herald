@@ -212,7 +212,7 @@ export function convertSwiftGetObjectToS3Response(
   const swiftStatus = swiftResponse.status;
   const swiftHeaders = swiftResponse.headers;
 
-  if (swiftStatus === 200) {
+  if (swiftStatus === 200 || swiftStatus === 206) {
     // Successful GetObject
     const eTag = swiftHeaders.get("etag");
     const lastModified = swiftHeaders.get("last-modified");
@@ -220,6 +220,7 @@ export function convertSwiftGetObjectToS3Response(
     const acceptRanges = swiftHeaders.get("accept-ranges");
     const contentType = swiftHeaders.get("content-type") ||
       "application/octet-stream";
+    const contentRange = swiftHeaders.get("content-range");
 
     if (!eTag || !lastModified || !contentLength) {
       return createErr(
@@ -252,6 +253,9 @@ export function convertSwiftGetObjectToS3Response(
     if (requestId) {
       s3ResponseHeaders.set("x-amz-request-id", requestId);
     }
+    if (contentRange) {
+      s3ResponseHeaders.set("Content-Range", contentRange);
+    }
 
     // Map metadata headers
     swiftHeaders.forEach((value, key) => {
@@ -264,7 +268,7 @@ export function convertSwiftGetObjectToS3Response(
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html#API_GetObject_ResponseSyntax
     return createOk(
       new Response(swiftResponse.body, {
-        status: 200,
+        status: swiftStatus,
         headers: s3ResponseHeaders,
       }),
     );

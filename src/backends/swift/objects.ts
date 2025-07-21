@@ -266,6 +266,11 @@ export async function getObject(
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
+  // Forward Range header if present
+  const rangeHeader = req.headers.get("range") || req.headers.get("Range");
+  if (rangeHeader) {
+    headers.set("Range", rangeHeader);
+  }
   const reqUrl = `${swiftUrl}/${bucket}/${object}`;
 
   const fetchFunc = async () => {
@@ -308,7 +313,7 @@ export async function getObject(
   }
 
   const successResponse = unwrapOk(response);
-  if (successResponse.status !== 200) {
+  if (successResponse.status !== 200 && successResponse.status !== 206) {
     const errMessage = `Get Object Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
@@ -791,6 +796,13 @@ export async function copyObject(
   return convertSwiftCopyObjectToS3Response(successResponse);
 }
 
+interface MPUPart {
+  partNumber: string;
+  size: number;
+  etag: string;
+  eTag: string;
+}
+
 export async function createMultipartUpload(
   reqCtx: RequestContext,
   req: Request,
@@ -967,10 +979,8 @@ export async function completeMultipartUpload(
   const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
-  headers.append("X-Object-Manifest", `${bucket}/${object}`);
 
-  const reqUrl = `${swiftUrl}/${bucket}/${object}`;
-
+  // --- SLO Implementation ---
   // Get the uploadId from query parameters
   const { queryParams } = s3Utils.extractRequestInfo(req);
   const uploadId = queryParams["uploadId"]?.[0];
@@ -981,6 +991,105 @@ export async function completeMultipartUpload(
   // Define the path for the multipart upload session file
   const multipartSessionPath = `${MULTIPART_UPLOADS_PATH}/${uploadId}.json`;
   const multipartSessionUrl = `${swiftUrl}/${bucket}/${multipartSessionPath}`;
+
+  // Fetch the session file to get the parts array
+  let sessionJson;
+  try {
+    const getSessionFunc = async () => {
+      return await fetch(multipartSessionUrl, {
+        method: "GET",
+        headers: headers,
+      });
+    };
+    const getSessionResponse = await retryWithExponentialBackoff(
+      getSessionFunc,
+    );
+    if (
+      !isOk(getSessionResponse) || unwrapOk(getSessionResponse).status === 404
+    ) {
+      logger.error(
+        `Multipart upload session file not found for uploadId ${uploadId} at ${multipartSessionPath}`,
+      );
+      // complete multipart upload can be called again so just return
+      // Check if the manifest object exists (idempotency)
+      const manifestUrl = `${swiftUrl}/${bucket}/${object}`;
+      const manifestResp = await fetch(manifestUrl, {
+        method: "HEAD",
+        headers,
+      });
+      if (manifestResp.ok) {
+        const etag = manifestResp.headers.get("etag") ||
+          manifestResp.headers.get("ETag") || "";
+        return generateCompleteMultipartUploadResponse(
+          bucket,
+          object,
+          config.region,
+          etag,
+        );
+      } else {
+        // Manifest does not exist, return error
+        return createOk(MissingUploadIdException());
+      }
+    }
+    sessionJson = await unwrapOk(getSessionResponse).json();
+  } catch (error) {
+    logger.error(
+      `Error reading multipart upload session file for uploadId ${uploadId}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    return createOk(MissingUploadIdException());
+  }
+
+  // Build the SLO manifest from the parts array
+  const parts = Array.isArray(sessionJson.parts) ? sessionJson.parts : [];
+  if (parts.length === 0) {
+    logger.error(`No parts found in session file for uploadId ${uploadId}`);
+    return createOk(
+      InvalidRequestException("No parts found for this uploadId"),
+    );
+  }
+  // Sort parts by partNumber (as string, but should be numeric order)
+  parts.sort((a: MPUPart, b: MPUPart) =>
+    Number(a.partNumber) - Number(b.partNumber)
+  );
+  const manifest = parts.map((
+    part: MPUPart,
+  ) => ({
+    path: `/${bucket}/${object}/${part.partNumber}`,
+    etag: (part.eTag || part.etag || "").replace(/\"/g, ""),
+    size_bytes: part.size,
+  }));
+
+  // PUT the SLO manifest
+  const manifestUrl = `${swiftUrl}/${bucket}/${object}?multipart-manifest=put`;
+  const sloHeaders = getSwiftRequestHeaders(authToken);
+  sloHeaders.set("Content-Type", "application/json");
+  const putManifestFunc = async () => {
+    return await fetch(manifestUrl, {
+      method: "PUT",
+      headers: sloHeaders,
+      body: JSON.stringify(manifest),
+    });
+  };
+  const putManifestResponse = await retryWithExponentialBackoff(
+    putManifestFunc,
+  );
+  if (!isOk(putManifestResponse)) {
+    const errRes = unwrapErr(putManifestResponse);
+    logger.warn(
+      `Complete Multipart Upload Failed. Failed to PUT SLO manifest: ${errRes.message}`,
+    );
+    return putManifestResponse;
+  }
+  const manifestSuccess = unwrapOk(putManifestResponse);
+  if (manifestSuccess.status !== 201 && manifestSuccess.status !== 200) {
+    const errMessage =
+      `Complete Multipart Upload Failed: ${manifestSuccess.statusText}`;
+    logger.warn(errMessage);
+    reportToSentry(errMessage);
+    return createOk(InvalidRequestException(errMessage));
+  }
 
   // Delete the per-upload JSON file
   try {
@@ -1017,55 +1126,66 @@ export async function completeMultipartUpload(
     // Continue to next step
   }
 
-  const fetchFunc = async () => {
-    return await fetch(reqUrl, {
-      method: "PUT",
-      headers: headers,
-    });
-  };
-  const response = await retryWithExponentialBackoff(
-    fetchFunc,
-  );
+  // NOTE: deleting the parts right away is not possible since Swift takes time to assemble the segments.
+  // // Bulk-delete the part objects
+  // const prefix = `${object}/`;
+  // const listParams = new URLSearchParams();
+  // listParams.append("prefix", prefix);
+  // listParams.append("format", "json");
+  // const listUrl = `${swiftUrl}/${bucket}?${listParams.toString()}`;
+  // const listFunc = async () => {
+  //   return await fetch(listUrl, {
+  //     method: "GET",
+  //     headers: headers,
+  //   });
+  // };
+  // const listResponse = await retryWithExponentialBackoff(listFunc);
+  // if (isOk(listResponse) && unwrapOk(listResponse).ok) {
+  //   const objectsJson = await unwrapOk(listResponse).json();
+  //   const objectsToDelete = (objectsJson || [])
+  //     .filter((item: { name: string }) =>
+  //       item.name && item.name.startsWith(prefix)
+  //     )
+  //     .map((item: { name: string }) => `${bucket}/${item.name}`);
+  //   if (objectsToDelete.length > 0) {
+  //     const urlObj = new URL(swiftUrl);
+  //     const host = urlObj.hostname;
+  //     const path = urlObj.pathname + "?bulk-delete";
+  //     const bulkDeleteBody = objectsToDelete.join("\n");
+  //     const bulkDeleteFunc = async () => {
+  //       return await sendManualBulkDeleteRequest(
+  //         host,
+  //         path,
+  //         authToken,
+  //         bulkDeleteBody,
+  //         "application/json",
+  //       );
+  //     };
+  //     await retryWithExponentialBackoff(bulkDeleteFunc);
+  //   }
+  // }
 
-  if (!isOk(response)) {
-    const errRes = unwrapErr(response);
-    logger.warn(
-      `Complete Multipart Upload Failed. Failed to connect with Object Storage: ${errRes.message}`,
-    );
-    return response;
-  }
-
-  const successResponse = unwrapOk(response);
-  if (successResponse.status !== 201) {
-    const errMessage =
-      `Complete Multipart Upload Failed: ${successResponse.statusText}`;
-    logger.warn(errMessage);
-    reportToSentry(errMessage);
-  } else {
-    logger.info(
-      `Complete Multipart Upload Successful: ${successResponse.statusText}`,
-    );
-    if (mirrorOperation) {
-      await prepareMirrorRequests(
-        reqCtx,
-        req,
-        bucketConfig,
-        "completeMultipartUpload",
-      );
-    }
-  }
-
-  const etag = successResponse.headers.get("eTag");
-  if (!etag) {
-    return createOk(InvalidRequestException("ETag not found in response"));
-  }
+  // SLO ETag is the MD5 of the concatenated ETags of the segments, in quotes
+  // For now, just return the ETag from the manifest response if available
+  const sloEtag = manifestSuccess.headers.get("etag") ||
+    manifestSuccess.headers.get("ETag") || "";
 
   const result = generateCompleteMultipartUploadResponse(
     bucket,
     object,
     config.region,
-    etag,
+    sloEtag,
   );
+
+  logger.info(`Complete MultipartUpload Successful`);
+  if (mirrorOperation) {
+    await prepareMirrorRequests(
+      reqCtx,
+      req,
+      bucketConfig,
+      "completeMultipartUpload",
+    );
+  }
 
   return result;
 }
