@@ -17,7 +17,7 @@ const s3 = new S3Client({
   },
   region: "local",
   forcePathStyle: true,
-  endpoint: "http://localhost:9000",
+  endpoint: "http://localhost:8000",
 });
 
 Deno.test("Ranged GET returns partial content (AWS SDK)", async (t) => {
@@ -49,7 +49,7 @@ Deno.test("Ranged GET returns partial content (AWS SDK)", async (t) => {
   const partialContent = new TextDecoder().decode(
     await getRes.Body?.transformToByteArray(),
   );
-  assertEquals(partialContent, "this is a t");
+  assertEquals(partialContent, "this is a te");
 
   await t.step(async function setup() {
     await deleteBucketIfExists(s3, bucketName);

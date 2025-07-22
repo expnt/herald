@@ -52,7 +52,7 @@ export async function getObject(
   }
 
   const successResponse = unwrapOk(response);
-  if (successResponse.status !== 200) {
+  if (successResponse.status !== 200 && successResponse.status !== 206) {
     const errMessage = `Get Object Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
