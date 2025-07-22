@@ -19,6 +19,7 @@ import {
   MalformedXMLException,
   MissingUploadIdException,
   NoSuchBucketException,
+  NoSuchUploadException,
   NotImplementedException,
 } from "../../constants/errors.ts";
 import { SwiftConfig } from "../../config/types.ts";
@@ -1253,7 +1254,6 @@ export async function uploadPart(
     reportToSentry(errMessage);
   } else {
     logger.info(`Upload Part Successful: ${successResponse.statusText}`);
-    // --- Update the per-upload JSON file with part metadata ---
     const multipartSessionPath = `${MULTIPART_UPLOADS_PATH}/${uploadId}.json`;
     const multipartSessionUrl = `${swiftUrl}/${bucket}/${multipartSessionPath}`;
     try {
@@ -1321,7 +1321,6 @@ export async function uploadPart(
         }`,
       );
     }
-    // --- End update per-upload JSON ---
   }
 
   return convertSwiftUploadPartToS3Response(successResponse, logger);
@@ -1347,9 +1346,9 @@ export async function listParts(
     req,
   );
 
-  if (!bucket) {
+  if (!bucket || !objectKey) {
     return createOk(InvalidRequestException(
-      "Bucket information missing from the request",
+      "Bucket or Object information missing from the request",
     ));
   }
 
@@ -1359,18 +1358,48 @@ export async function listParts(
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
 
+  // First check if the uploadId exists by checking the session file
+  const uploadId = query["uploadId"]?.[0];
+  if (!uploadId) {
+    return createOk(InvalidRequestException(
+      "uploadId missing from the request",
+    ));
+  }
+
+  const multipartSessionPath = `${MULTIPART_UPLOADS_PATH}/${uploadId}.json`;
+  const multipartSessionUrl = `${swiftUrl}/${bucket}/${multipartSessionPath}`;
+
+  // Check if the session file exists
+  const sessionCheckFunc = async () => {
+    return await fetch(multipartSessionUrl, {
+      method: "HEAD",
+      headers: headers,
+    });
+  };
+
+  const sessionResponse = await retryWithExponentialBackoff(sessionCheckFunc);
+  if (!isOk(sessionResponse) || unwrapOk(sessionResponse).status === 404) {
+    logger.warn(
+      `Multipart upload session file not found for uploadId ${uploadId} at ${multipartSessionPath}`,
+    );
+    return createOk(NoSuchUploadException());
+  }
+
   const params = new URLSearchParams();
-  if (query.prefix) params.append("prefix", query.prefix[0]);
+  if (query.prefix) {
+    params.append("prefix", query.prefix[0]);
+  } else {
+    params.append("prefix", objectKey);
+  }
   if (query.delimiter) params.append("delimiter", "/");
   if (query["part-number-marker"]) {
-    params.append("marker", query["part-number-marker"][0]);
+    params.append("marker", `${objectKey}/${query["part-number-marker"][0]}`);
   }
   if (query["max-parts"]) params.append("limit", query["max-parts"][0]);
 
   headers.delete("Accept");
   headers.set("Accept", "application/json");
 
-  // FIXME: cant append objectKey directly, swift doesn't allow to access the parts just like files in folders, needs to be fetched selectively
   const reqUrl = `${swiftUrl}/${bucket}?${params.toString()}`;
 
   const fetchFunc = async () => {
@@ -1425,8 +1454,6 @@ export async function listParts(
   } else {
     logger.info(`ListParts Successful: ${successResponse.statusText}`);
   }
-
-  const uploadId = query["uploadId"][0] ?? null;
   const maxKeys = query["max-parts"] ? Number(query["max-parts"][0]) : null;
   const partNumberMarker = query["part-number-marker"]
     ? parseInt(query["part-number-marker"][0])

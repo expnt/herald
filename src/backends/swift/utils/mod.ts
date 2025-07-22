@@ -206,7 +206,7 @@ export async function toS3ListPartXmlContent(
       Key: object ?? "",
       MaxParts: maxKeys,
       UploadId: uploadId,
-      PartNumberMarker: partNumberMarker,
+      ...(partNumberMarker != null && { PartNumberMarker: partNumberMarker }),
       NextPartNumberMarker: parts.length > 0
         ? parts[parts.length - 1].PartNumber
         : null,
