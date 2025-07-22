@@ -16,6 +16,7 @@ import {
 import {
   InternalServerErrorException,
   InvalidRequestException,
+  MalformedXMLException,
   MissingUploadIdException,
   NoSuchBucketException,
   NotImplementedException,
@@ -1046,7 +1047,7 @@ export async function completeMultipartUpload(
   if (parts.length === 0) {
     logger.error(`No parts found in session file for uploadId ${uploadId}`);
     return createOk(
-      InvalidRequestException("No parts found for this uploadId"),
+      MalformedXMLException(),
     );
   }
   // Sort parts by partNumber (as string, but should be numeric order)
