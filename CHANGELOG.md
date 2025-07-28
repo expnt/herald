@@ -1,3 +1,9 @@
+## 0.7.0 (2025-07-28)
+
+### Feat
+
+- impl for remaining needed gitlab s3 ops (#56)
+
 ## 0.6.0 (2025-07-04)
 
 ### Feat
