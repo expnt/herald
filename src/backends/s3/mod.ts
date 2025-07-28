@@ -17,13 +17,12 @@ import {
   listBuckets,
   routeQueryParamedRequest,
 } from "./buckets.ts";
-import { HeraldError } from "../../types/http-exception.ts";
 import { areQueryParamsSupported } from "../../utils/url.ts";
 import { extractRequestInfo } from "../../utils/s3.ts";
 import { Bucket } from "../../buckets/mod.ts";
 import { RequestContext } from "../../types/mod.ts";
 import { APIErrors, getAPIErrorResponse } from "../../types/api_errors.ts";
-import { createErr, createOk, Result } from "option-t/plain_result";
+import { createOk, Result } from "option-t/plain_result";
 
 const handlers = {
   putObject,
@@ -51,7 +50,9 @@ export async function s3Resolver(
   const logger = reqCtx.logger;
 
   // FIXME: `resolveHandler` has already extracted request info
-  const { method, objectKey, queryParams } = extractRequestInfo(request);
+  const { bucket, method, objectKey, queryParams } = extractRequestInfo(
+    request,
+  );
   const url = new URL(request.url);
   const queryParamKeys = new Set(Object.keys(queryParams));
 
@@ -78,7 +79,7 @@ export async function s3Resolver(
         return await handlers.listBuckets(reqCtx, request, bucketConfig);
       }
 
-      return createOk(getAPIErrorResponse(APIErrors.ErrInvalidRequest));
+      break;
     case "POST":
       if (queryParamKeys.has("delete")) {
         return await handlers.deleteObjects(
@@ -100,11 +101,7 @@ export async function s3Resolver(
         );
       }
 
-      return createErr(
-        new HeraldError(403, {
-          message: "Unsupported request",
-        }),
-      );
+      break;
     case "PUT":
       if (objectKey && request.headers.get("x-amz-copy-source")) {
         return await handlers.copyObject(reqCtx, request, bucketConfig);
@@ -114,7 +111,11 @@ export async function s3Resolver(
         return await handlers.putObject(reqCtx, request, bucketConfig);
       }
 
-      return await handlers.createBucket(reqCtx, request, bucketConfig);
+      if (bucket) {
+        return await handlers.createBucket(reqCtx, request, bucketConfig);
+      }
+
+      break;
     case "DELETE":
       if (objectKey && queryParamKeys.has("uploadId")) {
         return await handlers.abortMultipartUpload(
@@ -127,14 +128,28 @@ export async function s3Resolver(
         return await handlers.deleteObject(reqCtx, request, bucketConfig);
       }
 
-      return await handlers.deleteBucket(reqCtx, request, bucketConfig);
+      if (bucket) {
+        return await handlers.deleteBucket(reqCtx, request, bucketConfig);
+      }
+
+      break;
     case "HEAD":
       if (objectKey) {
         return await handlers.headObject(reqCtx, request, bucketConfig);
       }
-      return await handlers.headBucket(reqCtx, request, bucketConfig);
+
+      if (bucket) {
+        return await handlers.headBucket(reqCtx, request, bucketConfig);
+      }
+
+      break;
     default:
-      logger.critical(`Unsupported Request Method: ${method}`);
+      logger.critical(
+        `Unsupported Request Method: ${method} on ${request.url}`,
+      );
       return createOk(getAPIErrorResponse(APIErrors.ErrInvalidRequest));
   }
+
+  logger.warn(`Unsupported Request: method ${method} on ${request.url}`);
+  return createOk(getAPIErrorResponse(APIErrors.ErrInvalidRequest));
 }

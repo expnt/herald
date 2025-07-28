@@ -74,7 +74,7 @@ export async function swiftResolver(
   // FIXME: `resolveHandler` has already extracted request info
   // it is also called in other functions invoked hereafter
   // multiple times if replicas are involved
-  const { method, objectKey } = s3Utils.extractRequestInfo(req);
+  const { bucket, method, objectKey } = s3Utils.extractRequestInfo(req);
   const url = new URL(req.url);
   const queryParam = url.searchParams.keys().next().value;
 
@@ -138,7 +138,11 @@ export async function swiftResolver(
         return await handlers.listBuckets(reqCtx, req, bucketConfig);
       }
 
-      return await handlers.listObjects(reqCtx, req, bucketConfig);
+      if (bucket) {
+        return await handlers.listObjects(reqCtx, req, bucketConfig);
+      }
+
+      break;
     case "POST":
       if (queryParamKeys.has("delete")) {
         return await handlers.deleteObjects(
@@ -166,7 +170,7 @@ export async function swiftResolver(
         queryParamKeys.has("uploadId") &&
         req.headers.get("x-amz-copy-source")
       ) {
-        return await handlers.uploadPartCopy(reqCtx, req, bucketConfig);
+        return handlers.uploadPartCopy(reqCtx, req, bucketConfig);
       }
 
       if (objectKey && req.headers.get("x-amz-copy-source")) {
@@ -181,7 +185,11 @@ export async function swiftResolver(
         return await handlers.putObject(reqCtx, req, bucketConfig);
       }
 
-      return await handlers.createBucket(reqCtx, req, bucketConfig);
+      if (bucket) {
+        return await handlers.createBucket(reqCtx, req, bucketConfig);
+      }
+
+      break;
     case "DELETE":
       if (objectKey && queryParamKeys.has("uploadId")) {
         return await handlers.abortMultipartUpload(reqCtx, req, bucketConfig);
@@ -190,15 +198,23 @@ export async function swiftResolver(
         return await handlers.deleteObject(reqCtx, req, bucketConfig);
       }
 
-      return await handlers.deleteBucket(reqCtx, req, bucketConfig);
+      if (bucket) {
+        return await handlers.deleteBucket(reqCtx, req, bucketConfig);
+      }
+
+      break;
     case "HEAD":
       if (objectKey) {
         return await handlers.headObject(reqCtx, req, bucketConfig);
       }
 
-      return await handlers.headBucket(reqCtx, req, bucketConfig);
+      if (bucket) {
+        return await handlers.headBucket(reqCtx, req, bucketConfig);
+      }
+
+      break;
     default:
-      logger.critical(`Unsupported Request: ${method}`);
+      logger.critical(`Unsupported Request: method ${method} on ${req.url}`);
       return createOk(getAPIErrorResponse(APIErrors.ErrInvalidRequest));
   }
 
