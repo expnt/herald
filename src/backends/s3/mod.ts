@@ -21,7 +21,6 @@ import { areQueryParamsSupported } from "../../utils/url.ts";
 import { extractRequestInfo } from "../../utils/s3.ts";
 import { Bucket } from "../../buckets/mod.ts";
 import { RequestContext } from "../../types/mod.ts";
-import { APIErrors, getAPIErrorResponse } from "../../types/api_errors.ts";
 import { createOk, Result } from "option-t/plain_result";
 
 const handlers = {
@@ -144,12 +143,12 @@ export async function s3Resolver(
 
       break;
     default:
-      logger.critical(
+      logger.warn(
         `Unsupported Request Method: ${method} on ${request.url}`,
       );
-      return createOk(getAPIErrorResponse(APIErrors.ErrInvalidRequest));
+      return createOk(new Response("Proxy is running..."));
   }
 
   logger.warn(`Unsupported Request: method ${method} on ${request.url}`);
-  return createOk(getAPIErrorResponse(APIErrors.ErrInvalidRequest));
+  return createOk(new Response("Proxy is running..."));
 }

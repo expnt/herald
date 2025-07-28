@@ -42,7 +42,6 @@ import { formatRFC3339Date } from "./utils/mod.ts";
 import { InternalServerErrorException } from "../../constants/errors.ts";
 import { Logger } from "std/log";
 import { createErr, createOk, Result } from "option-t/plain_result";
-import { APIErrors, getAPIErrorResponse } from "../../types/api_errors.ts";
 
 const handlers = {
   putObject,
@@ -214,11 +213,11 @@ export async function swiftResolver(
 
       break;
     default:
-      logger.critical(`Unsupported Request: method ${method} on ${req.url}`);
-      return createOk(getAPIErrorResponse(APIErrors.ErrInvalidRequest));
+      logger.warn(`Unsupported Request: method ${method} on ${req.url}`);
+      return createOk(new Response("Proxy is running..."));
   }
 
-  return createErr(new HeraldError(405, { message: "Method Not Allowed" }));
+  return createOk(new Response("Proxy is running..."));
 }
 
 export function convertSwiftGetObjectToS3Response(
