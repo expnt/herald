@@ -8,12 +8,18 @@ import {
   getBodyFromReq,
   retryWithExponentialBackoff,
 } from "../../utils/url.ts";
-import { toS3ListPartXmlContent, toS3XmlContent } from "./utils/mod.ts";
+import {
+  toS3ListPartXmlContent,
+  toS3XmlContent,
+  toSwiftBulkDeleteBody,
+} from "./utils/mod.ts";
 import {
   InternalServerErrorException,
   InvalidRequestException,
+  MalformedXMLException,
   MissingUploadIdException,
   NoSuchBucketException,
+  NoSuchUploadException,
   NotImplementedException,
 } from "../../constants/errors.ts";
 import { SwiftConfig } from "../../config/types.ts";
@@ -43,6 +49,138 @@ import {
   unwrapErr,
   unwrapOk,
 } from "option-t/plain_result";
+import { Logger } from "std/log";
+
+// Utility: Send raw HTTP POST using Deno.connect (manual HTTP)
+async function sendManualBulkDeleteRequest(
+  host: string,
+  path: string,
+  token: string,
+  body: string,
+  accept = "application/json",
+) {
+  const port = 443;
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  // Ensure trailing newline
+  if (!body.endsWith("\n")) body += "\n";
+  const contentLength = encoder.encode(body).length;
+  const request = [
+    `POST ${path} HTTP/1.1`,
+    `Host: ${host}`,
+    `X-Auth-Token: ${token}`,
+    `Content-Type: text/plain`,
+    `Accept: ${accept}`,
+    `Content-Length: ${contentLength}`,
+    "Connection: close",
+    "",
+    body,
+  ].join("\r\n");
+
+  const conn = await Deno.connectTls({ hostname: host, port });
+  await conn.write(encoder.encode(request));
+  let response = "";
+  const buf = new Uint8Array(4096);
+  while (true) {
+    const n = await conn.read(buf);
+    if (n === null) break;
+    response += decoder.decode(buf.subarray(0, n));
+  }
+  conn.close();
+  // Return as a Response object for consistency
+  return response;
+}
+
+function getBulkDeleteJsonBody(
+  raw: string,
+  logger: Logger,
+) {
+  const [_headerPart, ...bodyParts] = raw.split("\r\n\r\n");
+  let body = bodyParts.join("\r\n\r\n").trim();
+
+  if (/^[0-9A-Fa-f]+\r?\n/.test(body)) {
+    // Remove chunk size lines
+    body = body.replace(/^[0-9A-Fa-f]+\r?\n/mg, "");
+    body = body.replace(/\r?\n0\r?\n?$/, ""); // Remove ending 0
+    body = body.trim();
+  }
+
+  // deno-lint-ignore no-explicit-any
+  let json: any = {};
+  try {
+    json = JSON.parse(body);
+  } catch {
+    logger.warn("Failed parsing bulk delete json body");
+  }
+
+  return json;
+}
+
+/**
+ * Converts a raw HTTP response string from Swift bulk delete
+ * into an S3-compatible DeleteObjects XML response.
+ */
+function convertManualBulkDeleteToS3Response(
+  raw: string,
+  deletedKeys: string[],
+): Result<Response, Error> {
+  // 1. Parse the HTTP response string
+  const [headerPart, ...bodyParts] = raw.split("\r\n\r\n");
+  let body = bodyParts.join("\r\n\r\n").trim();
+
+  // Extract status code from the first line of the header
+  let status = 200;
+  const statusLine = headerPart.split("\r\n")[0];
+  const statusMatch = statusLine.match(/^HTTP\/\d\.\d\s+(\d+)/);
+  if (statusMatch) {
+    status = parseInt(statusMatch[1], 10);
+  }
+
+  // Handle chunked encoding (remove chunk size lines)
+  if (/^[0-9A-Fa-f]+\r?\n/.test(body)) {
+    // Remove chunk size lines
+    body = body.replace(/^[0-9A-Fa-f]+\r?\n/mg, "");
+    body = body.replace(/\r?\n0\r?\n?$/, ""); // Remove ending 0
+    body = body.trim();
+  }
+
+  // deno-lint-ignore no-explicit-any
+  let json: any = {};
+  try {
+    json = JSON.parse(body);
+  } catch {
+    return createErr(
+      new Error(
+        "Failed to parse JSON response from Swift bulk delete",
+      ),
+    );
+  }
+
+  // 3. Build S3 DeleteResult XML
+  const deleted = [];
+  for (let i = 0; i < (json["Number Deleted"] || 0); i++) {
+    // Use deletedKeys if available, else just <Deleted/>
+    deleted.push(`<Deleted><Key>${deletedKeys[i] || ""}</Key></Deleted>`);
+  }
+  const errors = (json.Errors || []).map((err: Record<string, unknown>) =>
+    `<Error><Key>${err["Key"] || ""}</Key><Code>${
+      err["Code"] || "Error"
+    }</Code><Message>${err["Message"] || ""}</Message></Error>`
+  );
+
+  const xml =
+    `<?xml version="1.0" encoding="UTF-8"?>\n<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">\n  ${
+      deleted.join("\n  ")
+    }\n  ${errors.join("\n  ")}\n</DeleteResult>`;
+
+  // 4. Return as a Response, using the parsed status code
+  return createOk(
+    new Response(xml, {
+      status,
+      headers: { "Content-Type": "application/xml" },
+    }),
+  );
+}
 
 export async function putObject(
   reqCtx: RequestContext,
@@ -130,6 +268,11 @@ export async function getObject(
 
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
+  // Forward Range header if present
+  const rangeHeader = req.headers.get("range") || req.headers.get("Range");
+  if (rangeHeader) {
+    headers.set("Range", rangeHeader);
+  }
   const reqUrl = `${swiftUrl}/${bucket}/${object}`;
 
   const fetchFunc = async () => {
@@ -172,7 +315,7 @@ export async function getObject(
   }
 
   const successResponse = unwrapOk(response);
-  if (successResponse.status !== 200) {
+  if (successResponse.status !== 200 && successResponse.status !== 206) {
     const errMessage = `Get Object Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
@@ -245,6 +388,95 @@ export async function deleteObject(
   }
 
   return convertSwiftDeleteObjectToS3Response(successResponse);
+}
+
+export async function deleteObjects(
+  reqCtx: RequestContext,
+  req: Request,
+  bucketConfig: Bucket,
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
+  logger.info("[Swift backend] Proxying Delete Object Request...");
+
+  const { bucket } = s3Utils.extractRequestInfo(req);
+  if (!bucket) {
+    return createOk(InvalidRequestException(
+      "Bucket information missing from the request",
+    ));
+  }
+
+  const config: SwiftConfig = bucketConfig.config as SwiftConfig;
+  const mirrorOperation = bucketConfig.hasReplicas();
+
+  const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
+
+  const { storageUrl: swiftUrl, token: authToken } = res;
+  const url = new URL(swiftUrl);
+  const host = url.hostname;
+  // Path should be /v1/ACCOUNT?bulk-delete
+  const path = url.pathname + "?bulk-delete";
+
+  const requestBody = await toSwiftBulkDeleteBody(req, bucket);
+  if (!isOk(requestBody)) {
+    const errMessage = unwrapErr(requestBody);
+    logger.warn(
+      `Error reading request body for bulk delete: ${errMessage.message}`,
+    );
+    return requestBody;
+  }
+  const bulkDeleteObjects = unwrapOk(requestBody);
+  // If USE_MANUAL_HTTP env var is set, use manual HTTP
+  logger.info("Using manual HTTP bulk delete via Deno.connect...");
+  const fetchFunc = async () => {
+    return await sendManualBulkDeleteRequest(
+      host,
+      path,
+      authToken,
+      bulkDeleteObjects,
+      "application/json",
+    );
+  };
+  const response = await retryWithExponentialBackoff(
+    fetchFunc,
+    bucketConfig.hasReplicas() || bucketConfig.isReplica ? 1 : 3,
+  );
+  logger.info("Manual HTTP response:\n" + Deno.inspect(response));
+
+  if (!isOk(response)) {
+    const errMsg = `Error in manual HTTP bulk delete: ${
+      unwrapErr(response).message
+    }`;
+    logger.error(errMsg);
+    reportToSentry(errMsg);
+    return response;
+  }
+
+  const successResponse = unwrapOk(response);
+  // Parse the keys that were requested for deletion
+  const keys = bulkDeleteObjects.split("\n").filter(Boolean);
+
+  const convertedResponse = convertManualBulkDeleteToS3Response(
+    successResponse,
+    keys,
+  );
+
+  if (!isOk(convertedResponse)) {
+    const errMsg = `Error converting manual HTTP response: ${
+      unwrapErr(convertedResponse).message
+    }`;
+    logger.error(errMsg);
+    reportToSentry(errMsg);
+  } else if (mirrorOperation && unwrapOk(convertedResponse).status === 200) {
+    // TODO(needs thinking): operation failure and success is not for the whole objects, needs to be handled for each object seprately since one may fail and others may succeed
+    await prepareMirrorRequests(
+      reqCtx,
+      req,
+      bucketConfig,
+      "deleteObjects",
+    );
+  }
+
+  return convertedResponse;
 }
 
 export async function listObjects(
@@ -566,6 +798,13 @@ export async function copyObject(
   return convertSwiftCopyObjectToS3Response(successResponse);
 }
 
+interface MPUPart {
+  partNumber: string;
+  size: number;
+  etag: string;
+  eTag: string;
+}
+
 export async function createMultipartUpload(
   reqCtx: RequestContext,
   req: Request,
@@ -742,10 +981,8 @@ export async function completeMultipartUpload(
   const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
-  headers.append("X-Object-Manifest", `${bucket}/${object}`);
 
-  const reqUrl = `${swiftUrl}/${bucket}/${object}`;
-
+  // --- SLO Implementation ---
   // Get the uploadId from query parameters
   const { queryParams } = s3Utils.extractRequestInfo(req);
   const uploadId = queryParams["uploadId"]?.[0];
@@ -756,6 +993,105 @@ export async function completeMultipartUpload(
   // Define the path for the multipart upload session file
   const multipartSessionPath = `${MULTIPART_UPLOADS_PATH}/${uploadId}.json`;
   const multipartSessionUrl = `${swiftUrl}/${bucket}/${multipartSessionPath}`;
+
+  // Fetch the session file to get the parts array
+  let sessionJson;
+  try {
+    const getSessionFunc = async () => {
+      return await fetch(multipartSessionUrl, {
+        method: "GET",
+        headers: headers,
+      });
+    };
+    const getSessionResponse = await retryWithExponentialBackoff(
+      getSessionFunc,
+    );
+    if (
+      !isOk(getSessionResponse) || unwrapOk(getSessionResponse).status === 404
+    ) {
+      logger.error(
+        `Multipart upload session file not found for uploadId ${uploadId} at ${multipartSessionPath}`,
+      );
+      // complete multipart upload can be called again so just return
+      // Check if the manifest object exists (idempotency)
+      const manifestUrl = `${swiftUrl}/${bucket}/${object}`;
+      const manifestResp = await fetch(manifestUrl, {
+        method: "HEAD",
+        headers,
+      });
+      if (manifestResp.ok) {
+        const etag = manifestResp.headers.get("etag") ||
+          manifestResp.headers.get("ETag") || "";
+        return generateCompleteMultipartUploadResponse(
+          bucket,
+          object,
+          config.region,
+          etag,
+        );
+      } else {
+        // Manifest does not exist, return error
+        return createOk(MissingUploadIdException());
+      }
+    }
+    sessionJson = await unwrapOk(getSessionResponse).json();
+  } catch (error) {
+    logger.error(
+      `Error reading multipart upload session file for uploadId ${uploadId}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    return createOk(MissingUploadIdException());
+  }
+
+  // Build the SLO manifest from the parts array
+  const parts = Array.isArray(sessionJson.parts) ? sessionJson.parts : [];
+  if (parts.length === 0) {
+    logger.error(`No parts found in session file for uploadId ${uploadId}`);
+    return createOk(
+      MalformedXMLException(),
+    );
+  }
+  // Sort parts by partNumber (as string, but should be numeric order)
+  parts.sort((a: MPUPart, b: MPUPart) =>
+    Number(a.partNumber) - Number(b.partNumber)
+  );
+  const manifest = parts.map((
+    part: MPUPart,
+  ) => ({
+    path: `/${bucket}/${object}/${part.partNumber}`,
+    etag: (part.eTag || part.etag || "").replace(/\"/g, ""),
+    size_bytes: part.size,
+  }));
+
+  // PUT the SLO manifest
+  const manifestUrl = `${swiftUrl}/${bucket}/${object}?multipart-manifest=put`;
+  const sloHeaders = getSwiftRequestHeaders(authToken);
+  sloHeaders.set("Content-Type", "application/json");
+  const putManifestFunc = async () => {
+    return await fetch(manifestUrl, {
+      method: "PUT",
+      headers: sloHeaders,
+      body: JSON.stringify(manifest),
+    });
+  };
+  const putManifestResponse = await retryWithExponentialBackoff(
+    putManifestFunc,
+  );
+  if (!isOk(putManifestResponse)) {
+    const errRes = unwrapErr(putManifestResponse);
+    logger.warn(
+      `Complete Multipart Upload Failed. Failed to PUT SLO manifest: ${errRes.message}`,
+    );
+    return putManifestResponse;
+  }
+  const manifestSuccess = unwrapOk(putManifestResponse);
+  if (manifestSuccess.status !== 201 && manifestSuccess.status !== 200) {
+    const errMessage =
+      `Complete Multipart Upload Failed: ${manifestSuccess.statusText}`;
+    logger.warn(errMessage);
+    reportToSentry(errMessage);
+    return createOk(InvalidRequestException(errMessage));
+  }
 
   // Delete the per-upload JSON file
   try {
@@ -792,55 +1128,66 @@ export async function completeMultipartUpload(
     // Continue to next step
   }
 
-  const fetchFunc = async () => {
-    return await fetch(reqUrl, {
-      method: "PUT",
-      headers: headers,
-    });
-  };
-  const response = await retryWithExponentialBackoff(
-    fetchFunc,
-  );
+  // NOTE: deleting the parts right away is not possible since Swift takes time to assemble the segments.
+  // // Bulk-delete the part objects
+  // const prefix = `${object}/`;
+  // const listParams = new URLSearchParams();
+  // listParams.append("prefix", prefix);
+  // listParams.append("format", "json");
+  // const listUrl = `${swiftUrl}/${bucket}?${listParams.toString()}`;
+  // const listFunc = async () => {
+  //   return await fetch(listUrl, {
+  //     method: "GET",
+  //     headers: headers,
+  //   });
+  // };
+  // const listResponse = await retryWithExponentialBackoff(listFunc);
+  // if (isOk(listResponse) && unwrapOk(listResponse).ok) {
+  //   const objectsJson = await unwrapOk(listResponse).json();
+  //   const objectsToDelete = (objectsJson || [])
+  //     .filter((item: { name: string }) =>
+  //       item.name && item.name.startsWith(prefix)
+  //     )
+  //     .map((item: { name: string }) => `${bucket}/${item.name}`);
+  //   if (objectsToDelete.length > 0) {
+  //     const urlObj = new URL(swiftUrl);
+  //     const host = urlObj.hostname;
+  //     const path = urlObj.pathname + "?bulk-delete";
+  //     const bulkDeleteBody = objectsToDelete.join("\n");
+  //     const bulkDeleteFunc = async () => {
+  //       return await sendManualBulkDeleteRequest(
+  //         host,
+  //         path,
+  //         authToken,
+  //         bulkDeleteBody,
+  //         "application/json",
+  //       );
+  //     };
+  //     await retryWithExponentialBackoff(bulkDeleteFunc);
+  //   }
+  // }
 
-  if (!isOk(response)) {
-    const errRes = unwrapErr(response);
-    logger.warn(
-      `Complete Multipart Upload Failed. Failed to connect with Object Storage: ${errRes.message}`,
-    );
-    return response;
-  }
-
-  const successResponse = unwrapOk(response);
-  if (successResponse.status !== 201) {
-    const errMessage =
-      `Complete Multipart Upload Failed: ${successResponse.statusText}`;
-    logger.warn(errMessage);
-    reportToSentry(errMessage);
-  } else {
-    logger.info(
-      `Complete Multipart Upload Successful: ${successResponse.statusText}`,
-    );
-    if (mirrorOperation) {
-      await prepareMirrorRequests(
-        reqCtx,
-        req,
-        bucketConfig,
-        "completeMultipartUpload",
-      );
-    }
-  }
-
-  const etag = successResponse.headers.get("eTag");
-  if (!etag) {
-    return createOk(InvalidRequestException("ETag not found in response"));
-  }
+  // SLO ETag is the MD5 of the concatenated ETags of the segments, in quotes
+  // For now, just return the ETag from the manifest response if available
+  const sloEtag = manifestSuccess.headers.get("etag") ||
+    manifestSuccess.headers.get("ETag") || "";
 
   const result = generateCompleteMultipartUploadResponse(
     bucket,
     object,
     config.region,
-    etag,
+    sloEtag,
   );
+
+  logger.info(`Complete MultipartUpload Successful`);
+  if (mirrorOperation) {
+    await prepareMirrorRequests(
+      reqCtx,
+      req,
+      bucketConfig,
+      "completeMultipartUpload",
+    );
+  }
 
   return result;
 }
@@ -907,7 +1254,6 @@ export async function uploadPart(
     reportToSentry(errMessage);
   } else {
     logger.info(`Upload Part Successful: ${successResponse.statusText}`);
-    // --- Update the per-upload JSON file with part metadata ---
     const multipartSessionPath = `${MULTIPART_UPLOADS_PATH}/${uploadId}.json`;
     const multipartSessionUrl = `${swiftUrl}/${bucket}/${multipartSessionPath}`;
     try {
@@ -975,7 +1321,6 @@ export async function uploadPart(
         }`,
       );
     }
-    // --- End update per-upload JSON ---
   }
 
   return convertSwiftUploadPartToS3Response(successResponse, logger);
@@ -1001,9 +1346,9 @@ export async function listParts(
     req,
   );
 
-  if (!bucket) {
+  if (!bucket || !objectKey) {
     return createOk(InvalidRequestException(
-      "Bucket information missing from the request",
+      "Bucket or Object information missing from the request",
     ));
   }
 
@@ -1013,18 +1358,48 @@ export async function listParts(
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
 
+  // First check if the uploadId exists by checking the session file
+  const uploadId = query["uploadId"]?.[0];
+  if (!uploadId) {
+    return createOk(InvalidRequestException(
+      "uploadId missing from the request",
+    ));
+  }
+
+  const multipartSessionPath = `${MULTIPART_UPLOADS_PATH}/${uploadId}.json`;
+  const multipartSessionUrl = `${swiftUrl}/${bucket}/${multipartSessionPath}`;
+
+  // Check if the session file exists
+  const sessionCheckFunc = async () => {
+    return await fetch(multipartSessionUrl, {
+      method: "HEAD",
+      headers: headers,
+    });
+  };
+
+  const sessionResponse = await retryWithExponentialBackoff(sessionCheckFunc);
+  if (!isOk(sessionResponse) || unwrapOk(sessionResponse).status === 404) {
+    logger.warn(
+      `Multipart upload session file not found for uploadId ${uploadId} at ${multipartSessionPath}`,
+    );
+    return createOk(NoSuchUploadException());
+  }
+
   const params = new URLSearchParams();
-  if (query.prefix) params.append("prefix", query.prefix[0]);
+  if (query.prefix) {
+    params.append("prefix", query.prefix[0]);
+  } else {
+    params.append("prefix", objectKey);
+  }
   if (query.delimiter) params.append("delimiter", "/");
   if (query["part-number-marker"]) {
-    params.append("marker", query["part-number-marker"][0]);
+    params.append("marker", `${objectKey}/${query["part-number-marker"][0]}`);
   }
   if (query["max-parts"]) params.append("limit", query["max-parts"][0]);
 
   headers.delete("Accept");
   headers.set("Accept", "application/json");
 
-  // FIXME: cant append objectKey directly, swift doesn't allow to access the parts just like files in folders, needs to be fetched selectively
   const reqUrl = `${swiftUrl}/${bucket}?${params.toString()}`;
 
   const fetchFunc = async () => {
@@ -1079,8 +1454,6 @@ export async function listParts(
   } else {
     logger.info(`ListParts Successful: ${successResponse.statusText}`);
   }
-
-  const uploadId = query["uploadId"][0] ?? null;
   const maxKeys = query["max-parts"] ? Number(query["max-parts"][0]) : null;
   const partNumberMarker = query["part-number-marker"]
     ? parseInt(query["part-number-marker"][0])
@@ -1120,7 +1493,7 @@ export async function abortMultipartUpload(
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
 
-  // Delete the per-upload JSON file
+  // Delete the per-upload JSON file (session file)
   const multipartSessionPath = `${MULTIPART_UPLOADS_PATH}/${uploadId}.json`;
   const multipartSessionUrl = `${swiftUrl}/${bucket}/${multipartSessionPath}`;
   try {
@@ -1157,36 +1530,78 @@ export async function abortMultipartUpload(
     // Continue to next step
   }
 
-  // Now delete the object parts
-  const reqUrl = `${swiftUrl}/${bucket}/${object}`;
-  const fetchFunc = async () => {
-    return await fetch(reqUrl, {
-      method: "DELETE",
+  // List all objects with the prefix for this multipart upload
+  const prefix = `${object}/`;
+  const listParams = new URLSearchParams();
+  listParams.append("prefix", prefix);
+  listParams.append("format", "json");
+  const listUrl = `${swiftUrl}/${bucket}?${listParams.toString()}`;
+  const listFunc = async () => {
+    return await fetch(listUrl, {
+      method: "GET",
       headers: headers,
     });
   };
-
-  const response = await retryWithExponentialBackoff(fetchFunc);
-
-  if (!isOk(response)) {
-    const errRes = unwrapErr(response);
-    logger.warn(
-      `AbortMultipartUpload Failed. Failed to connect with Object Storage: ${errRes.message}`,
+  const listResponse = await retryWithExponentialBackoff(listFunc);
+  if (!isOk(listResponse)) {
+    const errRes = unwrapErr(listResponse);
+    logger.error(
+      `AbortMultipartUpload Failed. Could not list parts: ${errRes.message}`,
     );
-    return response;
+    return listResponse;
   }
+  const listOk = unwrapOk(listResponse);
+  if (!listOk.ok) {
+    logger.error(
+      `AbortMultipartUpload Failed. Could not list parts: ${listOk.statusText}`,
+    );
+    return createErr(new Error(listOk.statusText));
+  }
+  const objectsJson = await listOk.json();
+  const objectsToDelete = (objectsJson || [])
+    .filter((item: { name: string }) =>
+      item.name && item.name.startsWith(prefix)
+    )
+    .map((item: { name: string }) => `${bucket}/${item.name}`);
 
-  const successResponse = unwrapOk(response);
-  if (successResponse.status !== 204) {
-    const errMessage =
-      `AbortMultipartUpload Failed: ${successResponse.statusText}`;
-    logger.warn(errMessage);
-    reportToSentry(errMessage);
+  if (objectsToDelete.length === 0) {
+    logger.info(`No parts found for multipart upload with prefix ${prefix}`);
   } else {
+    // Bulk delete all parts
+    const urlObj = new URL(swiftUrl);
+    const host = urlObj.hostname;
+    const path = urlObj.pathname + "?bulk-delete";
+    const bulkDeleteBody = objectsToDelete.join("\n");
     logger.info(
-      `AbortMultipartUpload Successful: ${successResponse.statusText}`,
+      `Bulk deleting ${objectsToDelete.length} parts for prefix ${prefix}`,
     );
+    const bulkDeleteFunc = async () => {
+      return await sendManualBulkDeleteRequest(
+        host,
+        path,
+        authToken,
+        bulkDeleteBody,
+        "application/json",
+      );
+    };
+    const bulkDeleteResponseResult = await retryWithExponentialBackoff(
+      bulkDeleteFunc,
+    );
+    if (!isOk(bulkDeleteResponseResult)) {
+      logger.error(
+        `Bulk delete failed for prefix ${prefix}: ${
+          unwrapErr(bulkDeleteResponseResult).message
+        }`,
+      );
+      return bulkDeleteResponseResult;
+    }
+
+    const deleteResBody = unwrapOk(bulkDeleteResponseResult);
+    const jsonBody = getBulkDeleteJsonBody(deleteResBody, logger);
+    logger.info(`Bulk Delete Parts Successful: \n ${Deno.inspect(jsonBody)}`);
   }
+
+  logger.info(`Abort MultipartUpload Successful`);
 
   // Return a successful response according to S3 spec
   const responseHeaders = new Headers({
@@ -1421,6 +1836,8 @@ export async function listMultipartUploads(
 
   const xmlBuilder = new xml2js.Builder();
   const formattedXml = xmlBuilder.buildObject(xmlResponse);
+
+  logger.info("List MultipartUploads Successful.");
 
   return createOk(
     new Response(formattedXml, {

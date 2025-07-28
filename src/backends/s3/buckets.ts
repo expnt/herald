@@ -11,6 +11,42 @@ import { swiftResolver } from "../swift/mod.ts";
 import { RequestContext } from "../../types/mod.ts";
 import { isOk, Result, unwrapErr, unwrapOk } from "option-t/plain_result";
 
+export async function listBuckets(
+  reqCtx: RequestContext,
+  req: Request,
+  bucketConfig: Bucket,
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
+  logger.info("[S3 backend] Proxying List Buckets Request...");
+
+  const config: S3Config = bucketConfig.config as S3Config;
+
+  const response = await forwardS3RequestToS3WithTimeouts(
+    req,
+    config,
+  );
+
+  if (!isOk(response)) {
+    const err = unwrapErr(response);
+    logger.warn(
+      `List Buckets Failed. Failed to connect with Object Storage: ${err.message}`,
+    );
+    return response;
+  }
+
+  const successResponse = unwrapOk(response);
+
+  if (successResponse.status !== 200) {
+    const errMessage = `List Buckets Failed: ${successResponse.statusText}`;
+    logger.warn(errMessage);
+    reportToSentry(errMessage);
+  } else {
+    logger.info(`List Buckets Successful: ${successResponse.statusText}`);
+  }
+
+  return response;
+}
+
 export async function createBucket(
   reqCtx: RequestContext,
   req: Request,

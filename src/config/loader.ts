@@ -50,6 +50,14 @@ export async function loadConfig(): Promise<GlobalConfig> {
     [rawConfig],
   ) as GlobalConfig;
 
+  if (
+    !Object.keys(config.buckets).includes(config.default_bucket)
+  ) {
+    throw new Error(
+      `Default bucket: ${config.default_bucket} not found in buckets configuration.`,
+    );
+  }
+
   validateProtocol(config);
 
   return config;

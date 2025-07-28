@@ -9,6 +9,7 @@ import { s3Resolver } from "./mod.ts";
 import { RequestContext } from "../../types/mod.ts";
 import { extractRequestInfo } from "../../utils/s3.ts";
 import { isOk, Result, unwrapErr, unwrapOk } from "option-t/plain_result";
+import { toSwiftBulkDeleteBody } from "../swift/utils/mod.ts";
 
 export async function getObject(
   reqCtx: RequestContext,
@@ -51,7 +52,7 @@ export async function getObject(
   }
 
   const successResponse = unwrapOk(response);
-  if (successResponse.status !== 200) {
+  if (successResponse.status !== 200 && successResponse.status !== 206) {
     const errMessage = `Get Object Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
     reportToSentry(errMessage);
@@ -197,6 +198,64 @@ export async function deleteObject(
         req,
         bucketConfig,
         "deleteObject",
+      );
+    }
+  }
+
+  return response;
+}
+
+export async function deleteObjects(
+  reqCtx: RequestContext,
+  req: Request,
+  bucketConfig: Bucket,
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
+  logger.info("[S3 backend] Proxying Delete Objects Request...");
+
+  const config: S3Config = bucketConfig.config as S3Config;
+  const mirrorOperation = bucketConfig.hasReplicas();
+
+  const clonedReq = req.clone();
+  const requestBody = await toSwiftBulkDeleteBody(
+    clonedReq,
+    bucketConfig.bucketName,
+  );
+  if (!isOk(requestBody)) {
+    const errMessage = `Error reading request body for bulk delete: ${
+      unwrapErr(requestBody).message
+    }`;
+    logger.warn(errMessage);
+    return requestBody;
+  }
+
+  const response = await forwardS3RequestToS3WithTimeouts(
+    req,
+    config,
+  );
+
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `Delete Objects Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
+    return response;
+  }
+
+  const successResponse = unwrapOk(response);
+  if (successResponse.status != 204) {
+    const errMesage = `Delete Objects Failed: ${successResponse.statusText}`;
+    logger.warn(errMesage);
+    reportToSentry(errMesage);
+  } else {
+    logger.info(`Delete Objects Successful: ${successResponse.statusText}`);
+    if (mirrorOperation) {
+      await prepareMirrorRequests(
+        reqCtx,
+        req,
+        bucketConfig,
+        "deleteObjects",
+        unwrapOk(requestBody),
       );
     }
   }

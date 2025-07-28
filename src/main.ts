@@ -72,10 +72,6 @@ app.all("/*", async (c) => {
     return c.text(healthStatus, 200);
   }
 
-  if (path === "/") {
-    return c.text("Proxy is running...", 200);
-  }
-
   const token = c.req.header("Authorization") ?? null;
 
   const auth = getAuthType();

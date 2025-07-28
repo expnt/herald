@@ -3,6 +3,7 @@ import { Bucket } from "../buckets/mod.ts";
 export type MirrorableCommands =
   | "putObject"
   | "deleteObject"
+  | "deleteObjects"
   | "copyObject"
   | "createBucket"
   | "deleteBucket"
@@ -22,4 +23,5 @@ export interface MirrorTask {
   originalRequest: Record<string, unknown>;
   nonce: string;
   retryCount: number;
+  stringBody?: string | undefined;
 }

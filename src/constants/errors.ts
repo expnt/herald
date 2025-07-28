@@ -123,6 +123,25 @@ export function InvalidRequestException(message?: string) {
   });
 }
 
+const malformedXmlError = `<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+    <Code>MalformedXML</Code>
+    <Message>The XML you provided was not well-formed or did not satisfy the required schema.</Message>
+    <RequestId>unique-request-id</RequestId>
+    <HostId>unique-host-id</HostId>
+    <UploadId>your-upload-id</UploadId> <!-- The upload ID from the original request -->
+</Error>`;
+export function MalformedXMLException(message?: string) {
+  const customXml = message
+    ? malformedXmlError.replace("The request is invalid.", message)
+    : malformedXmlError;
+
+  return new Response(customXml, {
+    status: 400,
+    headers: commonHeaders,
+  });
+}
+
 export function InternalServerErrorException(requestId = "unknown") {
   // xml error response for InternalServerError
   const internalServerErrorXml = `<?xml version="1.0" encoding="UTF-8"?>

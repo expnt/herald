@@ -1,5 +1,5 @@
 import * as xml2js from "xml2js";
-import { createOk, Result } from "option-t/plain_result";
+import { createErr, createOk, Result } from "option-t/plain_result";
 
 export function formatRFC3339Date(dateString: string): string {
   // Convert the string into a Date object
@@ -206,7 +206,7 @@ export async function toS3ListPartXmlContent(
       Key: object ?? "",
       MaxParts: maxKeys,
       UploadId: uploadId,
-      PartNumberMarker: partNumberMarker,
+      ...(partNumberMarker != null && { PartNumberMarker: partNumberMarker }),
       NextPartNumberMarker: parts.length > 0
         ? parts[parts.length - 1].PartNumber
         : null,
@@ -230,4 +230,37 @@ export async function toS3ListPartXmlContent(
       },
     }),
   );
+}
+
+export async function toSwiftBulkDeleteBody(
+  request: Request,
+  bucket: string,
+): Promise<Result<string, Error>> {
+  try {
+    // Read the request body as text
+    const s3XmlBody = await request.text();
+
+    const parser = new xml2js.Parser();
+    const result = await parser.parseStringPromise(s3XmlBody);
+
+    const objectsToDelete: string[] = [];
+    if (result && result.Delete && Array.isArray(result.Delete.Object)) {
+      for (const obj of result.Delete.Object) {
+        if (obj.Key && typeof obj.Key[0] === "string") {
+          objectsToDelete.push(bucket + "/" + obj.Key[0]);
+        }
+      }
+    }
+
+    // Swift bulk delete expects a newline-separated list of object names
+    let swiftBody = objectsToDelete.join("\n");
+    swiftBody += "\n";
+
+    return createOk(swiftBody);
+  } catch (error) {
+    // Handle errors from reading the body or XML parsing
+    return createErr(
+      error as Error,
+    );
+  }
 }

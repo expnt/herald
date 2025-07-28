@@ -4,6 +4,7 @@ import {
   copyObject,
   createMultipartUpload,
   deleteObject,
+  deleteObjects,
   getObject,
   getObjectMeta,
   headObject,
@@ -31,6 +32,7 @@ import {
   getBucketVersioning,
   getBucketWebsite,
   headBucket,
+  listBuckets,
 } from "./buckets.ts";
 import { HeraldError } from "../../types/http-exception.ts";
 import { s3Utils } from "../../utils/mod.ts";
@@ -40,7 +42,6 @@ import { formatRFC3339Date } from "./utils/mod.ts";
 import { InternalServerErrorException } from "../../constants/errors.ts";
 import { Logger } from "std/log";
 import { createErr, createOk, Result } from "option-t/plain_result";
-import { APIErrors, getAPIErrorResponse } from "../../types/api_errors.ts";
 
 const handlers = {
   putObject,
@@ -60,6 +61,8 @@ const handlers = {
   listMultipartUploads,
   uploadPartCopy,
   abortMultipartUpload,
+  deleteObjects,
+  listBuckets,
 };
 
 export async function swiftResolver(
@@ -70,7 +73,7 @@ export async function swiftResolver(
   // FIXME: `resolveHandler` has already extracted request info
   // it is also called in other functions invoked hereafter
   // multiple times if replicas are involved
-  const { method, objectKey } = s3Utils.extractRequestInfo(req);
+  const { bucket, method, objectKey } = s3Utils.extractRequestInfo(req);
   const url = new URL(req.url);
   const queryParam = url.searchParams.keys().next().value;
 
@@ -130,8 +133,24 @@ export async function swiftResolver(
         return await handlers.listMultipartUploads(reqCtx, req, bucketConfig);
       }
 
-      return await handlers.listObjects(reqCtx, req, bucketConfig);
+      if (url.pathname === "/") {
+        return await handlers.listBuckets(reqCtx, req, bucketConfig);
+      }
+
+      if (bucket) {
+        return await handlers.listObjects(reqCtx, req, bucketConfig);
+      }
+
+      break;
     case "POST":
+      if (queryParamKeys.has("delete")) {
+        return await handlers.deleteObjects(
+          reqCtx,
+          req,
+          bucketConfig,
+        );
+      }
+
       if (objectKey && queryParamKeys.has("uploads")) {
         return await handlers.createMultipartUpload(reqCtx, req, bucketConfig);
       }
@@ -150,7 +169,7 @@ export async function swiftResolver(
         queryParamKeys.has("uploadId") &&
         req.headers.get("x-amz-copy-source")
       ) {
-        return await handlers.uploadPartCopy(reqCtx, req, bucketConfig);
+        return handlers.uploadPartCopy(reqCtx, req, bucketConfig);
       }
 
       if (objectKey && req.headers.get("x-amz-copy-source")) {
@@ -165,7 +184,11 @@ export async function swiftResolver(
         return await handlers.putObject(reqCtx, req, bucketConfig);
       }
 
-      return await handlers.createBucket(reqCtx, req, bucketConfig);
+      if (bucket) {
+        return await handlers.createBucket(reqCtx, req, bucketConfig);
+      }
+
+      break;
     case "DELETE":
       if (objectKey && queryParamKeys.has("uploadId")) {
         return await handlers.abortMultipartUpload(reqCtx, req, bucketConfig);
@@ -174,19 +197,27 @@ export async function swiftResolver(
         return await handlers.deleteObject(reqCtx, req, bucketConfig);
       }
 
-      return await handlers.deleteBucket(reqCtx, req, bucketConfig);
+      if (bucket) {
+        return await handlers.deleteBucket(reqCtx, req, bucketConfig);
+      }
+
+      break;
     case "HEAD":
       if (objectKey) {
         return await handlers.headObject(reqCtx, req, bucketConfig);
       }
 
-      return await handlers.headBucket(reqCtx, req, bucketConfig);
+      if (bucket) {
+        return await handlers.headBucket(reqCtx, req, bucketConfig);
+      }
+
+      break;
     default:
-      logger.critical(`Unsupported Request: ${method}`);
-      return createOk(getAPIErrorResponse(APIErrors.ErrInvalidRequest));
+      logger.warn(`Unsupported Request: method ${method} on ${req.url}`);
+      return createOk(new Response("Proxy is running..."));
   }
 
-  return createErr(new HeraldError(405, { message: "Method Not Allowed" }));
+  return createOk(new Response("Proxy is running..."));
 }
 
 export function convertSwiftGetObjectToS3Response(
@@ -196,7 +227,7 @@ export function convertSwiftGetObjectToS3Response(
   const swiftStatus = swiftResponse.status;
   const swiftHeaders = swiftResponse.headers;
 
-  if (swiftStatus === 200) {
+  if (swiftStatus === 200 || swiftStatus === 206) {
     // Successful GetObject
     const eTag = swiftHeaders.get("etag");
     const lastModified = swiftHeaders.get("last-modified");
@@ -204,6 +235,7 @@ export function convertSwiftGetObjectToS3Response(
     const acceptRanges = swiftHeaders.get("accept-ranges");
     const contentType = swiftHeaders.get("content-type") ||
       "application/octet-stream";
+    const contentRange = swiftHeaders.get("content-range");
 
     if (!eTag || !lastModified || !contentLength) {
       return createErr(
@@ -236,6 +268,9 @@ export function convertSwiftGetObjectToS3Response(
     if (requestId) {
       s3ResponseHeaders.set("x-amz-request-id", requestId);
     }
+    if (contentRange) {
+      s3ResponseHeaders.set("Content-Range", contentRange);
+    }
 
     // Map metadata headers
     swiftHeaders.forEach((value, key) => {
@@ -248,7 +283,7 @@ export function convertSwiftGetObjectToS3Response(
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html#API_GetObject_ResponseSyntax
     return createOk(
       new Response(swiftResponse.body, {
-        status: 200,
+        status: swiftStatus,
         headers: s3ResponseHeaders,
       }),
     );
@@ -617,6 +652,56 @@ export function convertSwiftCreateBucketToS3Response(
       }),
     }),
   );
+}
+
+export async function convertSwiftListBucketsToS3Response(
+  swiftResponse: Response,
+): Promise<Response> {
+  // Parse the JSON body
+  const buckets = await swiftResponse.json();
+
+  // Get request id from headers if available
+  const swiftHeaders = swiftResponse.headers;
+  const requestId = swiftHeaders.get("x-openstack-request-id") ||
+    swiftHeaders.get("x-trans-id") ||
+    "Unknown";
+
+  const bucketsXml = buckets.map((b: {
+    last_modified: string;
+    name: string;
+  }) => {
+    // S3 expects ISO8601 UTC with 'Z' at the end
+    let creationDate = b.last_modified;
+    if (creationDate && !creationDate.endsWith("Z")) {
+      creationDate = creationDate + "Z";
+    }
+    return `
+      <Bucket>
+        <Name>${b.name}</Name>
+        <CreationDate>${creationDate || ""}</CreationDate>
+      </Bucket>
+    `.trim();
+  }).join("");
+
+  const s3Xml = `
+<ListAllMyBucketsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Owner>
+    <ID>swift</ID>
+    <DisplayName>swift</DisplayName>
+  </Owner>
+  <Buckets>
+    ${bucketsXml}
+  </Buckets>
+  <RequestId>${requestId}</RequestId>
+</ListAllMyBucketsResult>
+  `.trim();
+
+  return new Response(s3Xml, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/xml",
+    },
+  });
 }
 
 export function convertSwiftHeadBucketToS3Response(

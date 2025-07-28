@@ -1,63 +1,57 @@
-// create object
-Deno.test(async function uploadObjectTest() {
+import { assertEquals, assertStringIncludes } from "std/assert";
+import {
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from "aws-sdk/client-s3";
+import { deleteBucketIfExists, setupBucket } from "../../../utils/s3.ts";
+
+const bucketName = "s3-test";
+const objectKey = "test-object.txt";
+const testData = "Hello, this is a test file for range requests!";
+
+const s3 = new S3Client({
+  credentials: {
+    accessKeyId: "minio",
+    secretAccessKey: "password",
+  },
+  region: "local",
+  forcePathStyle: true,
+  endpoint: "http://localhost:8000",
 });
 
-// get object
-Deno.test(async function getObjectTest() {
-});
+Deno.test("Ranged GET returns partial content (AWS SDK)", async (t) => {
+  await t.step(async function setup() {
+    await setupBucket(s3, bucketName);
+  });
 
-// list objects
-Deno.test(async function listObjects() {
-});
+  // Upload the object
+  const putRes = await s3.send(
+    new PutObjectCommand({
+      Bucket: bucketName,
+      Key: objectKey,
+      Body: testData,
+      ContentType: "text/plain",
+    }),
+  );
+  assertEquals(putRes.$metadata.httpStatusCode, 200);
 
-// delete object test
-Deno.test(async function deleteObject() {
-  // successful delete
+  // Perform a ranged GET (bytes 7-18)
+  const getRes = await s3.send(
+    new GetObjectCommand({
+      Bucket: bucketName,
+      Key: objectKey,
+      Range: "bytes=7-18",
+    }),
+  );
+  assertEquals(getRes.$metadata.httpStatusCode, 206);
+  assertStringIncludes(getRes.ContentRange ?? "", "bytes 7-18/");
+  const partialContent = new TextDecoder().decode(
+    await getRes.Body?.transformToByteArray(),
+  );
+  assertEquals(partialContent, "this is a te");
 
-  // failed delete
-});
-
-// delete objects
-Deno.test(async function deleteObjects() {
-});
-
-// get object attributes
-Deno.test(async function getObjectAttr() {
-  // get object attributes, signature ...
-});
-
-// multi file upload
-Deno.test(async function multiFileUpload() {
-});
-
-// concurrent upload
-Deno.test(async function concurrentUpload() {
-});
-
-// invalid, valid signature object upload
-Deno.test(async function invalidSignature() {
-});
-
-// large files upload
-Deno.test(async function largeFileUpload() {
-});
-
-// concurrent download
-Deno.test(async function concurrentDownload() {
-});
-
-// download with network interruption
-Deno.test(async function networkInterrupt() {
-});
-
-// unauthorized access, download
-Deno.test(async function unauthorized() {
-});
-
-// high load download
-Deno.test(async function highLoadDownload() {
-});
-
-// high load upload
-Deno.test(async function highLoadUpload() {
+  await t.step(async function setup() {
+    await deleteBucketIfExists(s3, bucketName);
+  });
 });
