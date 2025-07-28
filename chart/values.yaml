@@ -21,6 +21,7 @@ heraldConfig:
     openstack_swift:
       protocol: swift
   service_accounts: []
+  default_bucket: "s3-test"
   buckets:
     s3-test:
       backend: minio_s3
@@ -36,7 +37,7 @@ heraldConfig:
 
 image:
   repository: ghcr.io/expnt/herald
-  tag: "v0.5.0"
+  tag: "v0.7.0"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
