@@ -20,7 +20,6 @@ import {
   MissingUploadIdException,
   NoSuchBucketException,
   NoSuchUploadException,
-  NotImplementedException,
 } from "../../constants/errors.ts";
 import { SwiftConfig } from "../../config/types.ts";
 import { S3_COPY_SOURCE_HEADER } from "../../constants/headers.ts";
@@ -1327,11 +1326,252 @@ export async function uploadPart(
 }
 
 export function uploadPartCopy(
-  _reqCtx: RequestContext,
-  _req: Request,
-  _bucketConfig: Bucket,
-): Result<Response, Error> {
-  return createOk(NotImplementedException());
+  reqCtx: RequestContext,
+  req: Request,
+  bucketConfig: Bucket,
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
+  logger.info("[Swift backend] Proxying Upload Part Copy Request...");
+
+  const { bucket, objectKey: object, queryParams } = s3Utils.extractRequestInfo(
+    req,
+  );
+  if (!bucket) {
+    return Promise.resolve(createOk(InvalidRequestException(
+      "Bucket information missing from the request",
+    )));
+  }
+
+  const partNumber = queryParams["partNumber"];
+  const uploadId = queryParams["uploadId"]?.[0];
+  if (!partNumber) {
+    return Promise.resolve(createOk(InvalidRequestException(
+      "Bad Request: partNumber is missing from request",
+    )));
+  }
+  if (!uploadId) {
+    return Promise.resolve(createOk(InvalidRequestException(
+      "Bad Request: uploadId is missing from request",
+    )));
+  }
+
+  const copySource = req.headers.get(S3_COPY_SOURCE_HEADER);
+  if (!copySource) {
+    return Promise.resolve(createOk(InvalidRequestException(
+      `${S3_COPY_SOURCE_HEADER} missing from request`,
+    )));
+  }
+
+  // Extract source bucket and key from copySource
+  const sourceParts = copySource.split("/");
+  const sourceBucket = sourceParts[0];
+  const sourceKey = sourceParts.slice(1).join("/");
+
+  // Get the copy source range if specified
+  const copySourceRange = req.headers.get("x-amz-copy-source-range");
+  let startByte = 0;
+  let endByte: number | undefined = undefined;
+
+  if (copySourceRange) {
+    const rangeMatch = copySourceRange.match(/bytes=(\d+)-(\d+)/);
+    if (rangeMatch) {
+      startByte = parseInt(rangeMatch[1], 10);
+      endByte = parseInt(rangeMatch[2], 10);
+    }
+  }
+
+  return (async () => {
+    const config: SwiftConfig = bucketConfig.config as SwiftConfig;
+    const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
+    const { storageUrl: swiftUrl, token: authToken } = res;
+    const headers = getSwiftRequestHeaders(authToken);
+
+    // Destination path for the part
+    const destUrl = `${swiftUrl}/${bucket}/${object}/${partNumber}`;
+
+    // Source object URL
+    const sourceUrl = `${swiftUrl}/${sourceBucket}/${sourceKey}`;
+
+    // First, fetch the source object (with range if specified)
+    if (copySourceRange) {
+      headers.set("Range", copySourceRange.replace("bytes=", "bytes="));
+    }
+
+    const fetchSourceFunc = async () => {
+      return await fetch(sourceUrl, {
+        method: "GET",
+        headers: headers,
+      });
+    };
+
+    const sourceResponse = await retryWithExponentialBackoff(fetchSourceFunc);
+
+    if (!isOk(sourceResponse)) {
+      const errRes = unwrapErr(sourceResponse);
+      logger.warn(
+        `Upload Part Copy Failed. Failed to fetch source object: ${errRes.message}`,
+      );
+      return sourceResponse;
+    }
+
+    const sourceSuccessResponse = unwrapOk(sourceResponse);
+    if (
+      sourceSuccessResponse.status !== 200 &&
+      sourceSuccessResponse.status !== 206
+    ) {
+      const errMessage =
+        `Upload Part Copy Failed: Source object not found or inaccessible: ${sourceSuccessResponse.statusText}`;
+      logger.warn(errMessage);
+      reportToSentry(errMessage);
+      return createOk(InvalidRequestException(errMessage));
+    }
+
+    // Get the source content
+    const sourceContent = await sourceSuccessResponse.arrayBuffer();
+
+    // Put the content to the destination part
+    const putHeaders = getSwiftRequestHeaders(authToken);
+    const fetchFunc = async () => {
+      return await fetch(destUrl, {
+        method: "PUT",
+        headers: putHeaders,
+        body: sourceContent,
+      });
+    };
+
+    const response = await retryWithExponentialBackoff(fetchFunc);
+
+    if (!isOk(response)) {
+      const errRes = unwrapErr(response);
+      logger.warn(
+        `Upload Part Copy Failed. Failed to connect with Object Storage: ${errRes.message}`,
+      );
+      return response;
+    }
+
+    const successResponse = unwrapOk(response);
+    const lastModified = new Date().toISOString();
+    if (successResponse.status !== 201) {
+      const errMessage =
+        `Upload Part Copy Failed: ${successResponse.statusText}`;
+      logger.warn(errMessage);
+      reportToSentry(errMessage);
+      return createOk(InvalidRequestException(errMessage));
+    } else {
+      logger.info(`Upload Part Copy Successful: ${successResponse.statusText}`);
+
+      // Update the multipart upload session file
+      const multipartSessionPath = `${MULTIPART_UPLOADS_PATH}/${uploadId}.json`;
+      const multipartSessionUrl =
+        `${swiftUrl}/${bucket}/${multipartSessionPath}`;
+
+      try {
+        // Fetch the current session JSON
+        const getSessionFunc = async () => {
+          return await fetch(multipartSessionUrl, {
+            method: "GET",
+            headers: headers,
+          });
+        };
+
+        const getSessionResponse = await retryWithExponentialBackoff(
+          getSessionFunc,
+        );
+
+        if (
+          !isOk(getSessionResponse) ||
+          unwrapOk(getSessionResponse).status === 404
+        ) {
+          logger.error(
+            `Multipart upload session file not found for uploadId ${uploadId} at ${multipartSessionPath}`,
+          );
+          return createOk(NoSuchUploadException());
+        }
+
+        const sessionJson = await unwrapOk(getSessionResponse).json();
+
+        // Prepare part metadata
+        const eTag = successResponse.headers.get("etag") ||
+          successResponse.headers.get("ETag") || "";
+
+        // Get content length from the source response
+        const size = parseInt(
+          sourceSuccessResponse.headers.get("Content-Length") || "0",
+          10,
+        ) ||
+          (endByte !== undefined
+            ? (endByte - startByte + 1)
+            : sourceContent.byteLength);
+
+        const partMeta = {
+          partNumber: Array.isArray(partNumber) ? partNumber[0] : partNumber,
+          eTag,
+          size,
+          lastModified,
+        };
+
+        // Update or create the parts array
+        if (!Array.isArray(sessionJson.parts)) sessionJson.parts = [];
+
+        // Remove any existing entry for this partNumber
+        sessionJson.parts = sessionJson.parts.filter(
+          (p: { partNumber: string }) => p.partNumber !== partMeta.partNumber,
+        );
+
+        sessionJson.parts.push(partMeta);
+
+        // Save the updated session JSON
+        const putSessionFunc = async () => {
+          return await fetch(multipartSessionUrl, {
+            method: "PUT",
+            headers: headers,
+            body: JSON.stringify(sessionJson),
+          });
+        };
+
+        const putSessionResponse = await retryWithExponentialBackoff(
+          putSessionFunc,
+        );
+
+        if (!isOk(putSessionResponse) || !unwrapOk(putSessionResponse).ok) {
+          logger.error(
+            `Failed to update multipart upload session file for uploadId ${uploadId} at ${multipartSessionPath}`,
+          );
+        } else {
+          logger.info(
+            `Updated multipart upload session file for uploadId ${uploadId} with part ${partMeta.partNumber}`,
+          );
+        }
+      } catch (error) {
+        logger.error(
+          `Error updating multipart upload session file for uploadId ${uploadId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+
+    // Generate S3 CopyPartResult XML response
+    const eTag = successResponse.headers.get("etag") ||
+      successResponse.headers.get("ETag") || "";
+
+    const xmlResponse = `<?xml version="1.0" encoding="UTF-8"?>
+<CopyPartResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <LastModified>${lastModified}</LastModified>
+  <ETag>${eTag}</ETag>
+</CopyPartResult>`;
+
+    return createOk(
+      new Response(xmlResponse, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/xml",
+          "x-amz-request-id": getRandomUUID(),
+          "x-amz-id-2": getRandomUUID(),
+        },
+      }),
+    );
+  })();
 }
 
 export async function listParts(
