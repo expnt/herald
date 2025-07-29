@@ -824,6 +824,7 @@ export async function createMultipartUpload(
   const res = reqCtx.heraldContext.keystoneStore.getConfigAuthMeta(config);
   const { storageUrl: swiftUrl, token: authToken } = res;
   const headers = getSwiftRequestHeaders(authToken);
+  headers.set("Content-Type", "application/json");
 
   // Define the path for the multipart upload session file
   const multipartSessionPath = `${MULTIPART_UPLOADS_PATH}/${uploadId}.json`;
@@ -996,6 +997,7 @@ export async function completeMultipartUpload(
   // Fetch the session file to get the parts array
   let sessionJson;
   try {
+    const headers = getSwiftRequestHeaders(authToken);
     const getSessionFunc = async () => {
       return await fetch(multipartSessionUrl, {
         method: "GET",
@@ -1032,7 +1034,27 @@ export async function completeMultipartUpload(
         return createOk(MissingUploadIdException());
       }
     }
-    sessionJson = await unwrapOk(getSessionResponse).json();
+
+    const sessionResponse = unwrapOk(getSessionResponse);
+    // Check content type to ensure we're getting JSON
+    const contentType = sessionResponse.headers.get("Content-Type");
+    if (!contentType || !contentType.includes("application/json")) {
+      logger.error(
+        `Invalid content type for multipart session file: ${contentType}. Expected application/json for uploadId ${uploadId}`,
+      );
+      return createOk(MissingUploadIdException());
+    }
+
+    try {
+      sessionJson = await sessionResponse.json();
+    } catch (error) {
+      logger.error(
+        `Error parsing multipart upload session file for uploadId ${uploadId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return createOk(MissingUploadIdException());
+    }
   } catch (error) {
     logger.error(
       `Error reading multipart upload session file for uploadId ${uploadId}: ${
@@ -1054,18 +1076,56 @@ export async function completeMultipartUpload(
   parts.sort((a: MPUPart, b: MPUPart) =>
     Number(a.partNumber) - Number(b.partNumber)
   );
+
+  // Log the sorted parts for debugging
+  logger.debug(
+    `Sorted parts for uploadId ${uploadId}: ${
+      JSON.stringify(parts.map((p: MPUPart) => ({
+        partNumber: p.partNumber,
+        size: p.size,
+        etag: p.eTag || p.etag,
+      })))
+    }`,
+  );
+
   const manifest = parts.map((
     part: MPUPart,
-  ) => ({
-    path: `/${bucket}/${object}/${part.partNumber}`,
-    etag: (part.eTag || part.etag || "").replace(/\"/g, ""),
-    size_bytes: part.size,
-  }));
+  ) => {
+    // Properly format the etag - remove any quotes that might be present
+    const rawEtag = (part.eTag || part.etag || "").replace(/\"/g, "");
+
+    return {
+      path: `/${bucket}/${object}/${part.partNumber}`,
+      etag: rawEtag,
+      size_bytes: part.size,
+    };
+  });
+
+  // Validate manifest entries
+  const invalidEntries = manifest.filter((
+    entry: { path: string; etag: string; size_bytes: number },
+  ) => !entry.etag || !entry.size_bytes);
+  if (invalidEntries.length > 0) {
+    logger.error(
+      `Invalid manifest entries found: ${JSON.stringify(invalidEntries)}`,
+    );
+    return createOk(
+      InvalidRequestException("Invalid multipart upload manifest entries"),
+    );
+  }
 
   // PUT the SLO manifest
   const manifestUrl = `${swiftUrl}/${bucket}/${object}?multipart-manifest=put`;
   const sloHeaders = getSwiftRequestHeaders(authToken);
   sloHeaders.set("Content-Type", "application/json");
+
+  // Log the manifest for debugging
+  logger.debug(
+    `Creating SLO manifest for ${bucket}/${object}: ${
+      JSON.stringify(manifest)
+    }`,
+  );
+
   const putManifestFunc = async () => {
     return await fetch(manifestUrl, {
       method: "PUT",
@@ -1171,6 +1231,8 @@ export async function completeMultipartUpload(
   const sloEtag = manifestSuccess.headers.get("etag") ||
     manifestSuccess.headers.get("ETag") || "";
 
+  logger.debug(`SLO manifest created with ETag: ${sloEtag}`);
+
   const result = generateCompleteMultipartUploadResponse(
     bucket,
     object,
@@ -1256,6 +1318,7 @@ export async function uploadPart(
     const multipartSessionPath = `${MULTIPART_UPLOADS_PATH}/${uploadId}.json`;
     const multipartSessionUrl = `${swiftUrl}/${bucket}/${multipartSessionPath}`;
     try {
+      const headers = getSwiftRequestHeaders(authToken);
       // Fetch the current session JSON
       const getSessionFunc = async () => {
         return await fetch(multipartSessionUrl, {
@@ -1273,44 +1336,66 @@ export async function uploadPart(
           `Multipart upload session file not found for uploadId ${uploadId} at ${multipartSessionPath}`,
         );
       } else {
-        const sessionJson = await unwrapOk(getSessionResponse).json();
-        // Prepare part metadata
-        const eTag = successResponse.headers.get("etag") ||
-          successResponse.headers.get("ETag") || "";
-        const size = bodyBuffer?.byteLength || 0;
-        const lastModified = new Date().toISOString();
-        const partMeta = {
-          partNumber: Array.isArray(partNumber) ? partNumber[0] : partNumber,
-          eTag,
-          size,
-          lastModified,
-        };
-        // Update or create the parts array
-        if (!Array.isArray(sessionJson.parts)) sessionJson.parts = [];
-        // Remove any existing entry for this partNumber
-        sessionJson.parts = sessionJson.parts.filter((
-          p: { partNumber: string },
-        ) => p.partNumber !== partMeta.partNumber);
-        sessionJson.parts.push(partMeta);
-        // Save the updated session JSON
-        const putSessionFunc = async () => {
-          return await fetch(multipartSessionUrl, {
-            method: "PUT",
-            headers: headers,
-            body: JSON.stringify(sessionJson),
-          });
-        };
-        const putSessionResponse = await retryWithExponentialBackoff(
-          putSessionFunc,
-        );
-        if (!isOk(putSessionResponse) || !unwrapOk(putSessionResponse).ok) {
+        const sessionResponse = unwrapOk(getSessionResponse);
+        // Check content type to ensure we're getting JSON
+        const contentType = sessionResponse.headers.get("Content-Type");
+        if (!contentType || !contentType.includes("application/json")) {
           logger.error(
-            `Failed to update multipart upload session file for uploadId ${uploadId} at ${multipartSessionPath}`,
+            `Invalid content type for multipart session file: ${contentType}. Expected application/json for uploadId ${uploadId}`,
           );
+          // Continue with response generation
         } else {
-          logger.info(
-            `Updated multipart upload session file for uploadId ${uploadId} with part ${partMeta.partNumber}`,
-          );
+          try {
+            const sessionJson = await sessionResponse.json();
+            // Prepare part metadata
+            const eTag = successResponse.headers.get("etag") ||
+              successResponse.headers.get("ETag") || "";
+            const size = bodyBuffer?.byteLength || 0;
+            const lastModified = new Date().toISOString();
+            const partMeta = {
+              partNumber: Array.isArray(partNumber)
+                ? partNumber[0]
+                : partNumber,
+              eTag,
+              size,
+              lastModified,
+            };
+            // Update or create the parts array
+            if (!Array.isArray(sessionJson.parts)) sessionJson.parts = [];
+            // Remove any existing entry for this partNumber
+            sessionJson.parts = sessionJson.parts.filter((
+              p: { partNumber: string },
+            ) => p.partNumber !== partMeta.partNumber);
+            sessionJson.parts.push(partMeta);
+            // Save the updated session JSON
+            headers.set("Content-Type", "application/json");
+            const putSessionFunc = async () => {
+              return await fetch(multipartSessionUrl, {
+                method: "PUT",
+                headers: headers,
+                body: JSON.stringify(sessionJson),
+              });
+            };
+            const putSessionResponse = await retryWithExponentialBackoff(
+              putSessionFunc,
+            );
+            if (!isOk(putSessionResponse) || !unwrapOk(putSessionResponse).ok) {
+              logger.error(
+                `Failed to update multipart upload session file for uploadId ${uploadId} at ${multipartSessionPath}`,
+              );
+            } else {
+              logger.info(
+                `Updated multipart upload session file for uploadId ${uploadId} with part ${partMeta.partNumber}`,
+              );
+            }
+          } catch (error) {
+            logger.error(
+              `Error parsing multipart upload session file for uploadId ${uploadId}: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+            // Continue with response generation
+          }
         }
       }
     } catch (error) {
@@ -1466,6 +1551,7 @@ export function uploadPartCopy(
         `${swiftUrl}/${bucket}/${multipartSessionPath}`;
 
       try {
+        const headers = getSwiftRequestHeaders(authToken);
         // Fetch the current session JSON
         const getSessionFunc = async () => {
           return await fetch(multipartSessionUrl, {
@@ -1488,59 +1574,83 @@ export function uploadPartCopy(
           return createOk(NoSuchUploadException());
         }
 
-        const sessionJson = await unwrapOk(getSessionResponse).json();
+        const sessionResponse = unwrapOk(getSessionResponse);
 
-        // Prepare part metadata
-        const eTag = successResponse.headers.get("etag") ||
-          successResponse.headers.get("ETag") || "";
-
-        // Get content length from the source response
-        const size = parseInt(
-          sourceSuccessResponse.headers.get("Content-Length") || "0",
-          10,
-        ) ||
-          (endByte !== undefined
-            ? (endByte - startByte + 1)
-            : sourceContent.byteLength);
-
-        const partMeta = {
-          partNumber: Array.isArray(partNumber) ? partNumber[0] : partNumber,
-          eTag,
-          size,
-          lastModified,
-        };
-
-        // Update or create the parts array
-        if (!Array.isArray(sessionJson.parts)) sessionJson.parts = [];
-
-        // Remove any existing entry for this partNumber
-        sessionJson.parts = sessionJson.parts.filter(
-          (p: { partNumber: string }) => p.partNumber !== partMeta.partNumber,
-        );
-
-        sessionJson.parts.push(partMeta);
-
-        // Save the updated session JSON
-        const putSessionFunc = async () => {
-          return await fetch(multipartSessionUrl, {
-            method: "PUT",
-            headers: headers,
-            body: JSON.stringify(sessionJson),
-          });
-        };
-
-        const putSessionResponse = await retryWithExponentialBackoff(
-          putSessionFunc,
-        );
-
-        if (!isOk(putSessionResponse) || !unwrapOk(putSessionResponse).ok) {
+        // Check content type to ensure we're getting JSON
+        const contentType = sessionResponse.headers.get("Content-Type");
+        if (!contentType || !contentType.includes("application/json")) {
           logger.error(
-            `Failed to update multipart upload session file for uploadId ${uploadId} at ${multipartSessionPath}`,
+            `Invalid content type for multipart session file: ${contentType}. Expected application/json for uploadId ${uploadId}`,
           );
+          // Continue with response generation without updating session
         } else {
-          logger.info(
-            `Updated multipart upload session file for uploadId ${uploadId} with part ${partMeta.partNumber}`,
-          );
+          try {
+            const sessionJson = await sessionResponse.json();
+
+            // Prepare part metadata
+            const eTag = successResponse.headers.get("etag") ||
+              successResponse.headers.get("ETag") || "";
+
+            // Get content length from the source response
+            const size = parseInt(
+              sourceSuccessResponse.headers.get("Content-Length") || "0",
+              10,
+            ) ||
+              (endByte !== undefined
+                ? (endByte - startByte + 1)
+                : sourceContent.byteLength);
+
+            const partMeta = {
+              partNumber: Array.isArray(partNumber)
+                ? partNumber[0]
+                : partNumber,
+              eTag,
+              size,
+              lastModified,
+            };
+
+            // Update or create the parts array
+            if (!Array.isArray(sessionJson.parts)) sessionJson.parts = [];
+
+            // Remove any existing entry for this partNumber
+            sessionJson.parts = sessionJson.parts.filter(
+              (p: { partNumber: string }) =>
+                p.partNumber !== partMeta.partNumber,
+            );
+
+            sessionJson.parts.push(partMeta);
+
+            // Save the updated session JSON
+            headers.set("Content-Type", "application/json");
+            const putSessionFunc = async () => {
+              return await fetch(multipartSessionUrl, {
+                method: "PUT",
+                headers: headers,
+                body: JSON.stringify(sessionJson),
+              });
+            };
+
+            const putSessionResponse = await retryWithExponentialBackoff(
+              putSessionFunc,
+            );
+
+            if (!isOk(putSessionResponse) || !unwrapOk(putSessionResponse).ok) {
+              logger.error(
+                `Failed to update multipart upload session file for uploadId ${uploadId} at ${multipartSessionPath}`,
+              );
+            } else {
+              logger.info(
+                `Updated multipart upload session file for uploadId ${uploadId} with part ${partMeta.partNumber}`,
+              );
+            }
+          } catch (error) {
+            logger.error(
+              `Error parsing multipart upload session file for uploadId ${uploadId}: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+            // Continue with response generation without updating session
+          }
         }
       } catch (error) {
         logger.error(
