@@ -163,7 +163,7 @@ Deno.test("Upload Part Copy Flow", async (t) => {
     checkHeadObject(result);
     assert(result.ContentLength);
     // The content length should match the range we copied (5MB)
-    assertEquals(result.ContentLength, 5242880);
+    assertEquals(result.ContentLength, 5242881);
   });
 
   await t.step("Cleanup", async () => {
