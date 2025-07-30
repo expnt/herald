@@ -8,8 +8,16 @@ import { swiftResolver } from "../swift/mod.ts";
 import { s3Resolver } from "./mod.ts";
 import { RequestContext } from "../../types/mod.ts";
 import { extractRequestInfo } from "../../utils/s3.ts";
-import { isOk, Result, unwrapErr, unwrapOk } from "option-t/plain_result";
+import {
+  createOk,
+  isOk,
+  Result,
+  unwrapErr,
+  unwrapOk,
+} from "option-t/plain_result";
 import { toSwiftBulkDeleteBody } from "../swift/utils/mod.ts";
+import { retryWithExponentialBackoff } from "../../utils/url.ts";
+import * as s3Utils from "../../utils/s3.ts";
 
 export async function getObject(
   reqCtx: RequestContext,
@@ -531,4 +539,69 @@ export async function abortMultipartUpload(
   }
 
   return response;
+}
+
+export async function uploadPartCopy(
+  reqCtx: RequestContext,
+  req: Request,
+  bucketConfig: Bucket,
+): Promise<Result<Response, Error>> {
+  const logger = reqCtx.logger;
+  logger.info("[S3 backend] Proxying Upload Part Copy Request...");
+
+  const { bucket, objectKey, queryParams } = s3Utils.extractRequestInfo(req);
+  if (!bucket) {
+    return createOk(
+      new Response("Bucket information missing from the request", {
+        status: 400,
+      }),
+    );
+  }
+
+  const config = bucketConfig.config as S3Config;
+  const headers = new Headers(req.headers);
+  headers.set("Host", config.endpoint.replace(/^https?:\/\//, ""));
+
+  // Convert queryParams to URLSearchParams
+  const params = new URLSearchParams();
+  for (const [key, values] of Object.entries(queryParams)) {
+    for (const value of values) {
+      params.append(key, value);
+    }
+  }
+
+  const reqUrl =
+    `${config.endpoint}/${bucket}/${objectKey}?${params.toString()}`;
+
+  const fetchFunc = async () => {
+    return await fetch(reqUrl, {
+      method: "PUT",
+      headers: headers,
+      // Use the request body directly
+      body: req.body,
+    });
+  };
+
+  const response = await retryWithExponentialBackoff(
+    fetchFunc,
+  );
+
+  if (!isOk(response)) {
+    const errRes = unwrapErr(response);
+    logger.warn(
+      `Upload Part Copy Failed. Failed to connect with Object Storage: ${errRes.message}`,
+    );
+    return response;
+  }
+
+  const successResponse = unwrapOk(response) as Response;
+  if (successResponse.status !== 200) {
+    const errMessage = `Upload Part Copy Failed: ${successResponse.statusText}`;
+    logger.warn(errMessage);
+    reportToSentry(errMessage);
+  } else {
+    logger.info(`Upload Part Copy Successful: ${successResponse.statusText}`);
+  }
+
+  return createOk(successResponse);
 }
