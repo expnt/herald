@@ -120,7 +120,9 @@ function getUrlFormat(request: Request): URLFormatStyle {
       (domainParts.includes("s3") && domainParts.includes("amazonaws")) ||
       (domainParts.includes("s3") && domainParts.includes("amazon")) ||
       // Allow for other S3-compatible services that use virtual hosted style
-      (domainParts.length >= 4 && domainParts[domainParts.length - 2] === "s3" && domainParts[domainParts.length - 1] === "com")
+      (domainParts.length >= 4 &&
+        domainParts[domainParts.length - 2] === "s3" &&
+        domainParts[domainParts.length - 1] === "com")
     )
   ) {
     return urlFormatStyle.def.entries.VirtualHosted;
