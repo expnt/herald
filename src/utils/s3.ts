@@ -109,16 +109,24 @@ function getUrlFormat(request: Request): URLFormatStyle {
   }
 
   // For domain names, check if it's in the format "bucket-name.s3.amazonaws.com"
+  // Only consider it virtual hosted style if it matches the specific S3 pattern
   const domainParts = hostWithoutPort.split(".");
   if (
     domainParts.length >= 3 &&
-    (!domainParts[0].includes("s3") && !domainParts[0].includes("herald")) &&
-    domainParts[domainParts.length - 3] !== "www"
+    // Check if it's a known S3 virtual hosted style pattern
+    // Must have a bucket name (first part) that's not "s3" itself
+    domainParts[0] !== "s3" &&
+    (
+      (domainParts.includes("s3") && domainParts.includes("amazonaws")) ||
+      (domainParts.includes("s3") && domainParts.includes("amazon")) ||
+      // Allow for other S3-compatible services that use virtual hosted style
+      (domainParts.length >= 4 && domainParts[domainParts.length - 2] === "s3" && domainParts[domainParts.length - 1] === "com")
+    )
   ) {
     return urlFormatStyle.def.entries.VirtualHosted;
   }
 
-  // If we reach here, it's path-style
+  // If we reach here, it's path-style (including subdomains like storage.example.com)
   return urlFormatStyle.def.entries.Path;
 }
 
