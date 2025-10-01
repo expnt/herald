@@ -27,7 +27,7 @@ jobs:
     permissions:
       pull-requests: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -44,11 +44,11 @@ jobs:
     needs: changes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.x"
-      - uses: denoland/setup-deno@v1
+      - uses: denoland/setup-deno@v2
         with:
           deno-version: ${{ env.DENO_V }}
       - name: Install tofu
@@ -71,8 +71,8 @@ jobs:
     if: ${{ needs.changes.outputs.full == 'true' && github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v1
+      - uses: actions/checkout@v5
+      - uses: denoland/setup-deno@v2
         with:
           deno-version: ${{ env.DENO_V }}
       - name: Download Install Script
@@ -81,7 +81,7 @@ jobs:
         run: yes | bash install.sh
       - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - run: echo "BASH_ENV=$HOME/.local/share/ghjk/env.sh" >> "$GITHUB_ENV"
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.x"
       - name: Install tofu
@@ -90,7 +90,7 @@ jobs:
           chmod +x install-opentofu.sh
           ./install-opentofu.sh --install-method deb
           rm -f install-opentofu.sh
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 18
       - name: setup start-server-and-test
