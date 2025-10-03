@@ -1,13 +1,12 @@
 services:
   minio:
-    image: minio/minio:latest
+    image: bitnamilegacy/minio:2024
     platform: linux/amd64
     restart: unless-stopped
     user: root # fix to run in coder workspace
     ports:
       - "9000:9000"
       - "9001:9001"
-    command: server /data --console-address ":9001"
     environment:
       MINIO_REGION_NAME: local
       MINIO_ROOT_USER: minio
