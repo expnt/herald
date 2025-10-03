@@ -100,32 +100,40 @@ function getUrlFormat(request: Request): URLFormatStyle {
     });
   }
 
-  // Remove port if present
-  const hostWithoutPort = host.split(":")[0];
+  // Use URL.hostname to safely get the hostname (handles ports and IPv6)
+  const url = new URL(request.url);
+  const hostname = url.hostname;
 
   // If the host is an IP address or localhost, it's always path-style
-  if (isIP(hostWithoutPort) || hostWithoutPort === "localhost") {
+  if (isIP(hostname) || hostname === "localhost") {
     return urlFormatStyle.def.entries.Path;
   }
 
   // For domain names, check if it's in the format "bucket-name.s3.amazonaws.com"
   // Only consider it virtual hosted style if it matches the specific S3 pattern
-  const domainParts = hostWithoutPort.split(".");
-  if (
-    domainParts.length >= 3 &&
-    // Check if it's a known S3 virtual hosted style pattern
-    // Must have a bucket name (first part) that's not "s3" itself
-    domainParts[0] !== "s3" &&
-    (
-      (domainParts.includes("s3") && domainParts.includes("amazonaws")) ||
-      (domainParts.includes("s3") && domainParts.includes("amazon")) ||
-      // Allow for other S3-compatible services that use virtual hosted style
-      (domainParts.length >= 4 &&
-        domainParts[domainParts.length - 2] === "s3" &&
-        domainParts[domainParts.length - 1] === "com")
-    )
-  ) {
-    return urlFormatStyle.def.entries.VirtualHosted;
+  const domainParts = hostname.split(".");
+
+  // Ensure hostname has at least three labels and the first label is not "s3"
+  if (domainParts.length >= 3 && domainParts[0] !== "s3") {
+    // Match AWS S3 virtual-hosted patterns:
+    // - bucket-name.s3.amazonaws.com
+    // - bucket-name.s3-region.amazonaws.com
+    // - bucket-name.s3.region.amazonaws.com
+    // Regex: ^[^.]+\.s3(?:[.-][^.]+)*\.amazonaws\.com$
+    const awsS3Pattern = /^[^.]+\.s3(?:[.-][^.]+)*\.amazonaws\.com$/;
+
+    if (awsS3Pattern.test(hostname)) {
+      return urlFormatStyle.def.entries.VirtualHosted;
+    }
+
+    // Allow other S3-compatible virtual-hosted styles:
+    // Check for a leading label followed by ".s3" or ".s3-" before the provider domain
+    // e.g., bucket-name.s3.provider.com or bucket-name.s3-region.provider.com
+    const s3CompatiblePattern = /^[^.]+\.s3[.-]/;
+
+    if (s3CompatiblePattern.test(hostname)) {
+      return urlFormatStyle.def.entries.VirtualHosted;
+    }
   }
 
   // If we reach here, it's path-style (including subdomains like storage.example.com)

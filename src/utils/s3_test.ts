@@ -1,7 +1,4 @@
-import {
-  assertEquals,
-  assertThrows,
-} from "std/assert";
+import { assertEquals, assertThrows } from "std/assert";
 import { extractRequestInfo } from "./s3.ts";
 import { urlFormatStyle } from "./types.ts";
 import { HeraldError } from "../types/http-exception.ts";
