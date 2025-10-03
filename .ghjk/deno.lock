@@ -526,6 +526,7 @@
     "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/deno_utils/worker.ts": "c07679618fce83007899b68b3055ca4adb00e4d54dc5190d9b698bcc744bbf3c",
     "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/deps.ts": "ae2c629ae7be8bcb3e207d050e7b4539ecfae65e599b4396e9f2095e5755cc82",
     "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/ghjk/js/runtime.js": "65adbfcbc1d46563eda4c90e4886f5da2220182072bfcdef06ae00c41ad49d89",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/ghjk/systems/tasks/bindings.ts": "1a48e4a6e4cc9d09f4ae6137c139ef0bcfc856752fa5a689393866d1513745ad",
     "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/ghjk_ts/bindings.ts": "44c776d874124f5c86cdd32792623b2d02c3264b65e8e5c5bda68c7afaaf7102",
     "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/sys_deno/bindings.ts": "17f82d6cd91f86bfc4801d0947d23a83055c469ec38654c739b1a59797de8c89",
     "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/sys_deno/envs/deps.ts": "1be84720fe5fe93b513732888e74f1512c7fc6db854a3ac2451b9a8cb558feaf",
