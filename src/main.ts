@@ -51,6 +51,32 @@ const ctx: HeraldContext = {
 
 const app = new Hono();
 
+// CORS middleware
+app.use("*", async (c, next) => {
+  const origin = c.req.header("Origin");
+
+  // Handle preflight OPTIONS requests
+  if (c.req.method === "OPTIONS") {
+    return c.text("", 200, {
+      "Access-Control-Allow-Origin": origin || "*",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, HEAD, OPTIONS",
+      "Access-Control-Allow-Headers":
+        "Content-Type, Authorization, X-Amz-Content-Sha256, X-Amz-Date, X-Amz-Security-Token, X-Amz-User-Agent, X-Amz-Target, X-Amz-Version, X-Amz-Authorization",
+      "Access-Control-Max-Age": "86400", // 24 hours
+    });
+  }
+
+  await next();
+
+  // Add CORS headers to all responses
+  if (origin) {
+    c.header("Access-Control-Allow-Origin", origin);
+  } else {
+    c.header("Access-Control-Allow-Origin", "*");
+  }
+  c.header("Access-Control-Allow-Credentials", "true");
+});
+
 app.all("/*", async (c) => {
   const reqId = getRandomUUID();
   const reqLogger = getLogger(import.meta, reqId);
