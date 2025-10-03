@@ -1,7 +1,6 @@
 {
   "version": "0",
-  "platform": "x86_64-linux",
-  "moduleEntries": {
+  "sys_entries": {
     "ports": {
       "version": "0",
       "configResolutions": {
@@ -82,6 +81,12 @@
           "buildDepConfigs": {},
           "portRef": "mc_minio@0.1.0",
           "specifiedVersion": true
+        },
+        "bciqhhww3xwn4akvuawuighsbieqgiukzfs6bqgdwgxu5ivyfgfvdpga": {
+          "version": "v2.3.5",
+          "buildDepConfigs": {},
+          "portRef": "deno_ghrel@0.1.0",
+          "specifiedVersion": true
         }
       }
     },
@@ -100,12 +105,12 @@
           "sets": {
             "ghjkEnvProvInstSet___main": {
               "installs": [
-                "bciqf7bx6igpppca7ks4fqjkivfqiacuyncmyln2tyw6fl4edl6mhs3q",
-                "bciqdtuhf425g6prb5fyupbcokttmkill6wyqk7bkphx3ueltl5mvu4q",
-                "bciqc5cvg3ipzl6giofosevlb3u5mdrst35iblvsrjtgw65xctgmi4iq",
-                "bciqg6sbbhanfx5e3zfa25be3hrlaz5zz7dsaddule5dvdiqcqo47hyq"
+                "bciqds3mkvqzmb54a6d6dpakr4jh6hqfy2csb3q5ipj2ubm33jhz2ezy",
+                "bciqove3eka3x5r6joft4um2tvhg7bfivk4fhfgc22sfowad5le24n7y",
+                "bciqe7j45fbxqivrgqby3ewan2g5hqafwbjwgykbvblbpkkse6wn7ghy",
+                "bciqah6ifjg3fhremhj2c52pwcvtmi7vpp76u4djjkuwdlzng4n6xmpa"
               ],
-              "allowedBuildDeps": "bciqobhqmhpz3cphjnwec64vhpqkptbfmzhj5biicmcba5qpblmhq3ta"
+              "allowedBuildDeps": "bciqg6ngimw4ka4kxojua2h2jr6xzh6x6i4aixlp6l34hqiaheu5gkgq"
             }
           }
         }
@@ -118,36 +123,29 @@
               "ty": "denoFile@v1",
               "key": "setup-auth",
               "desc": "Setup auth",
-              "envKey": "bciqlyqobzsnotejmiiy2mavp4kvstbnufncoriydici3c6pbs446oda"
-            },
-            "install-sys-deps": {
-              "ty": "denoFile@v1",
-              "key": "install-sys-deps",
-              "desc": "Install system dependencies",
-              "envKey": "bciqlyqobzsnotejmiiy2mavp4kvstbnufncoriydici3c6pbs446oda"
+              "envKey": "bciqn5kmkdlcv256dectasnpcd7fppjkzcaisc46m3p5rh7wyikqoaay"
             },
             "build-proxy": {
               "ty": "denoFile@v1",
               "key": "build-proxy",
               "desc": "Rebuild the proxy docker image",
-              "envKey": "bciqlyqobzsnotejmiiy2mavp4kvstbnufncoriydici3c6pbs446oda"
+              "envKey": "bciqn5kmkdlcv256dectasnpcd7fppjkzcaisc46m3p5rh7wyikqoaay"
             },
             "dev-proxy": {
               "ty": "denoFile@v1",
               "key": "dev-proxy",
               "desc": "Run the proxy inside a docker container",
-              "envKey": "bciqlyqobzsnotejmiiy2mavp4kvstbnufncoriydici3c6pbs446oda"
+              "envKey": "bciqn5kmkdlcv256dectasnpcd7fppjkzcaisc46m3p5rh7wyikqoaay"
             },
             "dev-compose": {
               "ty": "denoFile@v1",
               "key": "dev-compose",
               "desc": "Wrapper around docker compose to manage runtime dependencies",
-              "envKey": "bciqlyqobzsnotejmiiy2mavp4kvstbnufncoriydici3c6pbs446oda"
+              "envKey": "bciqn5kmkdlcv256dectasnpcd7fppjkzcaisc46m3p5rh7wyikqoaay"
             }
           },
           "tasksNamed": [
             "setup-auth",
-            "install-sys-deps",
             "build-proxy",
             "dev-proxy",
             "dev-compose"
@@ -158,7 +156,7 @@
         "id": "envs",
         "config": {
           "envs": {
-            "bciqljvaoqekeiv4c75rwdhfdcxjy44w7nr3jyfdp4izls3wk6tdhrri": {
+            "bciqgrvsgsnwla2bhdcbo6xem5wld4rry6dakhqtij2bpg3dx2un2nci": {
               "desc": "the default default environment.",
               "provides": [
                 {
@@ -172,12 +170,18 @@
                   "val": "password"
                 },
                 {
+                  "ty": "ghjk.tasks.Alias"
+                },
+                {
+                  "ty": "ghjk.cli.Completions"
+                },
+                {
                   "ty": "ghjk.ports.InstallSetRef",
                   "setId": "ghjkEnvProvInstSet___main"
                 }
               ]
             },
-            "bciqlyqobzsnotejmiiy2mavp4kvstbnufncoriydici3c6pbs446oda": {
+            "bciqn5kmkdlcv256dectasnpcd7fppjkzcaisc46m3p5rh7wyikqoaay": {
               "provides": [
                 {
                   "ty": "posix.envVar",
@@ -190,6 +194,12 @@
                   "val": "password"
                 },
                 {
+                  "ty": "ghjk.tasks.Alias"
+                },
+                {
+                  "ty": "ghjk.cli.Completions"
+                },
+                {
                   "ty": "ghjk.ports.InstallSetRef",
                   "setId": "ghjkEnvProvInstSet___main"
                 }
@@ -198,14 +208,14 @@
           },
           "defaultEnv": "main",
           "envsNamed": {
-            "main": "bciqljvaoqekeiv4c75rwdhfdcxjy44w7nr3jyfdp4izls3wk6tdhrri"
+            "main": "bciqgrvsgsnwla2bhdcbo6xem5wld4rry6dakhqtij2bpg3dx2un2nci"
           }
         }
       }
     ],
     "blackboard": {
-      "bciqf7bx6igpppca7ks4fqjkivfqiacuyncmyln2tyw6fl4edl6mhs3q": {
-        "version": "2.2.3",
+      "bciqds3mkvqzmb54a6d6dpakr4jh6hqfy2csb3q5ipj2ubm33jhz2ezy": {
+        "version": "2.3.5",
         "port": {
           "ty": "denoWorker@v1",
           "name": "deno_ghrel",
@@ -218,10 +228,10 @@
             "x86_64-windows"
           ],
           "version": "0.1.0",
-          "moduleSpecifier": "https://raw.githubusercontent.com/metatypedev/ghjk/v0.2.1/ports/deno_ghrel.ts"
+          "moduleSpecifier": "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/deno_ghrel.ts"
         }
       },
-      "bciqdtuhf425g6prb5fyupbcokttmkill6wyqk7bkphx3ueltl5mvu4q": {
+      "bciqove3eka3x5r6joft4um2tvhg7bfivk4fhfgc22sfowad5le24n7y": {
         "version": "3.7.1",
         "port": {
           "ty": "denoWorker@v1",
@@ -252,11 +262,11 @@
               "name": "cpy_bs_ghrel"
             }
           ],
-          "moduleSpecifier": "https://raw.githubusercontent.com/metatypedev/ghjk/v0.2.1/ports/pipi.ts"
+          "moduleSpecifier": "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/pipi.ts"
         },
         "packageName": "pre-commit"
       },
-      "bciqc5cvg3ipzl6giofosevlb3u5mdrst35iblvsrjtgw65xctgmi4iq": {
+      "bciqe7j45fbxqivrgqby3ewan2g5hqafwbjwgykbvblbpkkse6wn7ghy": {
         "port": {
           "ty": "denoWorker@v1",
           "name": "opentofu_ghrel_fix",
@@ -273,10 +283,10 @@
             "x86_64-solaris"
           ],
           "version": "0.1.0",
-          "moduleSpecifier": "file:///home/asdf/repos/ecma/herald/tools/opentofu_ghrel.port.ts"
+          "moduleSpecifier": "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/opentofu_ghrel.ts"
         }
       },
-      "bciqg6sbbhanfx5e3zfa25be3hrlaz5zz7dsaddule5dvdiqcqo47hyq": {
+      "bciqah6ifjg3fhremhj2c52pwcvtmi7vpp76u4djjkuwdlzng4n6xmpa": {
         "version": "todo",
         "port": {
           "ty": "denoWorker@v1",
@@ -287,7 +297,36 @@
             "windows-x86_64"
           ],
           "version": "0.1.0",
-          "moduleSpecifier": "file:///home/asdf/repos/ecma/herald/tools/mc.port.ts"
+          "moduleSpecifier": "file:///home/yohe/herald/tools/mc.port.ts"
+        }
+      },
+      "bciqht6ypjqhlvb62i23h6pfkvgg5akjownp5r7wvoytevqubncoe4jy": {
+        "manifest": {
+          "ty": "denoWorker@v1",
+          "name": "cpy_bs_ghrel",
+          "platforms": [
+            "x86_64-linux",
+            "aarch64-linux",
+            "x86_64-darwin",
+            "aarch64-darwin",
+            "x86_64-windows",
+            "aarch64-windows"
+          ],
+          "version": "0.1.0",
+          "buildDeps": [
+            {
+              "name": "tar_aa"
+            },
+            {
+              "name": "zstd_aa"
+            }
+          ],
+          "moduleSpecifier": "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/cpy_bs.ts"
+        },
+        "defaultInst": {
+          "version": "3.9.19",
+          "portRef": "cpy_bs_ghrel@0.1.0",
+          "releaseTag": "20240814"
         }
       },
       "bciqb6ua63xodzwxngnbjq35hfikiwzb3dclbqkc7e6xgjdt5jin4pia": {
@@ -400,7 +439,7 @@
           "portRef": "unzip_aa@0.1.0"
         }
       },
-      "bciqmcvyepuficjj3mwshsbfecwdmzch5gwxqo557icnq4zujtdllh4a": {
+      "bciqpezvwy56igv7hqdpb3qreewqmyftjyej7zhcyhz6afcgfxgy3rjy": {
         "manifest": {
           "ty": "ambientAccess@v1",
           "name": "zstd_aa",
@@ -413,14 +452,14 @@
           "version": "0.1.0",
           "execName": "zstd",
           "versionExtractFlag": "--version",
-          "versionExtractRegex": "v(\\d+\\.\\d+\\.\\d+),",
+          "versionExtractRegex": "v(\\d+\\.\\d+\\.\\d+)",
           "versionExtractRegexFlags": ""
         },
         "defaultInst": {
           "portRef": "zstd_aa@0.1.0"
         }
       },
-      "bciqhnfhxvpxn2lci2lbdtigj6i6wqzpqsmijykq2f7bebrpkyrnr7hq": {
+      "bciqjy4hqev32fydh2ksskyqrowc3ouqwgdbaszo6rbpex3yhye42edi": {
         "manifest": {
           "ty": "denoWorker@v1",
           "name": "rustup_rustlang",
@@ -445,49 +484,13 @@
               "name": "git_aa"
             }
           ],
-          "moduleSpecifier": "https://raw.githubusercontent.com/metatypedev/ghjk/b702292/ports/rustup.ts"
+          "moduleSpecifier": "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/rustup.ts"
         },
         "defaultInst": {
           "portRef": "rustup_rustlang@0.1.0"
         }
       },
-      "bciqd7n3kyganojcg6o5ijyjttc6722sk3qrnj6ua4ie34d4ynf5csxa": {
-        "manifest": {
-          "ty": "denoWorker@v1",
-          "name": "rust_rustup",
-          "platforms": [
-            "x86_64-linux",
-            "aarch64-linux",
-            "x86_64-darwin",
-            "aarch64-darwin",
-            "x86_64-windows",
-            "aarch64-windows",
-            "x86_64-freebsd",
-            "aarch64-freebsd",
-            "x86_64-netbsd",
-            "aarch64-netbsd",
-            "x86_64-aix",
-            "aarch64-aix",
-            "x86_64-solaris",
-            "aarch64-solaris",
-            "x86_64-illumos",
-            "aarch64-illumos",
-            "x86_64-android",
-            "aarch64-android"
-          ],
-          "version": "0.1.0",
-          "buildDeps": [
-            {
-              "name": "rustup_rustlang"
-            }
-          ],
-          "moduleSpecifier": "https://raw.githubusercontent.com/metatypedev/ghjk/b702292/ports/rust.ts"
-        },
-        "defaultInst": {
-          "portRef": "rust_rustup@0.1.0"
-        }
-      },
-      "bciqiiyn3yvadqrhgjmrk7ieqmrsuzd6vbcuvq63x6vpbepgvghhtjja": {
+      "bciqmf64dikkabvqcjtq4bfq4rbleebba32ccp6fhdbbpbyf66qpdoti": {
         "manifest": {
           "ty": "denoWorker@v1",
           "name": "cargo_binstall_ghrel",
@@ -498,101 +501,21 @@
             "x86_64-darwin"
           ],
           "version": "0.1.0",
-          "moduleSpecifier": "https://raw.githubusercontent.com/metatypedev/ghjk/b702292/ports/cargo-binstall.ts"
+          "moduleSpecifier": "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/cargo-binstall.ts"
         },
         "defaultInst": {
           "portRef": "cargo_binstall_ghrel@0.1.0"
         }
       },
-      "bciqjhhjc4a4vtd7oeyh5ei7zxmztzkxr523h27uh7ps6rlw2r2w4ufi": {
-        "manifest": {
-          "ty": "denoWorker@v1",
-          "name": "pnpm_ghrel",
-          "platforms": [
-            "aarch64-linux",
-            "x86_64-linux",
-            "aarch64-darwin",
-            "x86_64-darwin",
-            "aarch64-windows",
-            "x86_64-windows"
-          ],
-          "version": "0.1.0",
-          "moduleSpecifier": "https://raw.githubusercontent.com/metatypedev/ghjk/b702292/ports/pnpm.ts"
-        },
-        "defaultInst": {
-          "portRef": "pnpm_ghrel@0.1.0"
-        }
-      },
-      "bciqhlgvuozbxcmjecf7hqedxlg3pgvw5eu5yesdmvo645vet3yhm53q": {
-        "manifest": {
-          "ty": "denoWorker@v1",
-          "name": "asdf_plugin_git",
-          "platforms": [
-            "aarch64-linux",
-            "x86_64-linux",
-            "aarch64-darwin",
-            "x86_64-darwin",
-            "aarch64-windows",
-            "x86_64-windows"
-          ],
-          "version": "0.1.0",
-          "buildDeps": [
-            {
-              "name": "git_aa"
-            }
-          ],
-          "resolutionDeps": [
-            {
-              "name": "git_aa"
-            }
-          ],
-          "moduleSpecifier": "https://raw.githubusercontent.com/metatypedev/ghjk/b702292/ports/asdf_plugin_git.ts"
-        },
-        "defaultInst": {
-          "portRef": "asdf_plugin_git@0.1.0"
-        }
-      },
-      "bciqo7b5rip7vvz4avjagke6o6dx27jjdieefnw65sykuu2ddsh2tjni": {
-        "manifest": {
-          "ty": "denoWorker@v1",
-          "name": "cpy_bs_ghrel",
-          "platforms": [
-            "x86_64-linux",
-            "aarch64-linux",
-            "x86_64-darwin",
-            "aarch64-darwin",
-            "x86_64-windows",
-            "aarch64-windows"
-          ],
-          "version": "0.1.0",
-          "buildDeps": [
-            {
-              "name": "tar_aa"
-            },
-            {
-              "name": "zstd_aa"
-            }
-          ],
-          "moduleSpecifier": "https://raw.githubusercontent.com/metatypedev/ghjk/v0.2.1/ports/cpy_bs.ts"
-        },
-        "defaultInst": {
-          "version": "3.9.19",
-          "portRef": "cpy_bs_ghrel@0.1.0",
-          "releaseTag": "20240814"
-        }
-      },
-      "bciqobhqmhpz3cphjnwec64vhpqkptbfmzhj5biicmcba5qpblmhq3ta": {
+      "bciqg6ngimw4ka4kxojua2h2jr6xzh6x6i4aixlp6l34hqiaheu5gkgq": {
+        "cpy_bs_ghrel": "bciqht6ypjqhlvb62i23h6pfkvgg5akjownp5r7wvoytevqubncoe4jy",
         "tar_aa": "bciqb6ua63xodzwxngnbjq35hfikiwzb3dclbqkc7e6xgjdt5jin4pia",
         "git_aa": "bciqfl5s36w335ducrb6f6gwb3vuwup7vzqwwg67pq42xtkngsnxqobi",
         "curl_aa": "bciqcfe7qyxmokpn6pgtaj35r5qg74jkehuu6cvyrtcsnegvwlm64oqy",
         "unzip_aa": "bciqgkpwxjmo5phw5se4ugyiz4xua3xrd54quzmk7wdwpq3vghglogjy",
-        "zstd_aa": "bciqmcvyepuficjj3mwshsbfecwdmzch5gwxqo557icnq4zujtdllh4a",
-        "rustup_rustlang": "bciqhnfhxvpxn2lci2lbdtigj6i6wqzpqsmijykq2f7bebrpkyrnr7hq",
-        "rust_rustup": "bciqd7n3kyganojcg6o5ijyjttc6722sk3qrnj6ua4ie34d4ynf5csxa",
-        "cargo_binstall_ghrel": "bciqiiyn3yvadqrhgjmrk7ieqmrsuzd6vbcuvq63x6vpbepgvghhtjja",
-        "pnpm_ghrel": "bciqjhhjc4a4vtd7oeyh5ei7zxmztzkxr523h27uh7ps6rlw2r2w4ufi",
-        "asdf_plugin_git": "bciqhlgvuozbxcmjecf7hqedxlg3pgvw5eu5yesdmvo645vet3yhm53q",
-        "cpy_bs_ghrel": "bciqo7b5rip7vvz4avjagke6o6dx27jjdieefnw65sykuu2ddsh2tjni"
+        "zstd_aa": "bciqpezvwy56igv7hqdpb3qreewqmyftjyej7zhcyhz6afcgfxgy3rjy",
+        "rustup_rustlang": "bciqjy4hqev32fydh2ksskyqrowc3ouqwgdbaszo6rbpex3yhye42edi",
+        "cargo_binstall_ghrel": "bciqmf64dikkabvqcjtq4bfq4rbleebba32ccp6fhdbbpbyf66qpdoti"
       }
     }
   }

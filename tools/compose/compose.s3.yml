@@ -1,6 +1,6 @@
 services:
   minio:
-    image: docker.io/bitnami/minio:2024
+    image: bitnamilegacy/minio:2024
     platform: linux/amd64
     restart: unless-stopped
     user: root # fix to run in coder workspace

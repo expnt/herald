@@ -1,4 +1,4 @@
-// deno-lint-ignore-file no-external-import
+// @ts-nocheck: Deno file
 import {
   $,
   ALL_ARCH,
@@ -12,7 +12,7 @@ import {
   type ListAllArgs,
   osXarch,
   PortBase,
-} from "https://raw.githubusercontent.com/metatypedev/ghjk/v0.2.1/port.ts";
+} from "@ghjk/deno_ports";
 
 const manifest = {
   ty: "denoWorker@v1" as const,
@@ -36,7 +36,7 @@ export class Port extends PortBase {
     return [args.config.version ?? "0.1"];
   }
 
-  override latestStable(args: ListAllArgs): Promise<string> {
+  latestStable(args: ListAllArgs): Promise<string> {
     return defaultLatestStable(this, args);
   }
 
@@ -65,6 +65,20 @@ export class Port extends PortBase {
             break;
           default:
             throw new Error(`unsupported: ${platform}`);
+        }
+        break;
+      }
+      case "darwin": {
+        // ou "macos"
+        switch (platform.arch) {
+          case "x86_64":
+            arch = "amd64"; // ou "arm64" selon ton besoin
+            break;
+          case "arm64":
+            arch = "arm64";
+            break;
+          default:
+            throw new Error(`unsupported: ${JSON.stringify(platform)}`);
         }
         break;
       }

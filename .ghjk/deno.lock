@@ -1,93 +1,175 @@
 {
-  "version": "3",
-  "packages": {
-    "specifiers": {
-      "jsr:@david/dax@0.41.0": "jsr:@david/dax@0.41.0",
-      "jsr:@david/which@^0.4.1": "jsr:@david/which@0.4.1",
-      "jsr:@std/assert@^0.221.0": "jsr:@std/assert@0.221.0",
-      "jsr:@std/bytes@^0.221.0": "jsr:@std/bytes@0.221.0",
-      "jsr:@std/fmt@^0.221.0": "jsr:@std/fmt@0.221.0",
-      "jsr:@std/fs@0.221.0": "jsr:@std/fs@0.221.0",
-      "jsr:@std/io@0.221.0": "jsr:@std/io@0.221.0",
-      "jsr:@std/io@^0.221.0": "jsr:@std/io@0.221.0",
-      "jsr:@std/path@0.221.0": "jsr:@std/path@0.221.0",
-      "jsr:@std/path@^0.221.0": "jsr:@std/path@0.221.0",
-      "jsr:@std/streams@0.221.0": "jsr:@std/streams@0.221.0",
-      "npm:@noble/hashes@1.4.0": "npm:@noble/hashes@1.4.0",
-      "npm:multiformats@13.1.0": "npm:multiformats@13.1.0",
-      "npm:zod-validation-error@3.3.0": "npm:zod-validation-error@3.3.0_zod@3.23.8",
-      "npm:zod@3.23.8": "npm:zod@3.23.8"
+  "version": "4",
+  "specifiers": {
+    "jsr:@david/dax@0.41.0": "0.41.0",
+    "jsr:@david/which@~0.4.1": "0.4.1",
+    "jsr:@std/assert@0.221": "0.221.0",
+    "jsr:@std/bytes@0.221": "0.221.0",
+    "jsr:@std/bytes@^1.0.3": "1.0.6",
+    "jsr:@std/fmt@0.221": "0.221.0",
+    "jsr:@std/fs@0.221.0": "0.221.0",
+    "jsr:@std/io@0.221": "0.221.0",
+    "jsr:@std/io@0.221.0": "0.221.0",
+    "jsr:@std/path@0.221": "0.221.0",
+    "jsr:@std/path@0.221.0": "0.221.0",
+    "jsr:@std/streams@0.221.0": "0.221.0",
+    "jsr:@std/streams@1.0.8": "1.0.8",
+    "jsr:@std/streams@^1.0.8": "1.0.8",
+    "jsr:@std/tar@0.1.4": "0.1.4",
+    "npm:@noble/hashes@1.4.0": "1.4.0",
+    "npm:jszip@3.10.1": "3.10.1",
+    "npm:multiformats@13.1.0": "13.1.0",
+    "npm:zod-validation-error@3.3.0": "3.3.0_zod@3.23.8",
+    "npm:zod-validation-error@3.4.0": "3.4.0_zod@3.23.8",
+    "npm:zod@3.23.8": "3.23.8"
+  },
+  "jsr": {
+    "@david/dax@0.41.0": {
+      "integrity": "9e1ecf66a0415962cc8ad3ba4e3fa93ce0f1a1cc797dd95c36fdfb6977dc7fc8",
+      "dependencies": [
+        "jsr:@david/which",
+        "jsr:@std/fmt",
+        "jsr:@std/fs",
+        "jsr:@std/io@0.221.0",
+        "jsr:@std/path@0.221.0",
+        "jsr:@std/streams@0.221.0"
+      ]
     },
-    "jsr": {
-      "@david/dax@0.41.0": {
-        "integrity": "9e1ecf66a0415962cc8ad3ba4e3fa93ce0f1a1cc797dd95c36fdfb6977dc7fc8",
-        "dependencies": [
-          "jsr:@david/which@^0.4.1",
-          "jsr:@std/fmt@^0.221.0",
-          "jsr:@std/fs@0.221.0",
-          "jsr:@std/io@0.221.0",
-          "jsr:@std/path@0.221.0",
-          "jsr:@std/streams@0.221.0"
-        ]
-      },
-      "@david/which@0.4.1": {
-        "integrity": "896a682b111f92ab866cc70c5b4afab2f5899d2f9bde31ed00203b9c250f225e"
-      },
-      "@std/assert@0.221.0": {
-        "integrity": "a5f1aa6e7909dbea271754fd4ab3f4e687aeff4873b4cef9a320af813adb489a"
-      },
-      "@std/bytes@0.221.0": {
-        "integrity": "64a047011cf833890a4a2ab7293ac55a1b4f5a050624ebc6a0159c357de91966"
-      },
-      "@std/fmt@0.221.0": {
-        "integrity": "379fed69bdd9731110f26b9085aeb740606b20428ce6af31ef6bd45ef8efa62a"
-      },
-      "@std/fs@0.221.0": {
-        "integrity": "028044450299de8ed5a716ade4e6d524399f035513b85913794f4e81f07da286",
-        "dependencies": [
-          "jsr:@std/assert@^0.221.0",
-          "jsr:@std/path@^0.221.0"
-        ]
-      },
-      "@std/io@0.221.0": {
-        "integrity": "faf7f8700d46ab527fa05cc6167f4b97701a06c413024431c6b4d207caa010da",
-        "dependencies": [
-          "jsr:@std/assert@^0.221.0",
-          "jsr:@std/bytes@^0.221.0"
-        ]
-      },
-      "@std/path@0.221.0": {
-        "integrity": "0a36f6b17314ef653a3a1649740cc8db51b25a133ecfe838f20b79a56ebe0095",
-        "dependencies": [
-          "jsr:@std/assert@^0.221.0"
-        ]
-      },
-      "@std/streams@0.221.0": {
-        "integrity": "47f2f74634b47449277c0ee79fe878da4424b66bd8975c032e3afdca88986e61",
-        "dependencies": [
-          "jsr:@std/io@^0.221.0"
-        ]
-      }
+    "@david/which@0.4.1": {
+      "integrity": "896a682b111f92ab866cc70c5b4afab2f5899d2f9bde31ed00203b9c250f225e"
     },
-    "npm": {
-      "@noble/hashes@1.4.0": {
-        "integrity": "sha512-V1JJ1WTRUqHHrOSh597hURcMqVKVGL/ea3kv0gSnEdsEZ0/+VyPghM1lMNGc00z7CIQorSvbKpuJkxvuHbvdbg==",
-        "dependencies": {}
-      },
-      "multiformats@13.1.0": {
-        "integrity": "sha512-HzdtdBwxsIkzpeXzhQ5mAhhuxcHbjEHH+JQoxt7hG/2HGFjjwyolLo7hbaexcnhoEuV4e0TNJ8kkpMjiEYY4VQ==",
-        "dependencies": {}
-      },
-      "zod-validation-error@3.3.0_zod@3.23.8": {
-        "integrity": "sha512-Syib9oumw1NTqEv4LT0e6U83Td9aVRk9iTXPUQr1otyV1PuXQKOvOwhMNqZIq5hluzHP2pMgnOmHEo7kPdI2mw==",
-        "dependencies": {
-          "zod": "zod@3.23.8"
-        }
-      },
-      "zod@3.23.8": {
-        "integrity": "sha512-XBx9AXhXktjUqnepgTiE5flcKIYWi/rme0Eaj+5Y0lftuGBq+jyRu/md4WnuxqgP1ubdpNCsYEYPxrzVHD8d6g==",
-        "dependencies": {}
-      }
+    "@std/assert@0.221.0": {
+      "integrity": "a5f1aa6e7909dbea271754fd4ab3f4e687aeff4873b4cef9a320af813adb489a"
+    },
+    "@std/bytes@0.221.0": {
+      "integrity": "64a047011cf833890a4a2ab7293ac55a1b4f5a050624ebc6a0159c357de91966"
+    },
+    "@std/bytes@1.0.6": {
+      "integrity": "f6ac6adbd8ccd99314045f5703e23af0a68d7f7e58364b47d2c7f408aeb5820a"
+    },
+    "@std/fmt@0.221.0": {
+      "integrity": "379fed69bdd9731110f26b9085aeb740606b20428ce6af31ef6bd45ef8efa62a"
+    },
+    "@std/fs@0.221.0": {
+      "integrity": "028044450299de8ed5a716ade4e6d524399f035513b85913794f4e81f07da286",
+      "dependencies": [
+        "jsr:@std/assert",
+        "jsr:@std/path@0.221"
+      ]
+    },
+    "@std/io@0.221.0": {
+      "integrity": "faf7f8700d46ab527fa05cc6167f4b97701a06c413024431c6b4d207caa010da",
+      "dependencies": [
+        "jsr:@std/assert",
+        "jsr:@std/bytes@0.221"
+      ]
+    },
+    "@std/path@0.221.0": {
+      "integrity": "0a36f6b17314ef653a3a1649740cc8db51b25a133ecfe838f20b79a56ebe0095",
+      "dependencies": [
+        "jsr:@std/assert"
+      ]
+    },
+    "@std/streams@0.221.0": {
+      "integrity": "47f2f74634b47449277c0ee79fe878da4424b66bd8975c032e3afdca88986e61",
+      "dependencies": [
+        "jsr:@std/io@0.221"
+      ]
+    },
+    "@std/streams@1.0.8": {
+      "integrity": "b41332d93d2cf6a82fe4ac2153b930adf1a859392931e2a19d9fabfb6f154fb3",
+      "dependencies": [
+        "jsr:@std/bytes@^1.0.3"
+      ]
+    },
+    "@std/tar@0.1.4": {
+      "integrity": "1bc1f1f9bfd557e849b31d6521348fdf5848886d87c851f1f0f992d002fe0ff5",
+      "dependencies": [
+        "jsr:@std/streams@^1.0.8"
+      ]
+    }
+  },
+  "npm": {
+    "@noble/hashes@1.4.0": {
+      "integrity": "sha512-V1JJ1WTRUqHHrOSh597hURcMqVKVGL/ea3kv0gSnEdsEZ0/+VyPghM1lMNGc00z7CIQorSvbKpuJkxvuHbvdbg=="
+    },
+    "core-util-is@1.0.3": {
+      "integrity": "sha512-ZQBvi1DcpJ4GDqanjucZ2Hj3wEO5pZDS89BWbkcrvdxksJorwUDDZamX9ldFkp9aw2lmBDLgkObEA4DWNJ9FYQ=="
+    },
+    "immediate@3.0.6": {
+      "integrity": "sha512-XXOFtyqDjNDAQxVfYxuF7g9Il/IbWmmlQg2MYKOH8ExIT1qg6xc4zyS3HaEEATgs1btfzxq15ciUiY7gjSXRGQ=="
+    },
+    "inherits@2.0.4": {
+      "integrity": "sha512-k/vGaX4/Yla3WzyMCvTQOXYeIHvqOKtnqBduzTHpzpQZzAskKMhZ2K+EnBiSM9zGSoIFeMpXKxa4dYeZIQqewQ=="
+    },
+    "isarray@1.0.0": {
+      "integrity": "sha512-VLghIWNM6ELQzo7zwmcg0NmTVyWKYjvIeM83yjp0wRDTmUnrM678fQbcKBo6n2CJEF0szoG//ytg+TKla89ALQ=="
+    },
+    "jszip@3.10.1": {
+      "integrity": "sha512-xXDvecyTpGLrqFrvkrUSoxxfJI5AH7U8zxxtVclpsUtMCq4JQ290LY8AW5c7Ggnr/Y/oK+bQMbqK2qmtk3pN4g==",
+      "dependencies": [
+        "lie",
+        "pako",
+        "readable-stream",
+        "setimmediate"
+      ]
+    },
+    "lie@3.3.0": {
+      "integrity": "sha512-UaiMJzeWRlEujzAuw5LokY1L5ecNQYZKfmyZ9L7wDHb/p5etKaxXhohBcrw0EYby+G/NA52vRSN4N39dxHAIwQ==",
+      "dependencies": [
+        "immediate"
+      ]
+    },
+    "multiformats@13.1.0": {
+      "integrity": "sha512-HzdtdBwxsIkzpeXzhQ5mAhhuxcHbjEHH+JQoxt7hG/2HGFjjwyolLo7hbaexcnhoEuV4e0TNJ8kkpMjiEYY4VQ=="
+    },
+    "pako@1.0.11": {
+      "integrity": "sha512-4hLB8Py4zZce5s4yd9XzopqwVv/yGNhV1Bl8NTmCq1763HeK2+EwVTv+leGeL13Dnh2wfbqowVPXCIO0z4taYw=="
+    },
+    "process-nextick-args@2.0.1": {
+      "integrity": "sha512-3ouUOpQhtgrbOa17J7+uxOTpITYWaGP7/AhoR3+A+/1e9skrzelGi/dXzEYyvbxubEF6Wn2ypscTKiKJFFn1ag=="
+    },
+    "readable-stream@2.3.8": {
+      "integrity": "sha512-8p0AUk4XODgIewSi0l8Epjs+EVnWiK7NoDIEGU0HhE7+ZyY8D1IMY7odu5lRrFXGg71L15KG8QrPmum45RTtdA==",
+      "dependencies": [
+        "core-util-is",
+        "inherits",
+        "isarray",
+        "process-nextick-args",
+        "safe-buffer",
+        "string_decoder",
+        "util-deprecate"
+      ]
+    },
+    "safe-buffer@5.1.2": {
+      "integrity": "sha512-Gd2UZBJDkXlY7GbJxfsE8/nvKkUEU1G38c1siN6QP6a9PT9MmHB8GnpscSmMJSoF8LOIrt8ud/wPtojys4G6+g=="
+    },
+    "setimmediate@1.0.5": {
+      "integrity": "sha512-MATJdZp8sLqDl/68LfQmbP8zKPLQNV6BIZoIgrscFDQ+RsvK/BxeDQOgyxKKoh0y/8h3BqVFnCqQ/gd+reiIXA=="
+    },
+    "string_decoder@1.1.1": {
+      "integrity": "sha512-n/ShnvDi6FHbbVfviro+WojiFzv+s8MPMHBczVePfUpDJLwoLT0ht1l4YwBCbi8pJAveEEdnkHyPyTP/mzRfwg==",
+      "dependencies": [
+        "safe-buffer"
+      ]
+    },
+    "util-deprecate@1.0.2": {
+      "integrity": "sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw=="
+    },
+    "zod-validation-error@3.3.0_zod@3.23.8": {
+      "integrity": "sha512-Syib9oumw1NTqEv4LT0e6U83Td9aVRk9iTXPUQr1otyV1PuXQKOvOwhMNqZIq5hluzHP2pMgnOmHEo7kPdI2mw==",
+      "dependencies": [
+        "zod"
+      ]
+    },
+    "zod-validation-error@3.4.0_zod@3.23.8": {
+      "integrity": "sha512-ZOPR9SVY6Pb2qqO5XHt+MkkTRxGXb4EVtnjc9JpXUOtUB1T9Ru7mZOT361AN3MsetVe7R0a1KZshJDZdgp9miQ==",
+      "dependencies": [
+        "zod"
+      ]
+    },
+    "zod@3.23.8": {
+      "integrity": "sha512-XBx9AXhXktjUqnepgTiE5flcKIYWi/rme0Eaj+5Y0lftuGBq+jyRu/md4WnuxqgP1ubdpNCsYEYPxrzVHD8d6g=="
     }
   },
   "redirects": {
@@ -433,6 +515,36 @@
     "https://esm.sh/util-deprecate@1.0.2/denonext/util-deprecate.mjs": "083639894972cb68837eef26346c43bdd01357977149e0a4493f76192a4008b8",
     "https://esm.sh/util-deprecate@1.0.2?target=denonext": "859f4df8ba771a4c33143185d3db6a7edb824fab1ed4f9a4b96ac0e6bc3ef1a4",
     "https://esm.sh/v135/jszip@3.7.1/denonext/jszip.mjs": "d31d7f9e0de9c6db3c07ca93f7301b756273d4dccb41b600461978fc313504c9",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/deno_ports/ambient.ts": "ca83ef9e6d73d879486196b58fc1b65859a20bd72653954ca4b21aea3b7d8967",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/deno_ports/ghrel.ts": "0b18358819180bcabdfdbd816d245c411d4eb7ca8ac35d773528743698b8dc1a",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/deno_ports/mod.ts": "3e1e319479b42732473380c87e86e3ef3d17d553c9940a82a17cd6c733dbefe1",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/deno_ports/unar/deps.ts": "2d24f91b676334ff69ac0043472cd242500e3bd3929adce49a2b4914a44b8b99",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/deno_ports/unar/mod.ts": "1e2745ffbe82e6a9fead3c61bd6d0befbf7653dfd005beec7bc1703b111d9e21",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/deno_utils/deps.ts": "b64f8fb0c8d9feedffb504cd7eb334858e6dd6c5b0c7caa51eb98da4b2f35783",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/deno_utils/logger.ts": "f4314cc96e0c82fa19933a2a5b104324cffa453a483bf92e3ee6047204e4b065",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/deno_utils/mod.ts": "ff29bb2aeff505ec6e6879dc8dfb55065b0d3163df8446bbaf1fd72814866ba9",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/deno_utils/worker.ts": "c07679618fce83007899b68b3055ca4adb00e4d54dc5190d9b698bcc744bbf3c",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/deps.ts": "ae2c629ae7be8bcb3e207d050e7b4539ecfae65e599b4396e9f2095e5755cc82",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/ghjk/js/runtime.js": "65adbfcbc1d46563eda4c90e4886f5da2220182072bfcdef06ae00c41ad49d89",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/ghjk/systems/tasks/bindings.ts": "1a48e4a6e4cc9d09f4ae6137c139ef0bcfc856752fa5a689393866d1513745ad",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/ghjk_ts/bindings.ts": "44c776d874124f5c86cdd32792623b2d02c3264b65e8e5c5bda68c7afaaf7102",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/sys_deno/bindings.ts": "17f82d6cd91f86bfc4801d0947d23a83055c469ec38654c739b1a59797de8c89",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/sys_deno/envs/deps.ts": "1be84720fe5fe93b513732888e74f1512c7fc6db854a3ac2451b9a8cb558feaf",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/sys_deno/envs/reducer.ts": "7842ca0ce89e3d6643db6de420b46cfa7fd19152f8614148f476e29a29809b0a",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/sys_deno/envs/types.ts": "e7e7e3b820e9851bcb2144f38262ea5d15ae6892b387925e2ac2a1280df67bd1",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/sys_deno/mod.ts": "208dbcd3341ae275e78cff6504bf0dcc3cc8a4ad33560769103c46e0aa410c83",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/sys_deno/ports/base.ts": "d977770e9414d79b0ff92f857104ea35175ec0f451b2a942e9257b6b816173e6",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/sys_deno/ports/db.ts": "7691837d15f8b25531c171e103b9f64418764e4447d79d5224217f4b539ff4ed",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/sys_deno/ports/deps.ts": "1be84720fe5fe93b513732888e74f1512c7fc6db854a3ac2451b9a8cb558feaf",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/sys_deno/ports/inter.ts": "b3999e73d73d7f928a8de86e5e2261fe6b1450ceedfb54f24537bf0803532ed0",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/sys_deno/ports/mod.ts": "b8a4494898407227c73227630e8dac8ecef88c62dc0da29ff47282bcd5432c25",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/sys_deno/ports/reducers.ts": "a0df977c43b0cda0e596464dca1f3e43e47fa9c5d6544c5e428d0d62cf3b7322",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/sys_deno/ports/sync.ts": "08e5ddcffefd71841f0ea1f780370a0d6509de370ac3ba01669450467a20511a",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/sys_deno/ports/types.ts": "936b4639ac27d2ebe85b62ca7fc38e0e97c4ec75bff393e12a570b73ab0f2c47",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/sys_deno/ports/types/platform.ts": "3faa665661a253c4a973b063985c2e204e7a2579205fddcfa40a19b4c8d127ed",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/sys_deno/ports/worker.ts": "de3f8a6e1ef868cd1b195e103337b9a89539bad205357a2bf04a6b8e89122d90",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/sys_deno/std.ts": "e6ce192474f1bd785ab0f03bbec285d416eb3238dd74f0b9a87667b8b0f6895f",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/5101131eecf3b27f84a3921f1018035562f8a83b/src/sys_deno/types.ts": "e476e08431eda8dc442d199f8d20b19b82883ce1dbe316d20a04f830ce211135",
     "https://raw.githubusercontent.com/metatypedev/ghjk/b702292/deps/cli.ts": "aac025f9372ad413b9c2663dc7f61affd597820d9448f010a510d541df3b56ea",
     "https://raw.githubusercontent.com/metatypedev/ghjk/b702292/deps/common.ts": "f775710b66a9099b98651cd3831906466e9b83ef98f2e5c080fd59ee801c28d4",
     "https://raw.githubusercontent.com/metatypedev/ghjk/b702292/deps/ports.ts": "3c60d1f7ab626ffdd81b37f4e83a780910936480da8fe24f4ccceaefa207d339",
@@ -562,6 +674,70 @@
     "https://raw.githubusercontent.com/metatypedev/ghjk/v0.2.1/utils/mod.ts": "25901b5a03625353cc0d9c024daca806eb2513b153faede5ecad73b428542721",
     "https://raw.githubusercontent.com/metatypedev/ghjk/v0.2.1/utils/unarchive.ts": "f6d0e9e75f470eeef5aecd0089169f4350fc30ebfdc05466bb7b30042294d6d3",
     "https://raw.githubusercontent.com/metatypedev/ghjk/v0.2.1/utils/url.ts": "e1ada6fd30fc796b8918c88456ea1b5bbd87a07d0a0538b092b91fd2bb9b7623",
-    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.2.1/utils/worker.ts": "ac4caf72a36d2e4af4f4e92f2e0a95f9fc2324b568640f24c7c2ff6dc0c11d62"
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.2.1/utils/worker.ts": "ac4caf72a36d2e4af4f4e92f2e0a95f9fc2324b568640f24c7c2ff6dc0c11d62",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/act.ts": "5b597db174ba5fafb802038c2139c26b0e3c37df1101a36cbcca8bc20f562e57",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/asdf.ts": "5bbd7f29f14e133626e4efb5c1a97a05315a7d18642ebc3c564f82662a4d684f",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/asdf_plugin_git.ts": "00689fa90a0e7e9d85860ba5884cd7fc7e901d37c4f71fcd29ffe7930ae89f4e",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/cargo-binstall.ts": "8d2c817cd8e6187456a6356f843d6f233f19683ed16163aa9d044199a321169a",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/cargobi.ts": "ba12745b98a33d61a059f084d7c25d92c02138420a6c836945b504647a6ff9da",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/cpy_bs.ts": "385a715571fcef018e556e18b0cf3f414d4339c7b4c74a197a41b132e4e32244",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/curl.ts": "62cbbf431692defa5880ffe568fddb4b796092b79155e95c9bb2f6bc3df88dae",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/deno_ghrel.ts": "cdb61bf1a3cdec55412cbb84f5b6ba122a9c2f39ec1d0bcb001988e4f8a6dca1",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/earthly.ts": "c189201bedc2d42619141602e7d3216ec35807fd78512613d5228d9eb2072eaf",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/fx_ghrel.ts": "fc7a6cf3f1753b37d94790e296a2b11d36160c8a60c53055e99c1c81dd0f8dd8",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/git.ts": "238aa882c74eaac5a690ea9e6b01fb17eafc07e2fd53e681f5d7a89368b2684c",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/infisical.ts": "ffea18ab25d0fe0da79966915a91cf9bbfb4eab29eb6558bae4744ae473a1625",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/jdk_temurin.ts": "8634afbe80060d8d12d6c5783c2217d6ed22fbb865e139b47b116e8d16c46d12",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/jq_ghrel.ts": "7e6cc688b87804f3a3db6c45f2dbd893f6cb5403e34b2a78e32d30c485addba2",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/lade_ghrel.port.ts": "a4308c3d5d765d532c85a941c9d540d3159b8c34b8a449be940d524bf355f70e",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/livekit_cli_ghrel.ts": "a3e7f0c6071406a29403f6876627d9cf3d7ccc266fa5e31a6e4d1c62599805af",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/meta_cli_ghrel.ts": "c22f413c0f167dbfa8ddfd8f19ab65896e48ec69c9131891ca12754cb2b58a49",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/mod.ts": "c8bec08c69d0c5ac9c104899c610455e5d1797655b06627c68686121aa1e69b0",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/mold.ts": "524e306924e96a82ec09558f941f307f9ab3d81f7a578520fd50eccbfe00ad50",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/node.ts": "8f0f48fbfcd447e9b167c90158f6729918e7cdc87eb9162cab846b170aef230c",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/npmi.ts": "3c5be5eec10ba3d916967744e93bd1df5741ffe70c74aaa750144b8c231e51c2",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/opentofu_ghrel.ts": "ee9a9686270ff815366955086f848618a9e6a3e804dc8e61add5a029d0d5efd6",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/pipi.ts": "396db5c5198a2e26d941217a828eed7a9294dcc3c8d3f03c78143fa77d7adfc2",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/pnpm.ts": "1dcdad551e0ddbc92ada7bc4e22e2129d6a4759a6f2aca238d24553334f909ef",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/poetry.ts": "54b170ab6929fb2ccacbe48292866ab98cc60ad517ced86668565869f2597f66",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/protoc.ts": "d3b95e1be8db0509e16d5998e9741a461f6c5d01d9c7266dca7cb7c12b34fdb1",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/ruff.ts": "1c3ddb6d96a1301b3bb9c3e48fcbce5d54b2f20b36c2b8871683e2b995bea323",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/rust.ts": "035ad0bc07a359fb964d728b3522ae2b757e39455aeb5885029aa965bfdbcb2d",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/rustup.ts": "de2ca9cb71922628623377badd77280154ff46a8f8446b87037e92545f92fb3a",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/tar.ts": "f1c451534621de1161ce2db1ee689733cf93bb6b4f3cc9491df50bbddf37a302",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/temporal_cli.ts": "61fa1f2b11f637e05c1fa960a8fe6bd6ebb81bfa2448e2848abaa1c1ce46fe19",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/terraform.ts": "702015e18fe4a16d6f18a6ee5cfa603199032612a1e09d5e2a346364dc677d97",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/terragrunt_ghrel.port.ts": "7a796f094fb0b959188c4a0fbeddae13f2614d0c04bb23e4c3d902ed32729fbc",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/unzip.ts": "a6f4382a0ebbed001a1714f717981dc1eb650e8e4dc0f89d7cfcb764f9bf98c6",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/zstd.ts": "85112d75c71b4a4cf8be7c59e165ab94eda84a81747cee875732a353b6c8a7d0",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/deno_ports/ambient.ts": "ca83ef9e6d73d879486196b58fc1b65859a20bd72653954ca4b21aea3b7d8967",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/deno_ports/ghrel.ts": "0b18358819180bcabdfdbd816d245c411d4eb7ca8ac35d773528743698b8dc1a",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/deno_ports/mod.ts": "3e1e319479b42732473380c87e86e3ef3d17d553c9940a82a17cd6c733dbefe1",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/deno_ports/unar/deps.ts": "2d24f91b676334ff69ac0043472cd242500e3bd3929adce49a2b4914a44b8b99",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/deno_ports/unar/mod.ts": "1e2745ffbe82e6a9fead3c61bd6d0befbf7653dfd005beec7bc1703b111d9e21",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/deno_utils/deps.ts": "b64f8fb0c8d9feedffb504cd7eb334858e6dd6c5b0c7caa51eb98da4b2f35783",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/deno_utils/logger.ts": "f4314cc96e0c82fa19933a2a5b104324cffa453a483bf92e3ee6047204e4b065",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/deno_utils/mod.ts": "ff29bb2aeff505ec6e6879dc8dfb55065b0d3163df8446bbaf1fd72814866ba9",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/deno_utils/setup_logger.ts": "a274d6b85330d9fd488a247443dc8ab8e4abf1572cba6cfafa02bf8b35997567",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/deps.ts": "ae2c629ae7be8bcb3e207d050e7b4539ecfae65e599b4396e9f2095e5755cc82",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/ghjk_ts/file.ts": "06a93006ce3e9b652cd8b487dc42a207917893e0deb090f0ce6994e041d4057f",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/ghjk_ts/mod.ts": "5998aff4852056dc486af74be6a68f64b04c207bf96c0af5f357a58d30ad77fa",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/sys_deno/envs/deps.ts": "1be84720fe5fe93b513732888e74f1512c7fc6db854a3ac2451b9a8cb558feaf",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/sys_deno/envs/reducer.ts": "7842ca0ce89e3d6643db6de420b46cfa7fd19152f8614148f476e29a29809b0a",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/sys_deno/envs/types.ts": "e7e7e3b820e9851bcb2144f38262ea5d15ae6892b387925e2ac2a1280df67bd1",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/sys_deno/mod.ts": "208dbcd3341ae275e78cff6504bf0dcc3cc8a4ad33560769103c46e0aa410c83",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/sys_deno/ports/base.ts": "d977770e9414d79b0ff92f857104ea35175ec0f451b2a942e9257b6b816173e6",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/sys_deno/ports/db.ts": "7691837d15f8b25531c171e103b9f64418764e4447d79d5224217f4b539ff4ed",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/sys_deno/ports/deps.ts": "1be84720fe5fe93b513732888e74f1512c7fc6db854a3ac2451b9a8cb558feaf",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/sys_deno/ports/inter.ts": "b3999e73d73d7f928a8de86e5e2261fe6b1450ceedfb54f24537bf0803532ed0",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/sys_deno/ports/mod.ts": "b8a4494898407227c73227630e8dac8ecef88c62dc0da29ff47282bcd5432c25",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/sys_deno/ports/reducers.ts": "a0df977c43b0cda0e596464dca1f3e43e47fa9c5d6544c5e428d0d62cf3b7322",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/sys_deno/ports/std.ts": "7d616e9305bd9db7b0fbdf020c909b6d0a3afbe945855cde29a966f1ad71cb19",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/sys_deno/ports/std_runtime.ts": "da1d4ac21bd7ff8ab7e5e40baf30a194cf46c91c00a43d11499dcf032b3a93ef",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/sys_deno/ports/sync.ts": "08e5ddcffefd71841f0ea1f780370a0d6509de370ac3ba01669450467a20511a",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/sys_deno/ports/types.ts": "936b4639ac27d2ebe85b62ca7fc38e0e97c4ec75bff393e12a570b73ab0f2c47",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/sys_deno/ports/types/platform.ts": "3faa665661a253c4a973b063985c2e204e7a2579205fddcfa40a19b4c8d127ed",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/sys_deno/ports/worker.ts": "de3f8a6e1ef868cd1b195e103337b9a89539bad205357a2bf04a6b8e89122d90",
+    "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/sys_deno/types.ts": "e476e08431eda8dc442d199f8d20b19b82883ce1dbe316d20a04f830ce211135"
   }
 }

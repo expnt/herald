@@ -1,9 +1,11 @@
 {
   "imports": {
-    "@ghjk/ts/": "https://raw.githubusercontent.com/metatypedev/ghjk/33d82dece752d4e3fbcf955a1f48e54d7eefbbf8/src/ghjk_ts/",
-    "@ghjk/ts": "https://raw.githubusercontent.com/metatypedev/ghjk/33d82dece752d4e3fbcf955a1f48e54d7eefbbf8/src/ghjk_ts/mod.ts",
-    "@ghjk/ports_wip": "https://raw.githubusercontent.com/metatypedev/ghjk/33d82dece752d4e3fbcf955a1f48e54d7eefbbf8/ports/mod.ts",
-    "@ghjk/ports_wip/": "https://raw.githubusercontent.com/metatypedev/ghjk/33d82dece752d4e3fbcf955a1f48e54d7eefbbf8/ports/"
+    // used by local ports
+    "@ghjk/deno_ports": "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/deno_ports/mod.ts",
+    "@ghjk/deno_ports/": "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/deno_ports/",
+    "@ghjk/ts/": "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/ghjk_ts/",
+    "@ghjk/ts": "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/src/ghjk_ts/mod.ts",
+    "@ghjk/ports_wip": "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/mod.ts",
+    "@ghjk/ports_wip/": "https://raw.githubusercontent.com/metatypedev/ghjk/v0.3.2/ports/",
   },
-  "lock": "./deno.lock"
 }

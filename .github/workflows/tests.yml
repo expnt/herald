@@ -18,7 +18,7 @@ concurrency:
 
 env:
   DENO_V: 2.3.5
-  GHJK_VERSION: "v0.2.2"
+  GHJK_VERSION: "v0.3.2"
   GHJK_ENV: "ci"
 
 jobs:

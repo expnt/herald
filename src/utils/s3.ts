@@ -100,25 +100,41 @@ function getUrlFormat(request: Request): URLFormatStyle {
     });
   }
 
-  // Remove port if present
-  const hostWithoutPort = host.split(":")[0];
+  // Use URL.hostname to safely get the hostname (handles ports and IPv6)
+  const url = new URL(request.url);
+  const hostname = url.hostname;
 
   // If the host is an IP address or localhost, it's always path-style
-  if (isIP(hostWithoutPort) || hostWithoutPort === "localhost") {
+  if (isIP(hostname) || hostname === "localhost") {
     return urlFormatStyle.def.entries.Path;
   }
 
   // For domain names, check if it's in the format "bucket-name.s3.amazonaws.com"
-  const domainParts = hostWithoutPort.split(".");
-  if (
-    domainParts.length >= 3 &&
-    (!domainParts[0].includes("s3") && !domainParts[0].includes("herald")) &&
-    domainParts[domainParts.length - 3] !== "www"
-  ) {
-    return urlFormatStyle.def.entries.VirtualHosted;
+  // Only consider it virtual hosted style if it matches the specific S3 pattern
+  const domainParts = hostname.split(".");
+
+  // Ensure hostname has at least three labels and the first label is not "s3"
+  if (domainParts.length >= 3 && domainParts[0] !== "s3") {
+    // Match AWS S3 virtual-hosted patterns:
+    // - bucket-name.s3.amazonaws.com
+    // - bucket-name.s3-region.amazonaws.com
+    // - bucket-name.s3.region.amazonaws.com
+    // Regex: ^[^.]+\.s3(?:[.-][^.]+)*\.amazonaws\.com$
+    const awsS3Pattern = /^[^.]+\.s3(?:[.-][^.]+)*\.amazonaws\.com$/;
+
+    if (awsS3Pattern.test(hostname)) {
+      return urlFormatStyle.def.entries.VirtualHosted;
+    }
+
+    // Also match bucket.s3.amazon.com pattern
+    const amazonS3Pattern = /^[^.]+\.s3\.amazon\.com$/;
+
+    if (amazonS3Pattern.test(hostname)) {
+      return urlFormatStyle.def.entries.VirtualHosted;
+    }
   }
 
-  // If we reach here, it's path-style
+  // If we reach here, it's path-style (including subdomains like storage.example.com)
   return urlFormatStyle.def.entries.Path;
 }
 

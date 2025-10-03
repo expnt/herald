@@ -1,6 +1,6 @@
 services:
   minio:
-    image: bitnami/minio:2024
+    image: bitnamilegacy/minio:2024
     platform: linux/amd64
     restart: unless-stopped
     ports:

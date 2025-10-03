@@ -1,7 +1,7 @@
-import { file, ports, stdDeps } from "./tools/deps.ts";
-import opentofu_ghrel from "./tools/opentofu_ghrel.port.ts";
+export { sophon } from "@ghjk/ts";
+import { file } from "@ghjk/ts";
+import * as ports from "@ghjk/ports_wip";
 import mc from "./tools/mc.port.ts";
-
 
 // constants
 const DENO_VERSION = "2.3.5";
@@ -17,6 +17,11 @@ const installs = {
 }
 
 const ghjk = file({
+    stdDeps: true,
+    allowedBuildDeps: [
+      installs.python,
+    ],
+
     tasks: {
 
       "dev-compose": {
@@ -119,22 +124,16 @@ const ghjk = file({
   }
 
     },
-  });
+});
 
 // ghjk.install(installs.deno, installs.python, ports.pipi({ packageName: "pre-commit", version: "3.7.1" })[0],);
 
-export const sophon = ghjk.sophon;
-const { env } = ghjk;
-
-env("main")
+ghjk.env("main")
 .install(
   installs.deno,
   ports.pipi({ packageName: "pre-commit", version: "3.7.1" })[0],
-  opentofu_ghrel(),
+  ports.opentofu_ghrel(),
   ...Deno.build.os == "linux" ? [mc({version: "todo"})] :[],
-).allowedBuildDeps(
-  ...stdDeps(),
-    installs.python,
 ).vars({
     S3_ACCESS_KEY: "minio",
     S3_SECRET_KEY: "password",
