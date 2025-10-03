@@ -126,12 +126,10 @@ function getUrlFormat(request: Request): URLFormatStyle {
       return urlFormatStyle.def.entries.VirtualHosted;
     }
 
-    // Allow other S3-compatible virtual-hosted styles:
-    // Check for a leading label followed by ".s3" or ".s3-" before the provider domain
-    // e.g., bucket-name.s3.provider.com or bucket-name.s3-region.provider.com
-    const s3CompatiblePattern = /^[^.]+\.s3[.-]/;
+    // Also match bucket.s3.amazon.com pattern
+    const amazonS3Pattern = /^[^.]+\.s3\.amazon\.com$/;
 
-    if (s3CompatiblePattern.test(hostname)) {
+    if (amazonS3Pattern.test(hostname)) {
       return urlFormatStyle.def.entries.VirtualHosted;
     }
   }
