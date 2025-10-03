@@ -1,3 +1,9 @@
+## 0.8.0 (2025-10-03)
+
+### Fix
+
+- path style issues when on subdomain (#66)
+
 ## 0.7.0 (2025-07-28)
 
 ### Feat
