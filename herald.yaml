@@ -66,7 +66,7 @@ buckets:
       credentials:
         username: "fromEnv:OS_USERNAME"
         password: "fromEnv:OS_PASSWORD"
-        project_name: "fromEnv:OS_PROJECT"
+        project_name: "fromEnv:OS_PROJECT_NAME"
         user_domain_name: Default
         project_domain_name: Default
       container: iac-swift
@@ -94,6 +94,14 @@ buckets:
         project_domain_name: Default
       container: swift-mirror-test
       region: dc3-a
+
+cors:
+  host:
+    - "https://example.com"
+    - "https://myapp.com"
+    - "https://s3-client.example.com"
+    - "https://uploader.example.com"
+    - "https://manager.example.com"
 
 replicas:
   - name: swift-test-replica

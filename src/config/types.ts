@@ -126,6 +126,11 @@ export const globalConfigSchema = z.object({
     ]),
   ),
   replicas: z.array(replicaConfigSchema),
+  cors: z.object({
+    // Allow a single host value or a list of host values.
+    // Examples: "*", "example.com", "*.example.com", "https://app.example.com"
+    host: z.union([z.string(), z.array(z.string())]).default(""),
+  }).default({ host: "" }),
 });
 
 export type GlobalConfig = z.infer<typeof globalConfigSchema>;

@@ -52,16 +52,56 @@ const ctx: HeraldContext = {
 const app = new Hono();
 
 // Centralized CORS helpers
+function isOriginAllowed(
+  requestOrigin: string | null | undefined,
+): string | null {
+  if (!requestOrigin || requestOrigin.length === 0) return "*";
+
+  const allowed = globalConfig.cors.host;
+  const allowedList = Array.isArray(allowed) ? allowed : [allowed];
+
+  // If no hosts are configured or empty string, deny all origins
+  if (
+    allowedList.length === 0 ||
+    (allowedList.length === 1 && allowedList[0] === "")
+  ) {
+    return null;
+  }
+
+  if (allowedList.includes("*")) return requestOrigin;
+
+  try {
+    const url = new URL(requestOrigin);
+    const originHost = url.host;
+    const originProtocol = url.protocol;
+
+    for (const entry of allowedList) {
+      if (entry.startsWith("http://") || entry.startsWith("https://")) {
+        if (requestOrigin === entry) return requestOrigin;
+        continue;
+      }
+
+      const pattern = entry.replace(/^\*\./, ".*");
+      const regex = new RegExp(`^${pattern.replace(/\./g, "\\.")}$`, "i");
+      if (regex.test(originHost)) return `${originProtocol}//${originHost}`;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 function applyCors(c: Context, res: Response): Response {
-  const origin = c.req.header("Origin");
+  const requestOrigin = c.req.header("Origin");
+  const allowedOrigin = isOriginAllowed(requestOrigin);
   const headers = new Headers(res.headers);
 
-  if (origin && origin.length > 0) {
-    headers.set("Access-Control-Allow-Origin", origin);
+  if (allowedOrigin === "*") {
+    headers.set("Access-Control-Allow-Origin", "*");
+  } else if (allowedOrigin) {
+    headers.set("Access-Control-Allow-Origin", allowedOrigin);
     headers.set("Access-Control-Allow-Credentials", "true");
     headers.append("Vary", "Origin");
-  } else {
-    headers.set("Access-Control-Allow-Origin", "*");
   }
 
   // Expose S3-relevant headers for browser clients (presigned URL flows)
@@ -113,16 +153,17 @@ app.all("/*", async (c) => {
 
   // Handle CORS preflight requests (reflect headers when provided; include Vary)
   if (c.req.method === "OPTIONS") {
-    const origin = c.req.header("Origin");
+    const requestOrigin = c.req.header("Origin");
+    const allowedOrigin = isOriginAllowed(requestOrigin);
     const reqHeaders = c.req.header("Access-Control-Request-Headers");
 
     const headers = new Headers();
-    if (origin && origin.length > 0) {
-      headers.set("Access-Control-Allow-Origin", origin);
+    if (allowedOrigin === "*") {
+      headers.set("Access-Control-Allow-Origin", "*");
+    } else if (allowedOrigin) {
+      headers.set("Access-Control-Allow-Origin", allowedOrigin);
       headers.set("Access-Control-Allow-Credentials", "true");
       headers.append("Vary", "Origin");
-    } else {
-      headers.set("Access-Control-Allow-Origin", "*");
     }
 
     // Keep a stable allow list for tests and browsers
@@ -131,24 +172,26 @@ app.all("/*", async (c) => {
       "GET, POST, PUT, DELETE, HEAD, OPTIONS",
     );
 
+    // Allow all x-amz* headers explicitly while reflecting requested ones
+    const defaultAllowed = [
+      "Content-Type",
+      "Authorization",
+      "X-Amz-Content-Sha256",
+      "X-Amz-Date",
+      "X-Amz-Security-Token",
+      "X-Amz-User-Agent",
+      "X-Amz-Target",
+      "X-Amz-Version",
+      "X-Amz-Authorization",
+    ];
     if (reqHeaders && reqHeaders.length > 0) {
-      headers.set("Access-Control-Allow-Headers", reqHeaders);
-      headers.append("Vary", "Access-Control-Request-Headers");
-    } else {
       headers.set(
         "Access-Control-Allow-Headers",
-        [
-          "Content-Type",
-          "Authorization",
-          "X-Amz-Content-Sha256",
-          "X-Amz-Date",
-          "X-Amz-Security-Token",
-          "X-Amz-User-Agent",
-          "X-Amz-Target",
-          "X-Amz-Version",
-          "X-Amz-Authorization",
-        ].join(", "),
+        `${reqHeaders}, ${defaultAllowed.join(", ")}`,
       );
+      headers.append("Vary", "Access-Control-Request-Headers");
+    } else {
+      headers.set("Access-Control-Allow-Headers", defaultAllowed.join(", "));
     }
 
     headers.set("Access-Control-Max-Age", "86400");
