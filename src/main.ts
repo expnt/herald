@@ -1,5 +1,5 @@
 import { initKeystoneStore } from "./backends/swift/keystone_token_store.ts";
-import { Hono } from "@hono/hono";
+import { Context, Hono } from "@hono/hono";
 import { configInit, envVarsConfig, globalConfig } from "./config/mod.ts";
 import { getLogger, reportToSentry, setupLoggers } from "./utils/log.ts";
 import { resolveHandler } from "./backends/mod.ts";
@@ -51,6 +51,84 @@ const ctx: HeraldContext = {
 
 const app = new Hono();
 
+// Centralized CORS helpers
+function isOriginAllowed(
+  requestOrigin: string | null | undefined,
+): string | null {
+  if (!requestOrigin || requestOrigin.length === 0) return "*";
+
+  const allowed = globalConfig.cors.host;
+  const allowedList = Array.isArray(allowed) ? allowed : [allowed];
+
+  // If no hosts are configured or empty string, deny all origins
+  if (
+    allowedList.length === 0 ||
+    (allowedList.length === 1 && allowedList[0] === "")
+  ) {
+    return null;
+  }
+
+  if (allowedList.includes("*")) return requestOrigin;
+
+  try {
+    const url = new URL(requestOrigin);
+    const originHost = url.host;
+    const originProtocol = url.protocol;
+
+    for (const entry of allowedList) {
+      if (entry.startsWith("http://") || entry.startsWith("https://")) {
+        if (requestOrigin === entry) return requestOrigin;
+        continue;
+      }
+
+      const pattern = entry.replace(/^\*\./, ".*");
+      const regex = new RegExp(`^${pattern.replace(/\./g, "\\.")}$`, "i");
+      if (regex.test(originHost)) return `${originProtocol}//${originHost}`;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function applyCors(c: Context, res: Response): Response {
+  const requestOrigin = c.req.header("Origin");
+  const allowedOrigin = isOriginAllowed(requestOrigin);
+  const headers = new Headers(res.headers);
+
+  if (allowedOrigin === "*") {
+    headers.set("Access-Control-Allow-Origin", "*");
+  } else if (allowedOrigin) {
+    headers.set("Access-Control-Allow-Origin", allowedOrigin);
+    headers.set("Access-Control-Allow-Credentials", "true");
+    headers.append("Vary", "Origin");
+  }
+
+  // Expose S3-relevant headers for browser clients (presigned URL flows)
+  headers.set(
+    "Access-Control-Expose-Headers",
+    [
+      "ETag",
+      "Content-Length",
+      "Content-Type",
+      "x-amz-request-id",
+      "x-amz-id-2",
+      "x-amz-version-id",
+      "x-amz-delete-marker",
+      "x-amz-expiration",
+      "x-amz-server-side-encryption",
+      "x-amz-storage-class",
+      "x-amz-website-redirect-location",
+    ].join(", "),
+  );
+
+  return new Response(res.body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  });
+}
+
 app.all("/*", async (c) => {
   const reqId = getRandomUUID();
   const reqLogger = getLogger(import.meta, reqId);
@@ -69,7 +147,56 @@ app.all("/*", async (c) => {
     logMsg = `Health Check Complete: ${healthStatus}`;
 
     reqLogger.info(logMsg);
-    return c.text(healthStatus, 200);
+
+    return applyCors(c, c.text(healthStatus, 200));
+  }
+
+  // Handle CORS preflight requests (reflect headers when provided; include Vary)
+  if (c.req.method === "OPTIONS") {
+    const requestOrigin = c.req.header("Origin");
+    const allowedOrigin = isOriginAllowed(requestOrigin);
+    const reqHeaders = c.req.header("Access-Control-Request-Headers");
+
+    const headers = new Headers();
+    if (allowedOrigin === "*") {
+      headers.set("Access-Control-Allow-Origin", "*");
+    } else if (allowedOrigin) {
+      headers.set("Access-Control-Allow-Origin", allowedOrigin);
+      headers.set("Access-Control-Allow-Credentials", "true");
+      headers.append("Vary", "Origin");
+    }
+
+    // Keep a stable allow list for tests and browsers
+    headers.set(
+      "Access-Control-Allow-Methods",
+      "GET, POST, PUT, DELETE, HEAD, OPTIONS",
+    );
+
+    // Allow all x-amz* headers explicitly while reflecting requested ones
+    const defaultAllowed = [
+      "Content-Type",
+      "Authorization",
+      "X-Amz-Content-Sha256",
+      "X-Amz-Date",
+      "X-Amz-Security-Token",
+      "X-Amz-User-Agent",
+      "X-Amz-Target",
+      "X-Amz-Version",
+      "X-Amz-Authorization",
+    ];
+    if (reqHeaders && reqHeaders.length > 0) {
+      headers.set(
+        "Access-Control-Allow-Headers",
+        `${reqHeaders}, ${defaultAllowed.join(", ")}`,
+      );
+      headers.append("Vary", "Access-Control-Request-Headers");
+    } else {
+      headers.set("Access-Control-Allow-Headers", defaultAllowed.join(", "));
+    }
+
+    headers.set("Access-Control-Max-Age", "86400");
+
+    return new Response("", { status: 200, headers });
   }
 
   const token = c.req.header("Authorization") ?? null;
@@ -82,29 +209,30 @@ app.all("/*", async (c) => {
     : "none";
 
   const response = await resolveHandler(reqCtx, c, serviceAccountName);
-  return response;
+
+  // Add CORS headers to all responses
+  return applyCors(c, response);
 });
 
 app.notFound((c) => {
   const errMessage = `Resource not found: ${c.req.url}`;
-  // logger.warn(errMessage);
   reportToSentry(errMessage);
-  return c.text("Not Found", 404);
+  return applyCors(c, c.text("Not Found", 404));
 });
 
 app.onError((err, c) => {
   if (err instanceof HeraldError) {
-    // Get the custom response
     const errResponse = err.getResponse();
-
-    return errResponse;
+    return applyCors(c, errResponse);
   }
 
   const errMessage = `Something went wrong in the proxy: ${err.message}`;
-  // logger.error(errMessage);
   reportToSentry(errMessage);
-  return InternalServerErrorException(
-    c.req.header("x-request-id") ?? "unknown",
+  return applyCors(
+    c,
+    InternalServerErrorException(
+      c.req.header("x-request-id") ?? "unknown",
+    ),
   );
 });
 

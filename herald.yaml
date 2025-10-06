@@ -95,6 +95,14 @@ buckets:
       container: swift-mirror-test
       region: dc3-a
 
+cors:
+  host:
+    - "https://example.com"
+    - "https://myapp.com"
+    - "https://s3-client.example.com"
+    - "https://uploader.example.com"
+    - "https://manager.example.com"
+
 replicas:
   - name: swift-test-replica
     backend: minio_s3
