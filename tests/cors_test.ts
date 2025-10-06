@@ -64,10 +64,7 @@ Deno.test("CORS - GET request without Origin header", async () => {
 
   assertEquals(response.status, 200);
   assertEquals(response.headers.get("Access-Control-Allow-Origin"), "*");
-  assertEquals(
-    response.headers.get("Access-Control-Allow-Credentials"),
-    "true",
-  );
+  assertEquals(response.headers.get("Access-Control-Allow-Credentials"), null);
   assertEquals(await response.text(), "Ok");
 });
 

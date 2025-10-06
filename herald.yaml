@@ -52,9 +52,9 @@ buckets:
     config:
       auth_url: https://api.pub1.infomaniak.cloud/identity/v3
       credentials:
-        username: "fromEnv:OPENSTACK_USERNAME"
-        password: "fromEnv:OPENSTACK_PASSWORD"
-        project_name: "fromEnv:OPENSTACK_PROJECT"
+        username: "fromEnv:OS_USERNAME"
+        password: "fromEnv:OS_PASSWORD"
+        project_name: "fromEnv:OS_PROJECT_NAME"
         user_domain_name: Default
         project_domain_name: Default
       container: swift-test
@@ -64,9 +64,9 @@ buckets:
     config:
       auth_url: https://api.pub1.infomaniak.cloud/identity/v3
       credentials:
-        username: "fromEnv:OPENSTACK_USERNAME"
-        password: "fromEnv:OPENSTACK_PASSWORD"
-        project_name: "fromEnv:OPENSTACK_PROJECT"
+        username: "fromEnv:OS_USERNAME"
+        password: "fromEnv:OS_PASSWORD"
+        project_name: "fromEnv:OS_PROJECT"
         user_domain_name: Default
         project_domain_name: Default
       container: iac-swift
@@ -87,9 +87,9 @@ buckets:
     config:
       auth_url: https://api.pub1.infomaniak.cloud/identity/v3
       credentials:
-        username: "fromEnv:OPENSTACK_USERNAME"
-        password: "fromEnv:OPENSTACK_PASSWORD"
-        project_name: "fromEnv:OPENSTACK_PROJECT"
+        username: "fromEnv:OS_USERNAME"
+        password: "fromEnv:OS_PASSWORD"
+        project_name: "fromEnv:OS_PROJECT_NAME"
         user_domain_name: Default
         project_domain_name: Default
       container: swift-mirror-test
@@ -111,9 +111,9 @@ replicas:
     config:
       auth_url: https://api.pub1.infomaniak.cloud/identity/v3
       credentials:
-        username: "fromEnv:OPENSTACK_USERNAME"
-        password: "fromEnv:OPENSTACK_PASSWORD"
-        project_name: "fromEnv:OPENSTACK_PROJECT"
+        username: "fromEnv:OS_USERNAME"
+        password: "fromEnv:OS_PASSWORD"
+        project_name: "fromEnv:OS_PROJECT_NAME"
         user_domain_name: Default
         project_domain_name: Default
       container:  s3-mirror-test

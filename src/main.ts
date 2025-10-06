@@ -1,5 +1,5 @@
 import { initKeystoneStore } from "./backends/swift/keystone_token_store.ts";
-import { Hono } from "@hono/hono";
+import { Context, Hono } from "@hono/hono";
 import { configInit, envVarsConfig, globalConfig } from "./config/mod.ts";
 import { getLogger, reportToSentry, setupLoggers } from "./utils/log.ts";
 import { resolveHandler } from "./backends/mod.ts";
@@ -51,31 +51,43 @@ const ctx: HeraldContext = {
 
 const app = new Hono();
 
-// CORS middleware
-app.use("*", async (c, next) => {
+// Centralized CORS helpers
+function applyCors(c: Context, res: Response): Response {
   const origin = c.req.header("Origin");
+  const headers = new Headers(res.headers);
 
-  // Handle preflight OPTIONS requests
-  if (c.req.method === "OPTIONS") {
-    return c.text("", 200, {
-      "Access-Control-Allow-Origin": origin || "*",
-      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, HEAD, OPTIONS",
-      "Access-Control-Allow-Headers":
-        "Content-Type, Authorization, X-Amz-Content-Sha256, X-Amz-Date, X-Amz-Security-Token, X-Amz-User-Agent, X-Amz-Target, X-Amz-Version, X-Amz-Authorization",
-      "Access-Control-Max-Age": "86400", // 24 hours
-    });
-  }
-
-  await next();
-
-  // Add CORS headers to all responses
-  if (origin) {
-    c.header("Access-Control-Allow-Origin", origin);
+  if (origin && origin.length > 0) {
+    headers.set("Access-Control-Allow-Origin", origin);
+    headers.set("Access-Control-Allow-Credentials", "true");
+    headers.append("Vary", "Origin");
   } else {
-    c.header("Access-Control-Allow-Origin", "*");
+    headers.set("Access-Control-Allow-Origin", "*");
   }
-  c.header("Access-Control-Allow-Credentials", "true");
-});
+
+  // Expose S3-relevant headers for browser clients (presigned URL flows)
+  headers.set(
+    "Access-Control-Expose-Headers",
+    [
+      "ETag",
+      "Content-Length",
+      "Content-Type",
+      "x-amz-request-id",
+      "x-amz-id-2",
+      "x-amz-version-id",
+      "x-amz-delete-marker",
+      "x-amz-expiration",
+      "x-amz-server-side-encryption",
+      "x-amz-storage-class",
+      "x-amz-website-redirect-location",
+    ].join(", "),
+  );
+
+  return new Response(res.body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  });
+}
 
 app.all("/*", async (c) => {
   const reqId = getRandomUUID();
@@ -95,7 +107,53 @@ app.all("/*", async (c) => {
     logMsg = `Health Check Complete: ${healthStatus}`;
 
     reqLogger.info(logMsg);
-    return c.text(healthStatus, 200);
+
+    return applyCors(c, c.text(healthStatus, 200));
+  }
+
+  // Handle CORS preflight requests (reflect headers when provided; include Vary)
+  if (c.req.method === "OPTIONS") {
+    const origin = c.req.header("Origin");
+    const reqHeaders = c.req.header("Access-Control-Request-Headers");
+
+    const headers = new Headers();
+    if (origin && origin.length > 0) {
+      headers.set("Access-Control-Allow-Origin", origin);
+      headers.set("Access-Control-Allow-Credentials", "true");
+      headers.append("Vary", "Origin");
+    } else {
+      headers.set("Access-Control-Allow-Origin", "*");
+    }
+
+    // Keep a stable allow list for tests and browsers
+    headers.set(
+      "Access-Control-Allow-Methods",
+      "GET, POST, PUT, DELETE, HEAD, OPTIONS",
+    );
+
+    if (reqHeaders && reqHeaders.length > 0) {
+      headers.set("Access-Control-Allow-Headers", reqHeaders);
+      headers.append("Vary", "Access-Control-Request-Headers");
+    } else {
+      headers.set(
+        "Access-Control-Allow-Headers",
+        [
+          "Content-Type",
+          "Authorization",
+          "X-Amz-Content-Sha256",
+          "X-Amz-Date",
+          "X-Amz-Security-Token",
+          "X-Amz-User-Agent",
+          "X-Amz-Target",
+          "X-Amz-Version",
+          "X-Amz-Authorization",
+        ].join(", "),
+      );
+    }
+
+    headers.set("Access-Control-Max-Age", "86400");
+
+    return new Response("", { status: 200, headers });
   }
 
   const token = c.req.header("Authorization") ?? null;
@@ -108,29 +166,30 @@ app.all("/*", async (c) => {
     : "none";
 
   const response = await resolveHandler(reqCtx, c, serviceAccountName);
-  return response;
+
+  // Add CORS headers to all responses
+  return applyCors(c, response);
 });
 
 app.notFound((c) => {
   const errMessage = `Resource not found: ${c.req.url}`;
-  // logger.warn(errMessage);
   reportToSentry(errMessage);
-  return c.text("Not Found", 404);
+  return applyCors(c, c.text("Not Found", 404));
 });
 
 app.onError((err, c) => {
   if (err instanceof HeraldError) {
-    // Get the custom response
     const errResponse = err.getResponse();
-
-    return errResponse;
+    return applyCors(c, errResponse);
   }
 
   const errMessage = `Something went wrong in the proxy: ${err.message}`;
-  // logger.error(errMessage);
   reportToSentry(errMessage);
-  return InternalServerErrorException(
-    c.req.header("x-request-id") ?? "unknown",
+  return applyCors(
+    c,
+    InternalServerErrorException(
+      c.req.header("x-request-id") ?? "unknown",
+    ),
   );
 });
 
