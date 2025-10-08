@@ -77,12 +77,22 @@ function isOriginAllowed(
 
     for (const entry of allowedList) {
       if (entry.startsWith("http://") || entry.startsWith("https://")) {
+        // Check for exact match first
         if (requestOrigin === entry) return requestOrigin;
+
+        // Check for pattern matching with full URL
+        const pattern: string = entry.replace(/\./g, "\\.").replace(
+          /\*/g,
+          ".*",
+        );
+        const regex = new RegExp(`^${pattern}$`, "i");
+        if (regex.test(requestOrigin)) return requestOrigin;
         continue;
       }
 
-      const pattern = entry.replace(/^\*\./, ".*");
-      const regex = new RegExp(`^${pattern.replace(/\./g, "\\.")}$`, "i");
+      // Pattern matching for host-only entries
+      const pattern: string = entry.replace(/\./g, "\\.").replace(/\*/g, ".*");
+      const regex = new RegExp(`^${pattern}$`, "i");
       if (regex.test(originHost)) return `${originProtocol}//${originHost}`;
     }
   } catch {
