@@ -318,7 +318,6 @@ export async function getObject(
   if (successResponse.status !== 200 && successResponse.status !== 206) {
     const errMessage = `Get Object Failed: ${successResponse.statusText}`;
     logger.warn(errMessage);
-    reportToSentry(errMessage);
   } else {
     logger.info(`Get Object Successful: ${successResponse.statusText}`);
   }
