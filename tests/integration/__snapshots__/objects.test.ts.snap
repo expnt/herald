@@ -1,0 +1,47 @@
+export const snapshot = {};
+
+snapshot[`Baseline/objects/put metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Baseline/objects/get/existing metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Baseline/objects/get/non-existent metadata 1`] = `
+{
+  headers: {
+    "content-type": "application/xml",
+  },
+  status: 404,
+}
+`;
+
+snapshot[`Baseline/objects/get/non-existent body 1`] = `'<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message><Key>no-such</Key><BucketName>test-objects-bucket</BucketName><Resource>/test-objects-bucket/no-such</Resource><RequestId>PLACEHOLDER</RequestId><HostId>PLACEHOLDER</HostId></Error>'`;
+
+snapshot[`Baseline/objects/head/existing metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Baseline/objects/head/non-existent metadata 1`] = `
+{
+  headers: {},
+  status: 404,
+}
+`;
+
+snapshot[`Baseline/objects/delete/existing metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;

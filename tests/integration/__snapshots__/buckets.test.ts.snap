@@ -1,0 +1,115 @@
+export const snapshot = {};
+
+snapshot[`Baseline/buckets/create/new metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Proxy/buckets/create/new metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Baseline/buckets/create/existing metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Proxy/buckets/create/existing metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Baseline/buckets/delete/existing metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Proxy/buckets/delete/existing metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Baseline/buckets/delete/non-existent metadata 1`] = `
+{
+  headers: {
+    "content-type": "application/xml",
+  },
+  status: 404,
+}
+`;
+
+snapshot[`Baseline/buckets/delete/non-existent body 1`] = `'<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchBucket</Code><Message>The specified bucket does not exist</Message><BucketName>no-such</BucketName><Resource>/no-such/</Resource><RequestId>PLACEHOLDER</RequestId><HostId>PLACEHOLDER</HostId></Error>'`;
+
+snapshot[`Proxy/buckets/delete/non-existent metadata 1`] = `
+{
+  headers: {
+    "content-type": "application/xml",
+  },
+  status: 404,
+}
+`;
+
+snapshot[`Proxy/buckets/delete/non-existent body 1`] = `'<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchBucket</Code><Message>The specified bucket does not exist</Message></Error>'`;
+
+snapshot[`Baseline/buckets/head/existing metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Proxy/buckets/head/existing metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Baseline/buckets/head/non-existent metadata 1`] = `
+{
+  headers: {},
+  status: 404,
+}
+`;
+
+snapshot[`Proxy/buckets/head/non-existent metadata 1`] = `
+{
+  headers: {},
+  status: 404,
+}
+`;
+
+snapshot[`Baseline/buckets/list metadata 1`] = `
+{
+  headers: {
+    "content-type": "application/xml",
+  },
+  status: 200,
+}
+`;
+
+snapshot[`Baseline/buckets/list body 1`] = `'<?xml version="1.0" encoding="UTF-8"?><ListAllMyBucketsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Owner><ID>PLACEHOLDER</ID><DisplayName>PLACEHOLDER</DisplayName></Owner><Buckets><Bucket><Name>test-objects-bucket</Name><CreationDate>PLACEHOLDER</CreationDate></Bucket></Buckets></ListAllMyBucketsResult>'`;
+
+snapshot[`Proxy/buckets/list metadata 1`] = `
+{
+  headers: {
+    "content-type": "application/xml",
+  },
+  status: 200,
+}
+`;
+
+snapshot[`Proxy/buckets/list body 1`] = `'<?xml version="1.0" encoding="UTF-8"?><ListAllMyBucketsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Owner><ID>PLACEHOLDER</ID><DisplayName>PLACEHOLDER</DisplayName></Owner><Buckets><Bucket><Name>test-objects-bucket</Name><CreationDate>PLACEHOLDER</CreationDate></Bucket></Buckets></ListAllMyBucketsResult>'`;
