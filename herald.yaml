@@ -1,7 +1,7 @@
 backends:
   minio:
     protocol: s3
-    endpoint: http://localhost:9000
+    endpoint: http://127.0.0.1:9000
     region: us-east-1
     credentials:
       accessKeyId: minioadmin

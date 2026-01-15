@@ -3,4 +3,3 @@
 import { $ } from "./utils.ts";
 
 await $`deno task dev`;
-

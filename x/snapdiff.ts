@@ -29,7 +29,11 @@ async function main() {
     return;
   }
 
-  console.log(colors.bold(`\nComparing Baseline (MinIO) vs Proxy (Herald) snapshots...\n`));
+  console.log(
+    colors.bold(
+      `\nComparing Baseline (MinIO) vs Proxy (Herald) snapshots...\n`,
+    ),
+  );
 
   let diffCount = 0;
 
@@ -68,7 +72,10 @@ async function main() {
           bAnnotation: `Proxy ${component}`,
         });
 
-        if (d !== null && !d.includes("Compared values have no visual difference.")) {
+        if (
+          d !== null &&
+          !d.includes("Compared values have no visual difference.")
+        ) {
           console.log(colors.red(`[DIFF] ${testName} (${component})`));
           console.log(d);
           testHasDiff = true;
@@ -85,7 +92,11 @@ async function main() {
   }
 
   if (diffCount > 0) {
-    console.log(colors.red(`\nFound ${diffCount} tests with differences between Baseline and Proxy.`));
+    console.log(
+      colors.red(
+        `\nFound ${diffCount} tests with differences between Baseline and Proxy.`,
+      ),
+    );
   } else {
     console.log(colors.green("\nAll Baseline and Proxy snapshots match!"));
   }

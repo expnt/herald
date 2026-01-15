@@ -3,8 +3,9 @@
 import { $, DOCKER_CMD } from "./utils.ts";
 
 const profiles = $.argv
-    .map((prof) => `--profile ${prof}`)
-    .join(" ");
+  .map((prof) => `--profile ${prof}`)
+  .join(" ");
 
-await $.raw`${DOCKER_CMD} compose ${profiles} up -d`.cwd($.relativeDir("../tools/"));
-
+await $.raw`${DOCKER_CMD} compose ${profiles} up -d`.cwd(
+  $.relativeDir("../tools/"),
+);

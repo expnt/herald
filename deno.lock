@@ -21,6 +21,7 @@
     "jsr:@std/testing@1": "1.0.16",
     "jsr:@std/yaml@^1.0.5": "1.0.9",
     "npm:@aws-crypto/sha256-js@^5.2.0": "5.2.0",
+    "npm:@aws-sdk/client-s3@*": "3.937.0",
     "npm:@aws-sdk/client-s3@3": "3.937.0",
     "npm:@effect/opentelemetry@~0.56.2": "0.56.6_@effect+platform@0.90.10__effect@3.19.14_@opentelemetry+sdk-trace-base@2.3.0__@opentelemetry+api@1.9.0_@opentelemetry+sdk-trace-node@2.3.0__@opentelemetry+api@1.9.0_@opentelemetry+semantic-conventions@1.38.0_effect@3.19.14",
     "npm:@effect/platform-node@0.96": "0.96.1_@effect+cluster@0.48.16__@effect+platform@0.90.10___effect@3.19.14__@effect+rpc@0.69.5___@effect+platform@0.90.10____effect@3.19.14___effect@3.19.14__@effect+sql@0.44.2___@effect+experimental@0.54.6____@effect+platform@0.90.10_____effect@3.19.14____effect@3.19.14___@effect+platform@0.90.10____effect@3.19.14___effect@3.19.14__@effect+workflow@0.9.6___@effect+platform@0.90.10____effect@3.19.14___@effect+rpc@0.69.5____@effect+platform@0.90.10_____effect@3.19.14____effect@3.19.14___effect@3.19.14__effect@3.19.14_@effect+platform@0.90.10__effect@3.19.14_@effect+rpc@0.69.5__@effect+platform@0.90.10___effect@3.19.14__effect@3.19.14_@effect+sql@0.44.2__@effect+experimental@0.54.6___@effect+platform@0.90.10____effect@3.19.14___effect@3.19.14__@effect+platform@0.90.10___effect@3.19.14__effect@3.19.14_effect@3.19.14",
@@ -33,7 +34,8 @@
     "npm:effect@^3.17.7": "3.19.14",
     "npm:jest-diff@*": "29.7.0",
     "npm:jest-diff@^29.7.0": "29.7.0",
-    "npm:npm@*": "11.7.0"
+    "npm:npm@*": "11.7.0",
+    "npm:xml2js@0.6.2": "0.6.2"
   },
   "jsr": {
     "@david/console-static-text@0.3.0": {
@@ -1736,6 +1738,9 @@
     "react-is@18.3.1": {
       "integrity": "sha512-/LLMVyas0ljjAtoYiPqYiL8VWXzUUdThrmU5+n20DZv+a+ClRoevUzw5JxU+Ieh5/c87ytoTBV9G1FiKfNJdmg=="
     },
+    "sax@1.4.4": {
+      "integrity": "sha512-1n3r/tGXO6b6VXMdFT54SHzT9ytu9yr7TaELowdYpMqY/Ao7EnlQGmAQ1+RatX7Tkkdm6hONI2owqNx2aZj5Sw=="
+    },
     "strnum@2.1.1": {
       "integrity": "sha512-7ZvoFTiCnGxBtDqJ//Cu6fWtZtc7Y3x+QOirG15wztbdngGSkht27o2pyGWrVy0b4WAy3jbKmnoK6g5VlVNUUw=="
     },
@@ -1766,6 +1771,16 @@
     },
     "ws@8.19.0": {
       "integrity": "sha512-blAT2mjOEIi0ZzruJfIhb3nps74PRWTCz1IjglWEEpQl5XS/UNama6u2/rjFkDDouqr4L67ry+1aGIALViWjDg=="
+    },
+    "xml2js@0.6.2": {
+      "integrity": "sha512-T4rieHaC1EXcES0Kxxj4JWgaUQHDk+qwHcYOCFHfiwKz7tOVPLq7Hjq9dM1WCMhylqMEfP7hMcOIChvotiZegA==",
+      "dependencies": [
+        "sax",
+        "xmlbuilder"
+      ]
+    },
+    "xmlbuilder@11.0.1": {
+      "integrity": "sha512-fDlsI/kFEx7gLvbecc0/ohLG50fugQp8ryHzMTuW9vSa1GJ0XYWKnhsUx7oie3G98+r56aTQIUB4kht42R3JvA=="
     }
   },
   "remote": {
@@ -1791,7 +1806,8 @@
       "npm:@smithy/signature-v4@^4.2.0",
       "npm:@smithy/types@^3.7.0",
       "npm:effect@^3.17.7",
-      "npm:jest-diff@^29.7.0"
+      "npm:jest-diff@^29.7.0",
+      "npm:xml2js@0.6.2"
     ]
   }
 }

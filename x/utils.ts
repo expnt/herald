@@ -1,4 +1,4 @@
-import { CommandBuilder, $ as old$ } from "@david/dax";
+import { $ as old$, CommandBuilder } from "@david/dax";
 
 /**
  * This assumes that the script is run from the x/ directory or via deno run

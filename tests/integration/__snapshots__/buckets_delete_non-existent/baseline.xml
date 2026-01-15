@@ -1,1 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchBucket</Code><Message>The specified bucket does not exist</Message><BucketName>no-such</BucketName><Resource>/no-such/</Resource><RequestId>PLACEHOLDER</RequestId><HostId>PLACEHOLDER</HostId></Error>
+<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchBucket</Code><Message
+  >The specified bucket does not exist</Message><BucketName
+  >no-such</BucketName><Resource>/no-such/</Resource><RequestId
+  >PLACEHOLDER</RequestId><HostId>PLACEHOLDER</HostId></Error>

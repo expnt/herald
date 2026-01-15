@@ -1,4 +1,5 @@
-import { NodeHttpClient, NodeRuntime } from "@effect/platform-node";
+import { FetchHttpClient } from "@effect/platform";
+import { NodeRuntime } from "@effect/platform-node";
 import { Layer } from "effect";
 // our http server impl layer
 import { HttpLive } from "./Http.ts";
@@ -7,7 +8,7 @@ import { TracingLive } from "./Tracing.ts";
 
 HttpLive.pipe(
   Layer.provide(TracingLive),
-  Layer.provide(NodeHttpClient.layer),
+  Layer.provide(FetchHttpClient.layer),
   Layer.launch,
   NodeRuntime.runMain,
 );
