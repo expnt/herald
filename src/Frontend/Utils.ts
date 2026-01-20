@@ -7,9 +7,16 @@ import {
   BucketAlreadyExists,
   BucketAlreadyOwnedByYou,
   BucketNotEmpty,
+  DeleteObjectsError,
+  EntityTooSmall,
   InternalError,
+  InvalidPart,
+  InvalidPartOrder,
+  InvalidRequest,
+  MalformedXML,
   NoSuchBucket,
   NoSuchKey,
+  NoSuchUpload,
 } from "../Services/Backend.ts";
 import { HttpServerRequest, type HttpServerResponse } from "@effect/platform";
 import type { AppConfig } from "../Config/Layer.ts";
@@ -120,7 +127,14 @@ export function resolveBucket<
           e instanceof BucketAlreadyOwnedByYou ||
           e instanceof InternalError ||
           e instanceof AccessDenied ||
-          e instanceof BucketNotEmpty
+          e instanceof BucketNotEmpty ||
+          e instanceof NoSuchUpload ||
+          e instanceof InvalidPart ||
+          e instanceof InvalidPartOrder ||
+          e instanceof EntityTooSmall ||
+          e instanceof InvalidRequest ||
+          e instanceof MalformedXML ||
+          e instanceof DeleteObjectsError
         ) {
           return Effect.succeed(s3Xml.formatError(e, isHead));
         }
@@ -186,7 +200,14 @@ export function resolveBackend<
           e instanceof BucketAlreadyOwnedByYou ||
           e instanceof InternalError ||
           e instanceof AccessDenied ||
-          e instanceof BucketNotEmpty
+          e instanceof BucketNotEmpty ||
+          e instanceof NoSuchUpload ||
+          e instanceof InvalidPart ||
+          e instanceof InvalidPartOrder ||
+          e instanceof EntityTooSmall ||
+          e instanceof InvalidRequest ||
+          e instanceof MalformedXML ||
+          e instanceof DeleteObjectsError
         ) {
           return Effect.succeed(s3Xml.formatError(e, isHead));
         }

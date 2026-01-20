@@ -30,6 +30,20 @@ export const listObjects = (
         return s3Xml.formatListVersions(result);
       }
 
+      if (searchParams.has("uploads")) {
+        const result = yield* backend.listMultipartUploads({
+          prefix: searchParams.get("prefix") ?? undefined,
+          delimiter: searchParams.get("delimiter") ?? undefined,
+          keyMarker: searchParams.get("key-marker") ?? undefined,
+          uploadIdMarker: searchParams.get("upload-id-marker") ?? undefined,
+          maxUploads: searchParams.has("max-uploads")
+            ? parseInt(searchParams.get("max-uploads")!)
+            : undefined,
+          encodingType: searchParams.get("encoding-type") ?? undefined,
+        });
+        return s3Xml.formatListMultipartUploads(result);
+      }
+
       const result = yield* backend.listObjects({
         prefix: searchParams.get("prefix") ?? undefined,
         delimiter: searchParams.get("delimiter") ?? undefined,

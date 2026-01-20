@@ -1,10 +1,12 @@
 import { Effect, Option, Stream } from "effect";
 import { HttpServerRequest, HttpServerResponse } from "@effect/platform";
 import { extractKey, resolveBucket } from "../Utils.ts";
+import { S3Xml } from "../../Services/S3Xml.ts";
 
 /**
  * Handler for POST requests on buckets or objects.
  * Primarily used for Multi-Object Delete (POST /:bucket?delete).
+ * Also handles InitiateMultipartUpload (?uploads) and CompleteMultipartUpload (?uploadId=...).
  */
 export const postObject = (
   { path: { bucket } }: { path: { bucket: string } },
@@ -12,11 +14,13 @@ export const postObject = (
   resolveBucket(bucket, (backend) =>
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
+      const s3Xml = yield* S3Xml;
       const url = new URL(request.url, "http://localhost");
       const searchParams = url.searchParams;
       const key = extractKey(request.url, bucket);
 
       if (searchParams.has("delete")) {
+        // ... (Multi-Object Delete logic)
         // Multi-Object Delete
         const bodyChunks = yield* Stream.runCollect(request.stream);
         let totalLength = 0;
@@ -74,6 +78,79 @@ export const postObject = (
         return HttpServerResponse.text(xml, {
           headers: { "Content-Type": "application/xml" },
         });
+      }
+
+      if (searchParams.has("uploads")) {
+        // Initiate Multipart Upload
+        const result = yield* backend.createMultipartUpload(
+          key,
+          request.headers,
+        );
+        return s3Xml.formatInitiateMultipartUpload(
+          bucket,
+          key,
+          result.uploadId,
+        );
+      }
+
+      if (searchParams.has("uploadId")) {
+        // Complete Multipart Upload
+        const uploadId = searchParams.get("uploadId")!;
+        const bodyChunks = yield* Stream.runCollect(request.stream);
+        let totalLength = 0;
+        for (const chunk of Array.from(bodyChunks)) {
+          totalLength += chunk.length;
+        }
+        const bodyBytes = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of Array.from(bodyChunks)) {
+          bodyBytes.set(chunk, offset);
+          offset += chunk.length;
+        }
+        const bodyText = new TextDecoder().decode(bodyBytes);
+
+        const parts: { etag: string; partNumber: number }[] = [];
+        const partMatches = Array.from(
+          bodyText.matchAll(/<Part>(.*?)<\/Part>/gs),
+        );
+        for (const match of partMatches) {
+          const content = match[1];
+          const partNumberMatch = content.match(
+            /<PartNumber>(.*?)<\/PartNumber>/,
+          );
+          const etagMatch = content.match(/<ETag>(.*?)<\/ETag>/);
+          if (partNumberMatch && etagMatch) {
+            parts.push({
+              partNumber: parseInt(partNumberMatch[1]),
+              etag: etagMatch[1].replace(/&quot;/g, '"'),
+            });
+          }
+        }
+
+        const result = yield* backend.completeMultipartUpload(
+          key,
+          uploadId,
+          parts,
+        ).pipe(
+          Effect.catchTag("NoSuchUpload", (e) =>
+            Effect.gen(function* () {
+              // Idempotency: check if object already exists
+              const head = yield* backend.headObject(key, {}).pipe(
+                Effect.orElseFail(() => e),
+              );
+              if (head.etag) {
+                return {
+                  location: `http://localhost/${bucket}/${key}`, // Approximate
+                  bucket,
+                  key,
+                  etag: head.etag,
+                  versionId: head.headers["x-amz-version-id"],
+                };
+              }
+              return yield* Effect.fail(e);
+            })),
+        );
+        return s3Xml.formatCompleteMultipartUpload(result);
       }
 
       return yield* Effect.fail(

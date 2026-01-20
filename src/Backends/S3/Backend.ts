@@ -1,6 +1,9 @@
 import { Chunk, Effect, Option, Stream } from "effect";
 import {
+  AbortMultipartUploadCommand,
+  CompleteMultipartUploadCommand,
   CreateBucketCommand,
+  CreateMultipartUploadCommand,
   DeleteBucketCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
@@ -9,12 +12,15 @@ import {
   HeadObjectCommand,
   ListBucketsCommand,
   type ListBucketsCommandOutput,
+  ListMultipartUploadsCommand,
   ListObjectsCommand,
   type ListObjectsCommandOutput,
   ListObjectsV2Command,
   type ListObjectsV2CommandOutput,
   ListObjectVersionsCommand,
+  ListPartsCommand,
   PutObjectCommand,
+  UploadPartCommand,
 } from "@aws-sdk/client-s3";
 import type { MaterializedBucket } from "../../Domain/Config.ts";
 import { AppConfig } from "../../Config/Layer.ts";
@@ -28,10 +34,16 @@ import {
   BucketNotEmpty,
   type CommonPrefix,
   type DeleteObjectsResult,
+  EntityTooSmall,
   InternalError,
+  InvalidPart,
+  InvalidPartOrder,
+  InvalidRequest,
   type ListObjectsResult,
+  MalformedXML,
   NoSuchBucket,
   NoSuchKey,
+  NoSuchUpload,
   type ObjectInfo,
 } from "../../Services/Backend.ts";
 import { S3Client } from "./Client.ts";
@@ -70,6 +82,25 @@ function mapS3Error(e: unknown, bucketName?: string): BackendError {
         key: "unknown",
         message: message,
       });
+    case "NoSuchUpload":
+      return new NoSuchUpload({
+        uploadId: "unknown",
+        message: message,
+      });
+    case "InvalidPart":
+    case "InvalidPartNumber":
+      return new InvalidPart({ message });
+    case "InvalidPartOrder":
+      return new InvalidPartOrder({ message });
+    case "EntityTooSmall":
+      return new EntityTooSmall({ message });
+    case "InvalidRequest":
+      if (message.includes("at least one part")) {
+        return new MalformedXML({ message });
+      }
+      return new InvalidRequest({ message });
+    case "MalformedXML":
+      return new MalformedXML({ message });
     case "BucketAlreadyExists":
       return new BucketAlreadyExists({ bucketName: bucket, message });
     case "BucketAlreadyOwnedByYou":
@@ -384,7 +415,7 @@ export const makeS3Backend = (
             })),
           ),
 
-        getObject: (key) =>
+        getObject: (key, headers) =>
           s3Service.getClient(targetBucket).pipe(
             Effect.mapError((e) => mapS3Error(e, targetBucket.name)),
             Effect.flatMap((client) =>
@@ -394,6 +425,34 @@ export const makeS3Backend = (
                     new GetObjectCommand({
                       Bucket: targetBucket.bucket_name,
                       Key: key,
+                      Range: (headers["range"] || headers["Range"]) as string,
+                      PartNumber: (headers["part-number"] ||
+                          headers["Part-Number"] ||
+                          headers["x-amz-part-number"])
+                        ? parseInt(
+                          (headers["part-number"] ||
+                            headers["Part-Number"] ||
+                            headers["x-amz-part-number"]) as string,
+                        )
+                        : undefined,
+                      IfMatch:
+                        (headers["if-match"] || headers["If-Match"]) as string,
+                      IfNoneMatch: (headers["if-none-match"] ||
+                        headers["If-None-Match"]) as string,
+                      IfModifiedSince: (headers["if-modified-since"] ||
+                          headers["If-Modified-Since"])
+                        ? new Date(
+                          (headers["if-modified-since"] ||
+                            headers["If-Modified-Since"]) as string,
+                        )
+                        : undefined,
+                      IfUnmodifiedSince: (headers["if-unmodified-since"] ||
+                          headers["If-Unmodified-Since"])
+                        ? new Date(
+                          (headers["if-unmodified-since"] ||
+                            headers["If-Unmodified-Since"]) as string,
+                        )
+                        : undefined,
                     }),
                   ),
                 catch: (e) => mapS3Error(e, targetBucket.bucket_name),
@@ -446,7 +505,16 @@ export const makeS3Backend = (
               if (result.ContentType) {
                 headers["content-type"] = result.ContentType;
               }
+              if (result.ContentLength !== undefined) {
+                headers["content-length"] = String(result.ContentLength);
+              }
               if (result.ETag) headers["etag"] = result.ETag;
+              if (result.PartsCount !== undefined) {
+                headers["x-amz-mp-parts-count"] = String(result.PartsCount);
+              }
+              if (result.VersionId) {
+                headers["x-amz-version-id"] = result.VersionId;
+              }
               if (result.LastModified) {
                 headers["last-modified"] = result.LastModified.toUTCString();
               }
@@ -487,21 +555,28 @@ export const makeS3Backend = (
             }),
           ),
 
-        headObject: (key) =>
+        headObject: (key, headers) =>
           s3Service.getClient(targetBucket).pipe(
             Effect.mapError((e) => mapS3Error(e, targetBucket.name)),
-            Effect.flatMap((client) =>
-              Effect.tryPromise({
-                try: () =>
-                  client.send(
-                    new HeadObjectCommand({
-                      Bucket: targetBucket.bucket_name,
-                      Key: key,
-                    }),
-                  ),
+            Effect.flatMap((client) => {
+              const commandInput = {
+                Bucket: targetBucket.bucket_name,
+                Key: key,
+                PartNumber: (headers["part-number"] ||
+                    headers["Part-Number"] ||
+                    headers["x-amz-part-number"])
+                  ? parseInt(
+                    (headers["part-number"] ||
+                      headers["Part-Number"] ||
+                      headers["x-amz-part-number"]) as string,
+                  )
+                  : undefined,
+              };
+              return Effect.tryPromise({
+                try: () => client.send(new HeadObjectCommand(commandInput)),
                 catch: (e) => mapS3Error(e, targetBucket.bucket_name),
-              })
-            ),
+              });
+            }),
             Effect.map((result) => {
               const metadata: Record<string, string> = {};
               if (result.Metadata) {
@@ -522,6 +597,12 @@ export const makeS3Backend = (
                 headers["content-length"] = String(result.ContentLength);
               }
               if (result.ETag) headers["etag"] = result.ETag;
+              if (result.PartsCount !== undefined) {
+                headers["x-amz-mp-parts-count"] = String(result.PartsCount);
+              }
+              if (result.VersionId) {
+                headers["x-amz-version-id"] = result.VersionId;
+              }
               if (result.LastModified) {
                 headers["last-modified"] = result
                   .LastModified.toUTCString();
@@ -648,6 +729,255 @@ export const makeS3Backend = (
                 key: e.Key ?? "unknown",
                 code: e.Code ?? "InternalError",
                 message: e.Message ?? "Unknown error",
+              })),
+            })),
+          ),
+
+        createMultipartUpload: (key, headers) =>
+          s3Service.getClient(targetBucket).pipe(
+            Effect.mapError((e) => mapS3Error(e, targetBucket.name)),
+            Effect.flatMap((client) => {
+              const metadata: Record<string, string> = {};
+              for (const [k, v] of Object.entries(headers)) {
+                if (k.toLowerCase().startsWith("x-amz-meta-")) {
+                  const metaKey = k.substring("x-amz-meta-".length);
+                  metadata[metaKey] = String(v);
+                }
+              }
+              const contentType = headers["content-type"];
+
+              return Effect.tryPromise({
+                try: () =>
+                  client.send(
+                    new CreateMultipartUploadCommand({
+                      Bucket: targetBucket.bucket_name,
+                      Key: key,
+                      Metadata: metadata,
+                      ContentType: contentType
+                        ? String(contentType)
+                        : undefined,
+                    }),
+                  ),
+                catch: (e) => mapS3Error(e, targetBucket.bucket_name),
+              });
+            }),
+            Effect.flatMap((result) => {
+              if (!result.UploadId) {
+                return Effect.fail(
+                  new InternalError({
+                    message: "S3 returned empty UploadId",
+                  }),
+                );
+              }
+              return Effect.succeed({ uploadId: result.UploadId });
+            }),
+          ),
+
+        uploadPart: (key, uploadId, partNumber, bodyStream) =>
+          s3Service.getClient(targetBucket).pipe(
+            Effect.mapError((e) => mapS3Error(e, targetBucket.name)),
+            Effect.flatMap((client) =>
+              Stream.runCollect(bodyStream).pipe(
+                Effect.mapError((e) =>
+                  new InternalError({ message: String(e) })
+                ),
+                Effect.flatMap((chunks) => {
+                  const totalLength = Chunk.reduce(
+                    chunks,
+                    0,
+                    (acc, chunk) => acc + chunk.length,
+                  );
+                  const body = new Uint8Array(totalLength);
+                  let offset = 0;
+                  for (const chunk of chunks) {
+                    body.set(chunk, offset);
+                    offset += chunk.length;
+                  }
+
+                  return Effect.tryPromise({
+                    try: () =>
+                      client.send(
+                        new UploadPartCommand({
+                          Bucket: targetBucket.bucket_name,
+                          Key: key,
+                          UploadId: uploadId,
+                          PartNumber: partNumber,
+                          Body: body,
+                        }),
+                      ),
+                    catch: (e) => mapS3Error(e, targetBucket.bucket_name),
+                  });
+                }),
+              )
+            ),
+            Effect.flatMap((result) => {
+              if (!result.ETag) {
+                return Effect.fail(
+                  new InternalError({
+                    message: "S3 returned empty ETag for UploadPart",
+                  }),
+                );
+              }
+              return Effect.succeed({ etag: result.ETag });
+            }),
+          ),
+
+        completeMultipartUpload: (key, uploadId, parts) =>
+          s3Service.getClient(targetBucket).pipe(
+            Effect.mapError((e) => mapS3Error(e, targetBucket.name)),
+            Effect.flatMap((client) =>
+              Effect.tryPromise({
+                try: () =>
+                  client.send(
+                    new CompleteMultipartUploadCommand({
+                      Bucket: targetBucket.bucket_name,
+                      Key: key,
+                      UploadId: uploadId,
+                      MultipartUpload: {
+                        Parts: parts.map((p) => ({
+                          ETag: p.etag,
+                          PartNumber: p.partNumber,
+                        })),
+                      },
+                    }),
+                  ),
+                catch: (e) => mapS3Error(e, targetBucket.bucket_name),
+              })
+            ),
+            Effect.flatMap((result) => {
+              if (
+                !result.Location || !result.Bucket || !result.Key ||
+                !result.ETag
+              ) {
+                return Effect.fail(
+                  new InternalError({
+                    message:
+                      "S3 returned incomplete CompleteMultipartUploadResult",
+                  }),
+                );
+              }
+              return Effect.succeed({
+                location: result.Location,
+                bucket: result.Bucket,
+                key: result.Key,
+                etag: result.ETag,
+                versionId: result.VersionId,
+              });
+            }),
+          ),
+
+        abortMultipartUpload: (key, uploadId) =>
+          s3Service.getClient(targetBucket).pipe(
+            Effect.mapError((e) => mapS3Error(e, targetBucket.name)),
+            Effect.flatMap((client) =>
+              Effect.tryPromise({
+                try: () =>
+                  client.send(
+                    new AbortMultipartUploadCommand({
+                      Bucket: targetBucket.bucket_name,
+                      Key: key,
+                      UploadId: uploadId,
+                    }),
+                  ),
+                catch: (e) => mapS3Error(e, targetBucket.bucket_name),
+              })
+            ),
+            Effect.map(() => undefined),
+          ),
+
+        listMultipartUploads: (args) =>
+          s3Service.getClient(targetBucket).pipe(
+            Effect.mapError((e) => mapS3Error(e, targetBucket.name)),
+            Effect.flatMap((client) =>
+              Effect.tryPromise({
+                try: () =>
+                  client.send(
+                    new ListMultipartUploadsCommand({
+                      Bucket: targetBucket.bucket_name,
+                      Prefix: args.prefix,
+                      Delimiter: args.delimiter,
+                      KeyMarker: args.keyMarker,
+                      UploadIdMarker: args.uploadIdMarker,
+                      MaxUploads: args.maxUploads,
+                      EncodingType: args.encodingType as "url" | undefined,
+                    }),
+                  ),
+                catch: (e) => mapS3Error(e, targetBucket.bucket_name),
+              })
+            ),
+            Effect.map((result) => ({
+              bucket: result.Bucket ?? targetBucket.bucket_name,
+              prefix: result.Prefix,
+              keyMarker: result.KeyMarker,
+              uploadIdMarker: result.UploadIdMarker,
+              nextKeyMarker: result.NextKeyMarker,
+              nextUploadIdMarker: result.NextUploadIdMarker,
+              maxUploads: result.MaxUploads ?? 1000,
+              delimiter: result.Delimiter,
+              isTruncated: result.IsTruncated ?? false,
+              encodingType: result.EncodingType as string,
+              uploads: (result.Uploads ?? []).map((u) => ({
+                key: u.Key ?? "",
+                uploadId: u.UploadId ?? "",
+                owner: {
+                  id: u.Owner?.ID ?? "",
+                  displayName: u.Owner?.DisplayName ?? "",
+                },
+                initiator: {
+                  id: u.Initiator?.ID ?? "",
+                  displayName: u.Initiator?.DisplayName ?? "",
+                },
+                storageClass: u.StorageClass ?? "STANDARD",
+                initiated: u.Initiated ?? new Date(),
+              })),
+              commonPrefixes: (result.CommonPrefixes ?? []).map((cp) => ({
+                prefix: cp.Prefix ?? "",
+              })),
+            })),
+          ),
+
+        listParts: (key, uploadId) =>
+          s3Service.getClient(targetBucket).pipe(
+            Effect.mapError((e) => mapS3Error(e, targetBucket.name)),
+            Effect.flatMap((client) =>
+              Effect.tryPromise({
+                try: () =>
+                  client.send(
+                    new ListPartsCommand({
+                      Bucket: targetBucket.bucket_name,
+                      Key: key,
+                      UploadId: uploadId,
+                    }),
+                  ),
+                catch: (e) => mapS3Error(e, targetBucket.bucket_name),
+              })
+            ),
+            Effect.map((result) => ({
+              bucket: result.Bucket ?? targetBucket.bucket_name,
+              key: result.Key ?? key,
+              uploadId: result.UploadId ?? uploadId,
+              owner: {
+                id: result.Owner?.ID ?? "",
+                displayName: result.Owner?.DisplayName ?? "",
+              },
+              initiator: {
+                id: result.Initiator?.ID ?? "",
+                displayName: result.Initiator?.DisplayName ?? "",
+              },
+              storageClass: result.StorageClass ?? "STANDARD",
+              partNumberMarker: result.PartNumberMarker
+                ? parseInt(String(result.PartNumberMarker))
+                : 0,
+              nextPartNumberMarker: result.NextPartNumberMarker
+                ? parseInt(String(result.NextPartNumberMarker))
+                : 0,
+              maxParts: result.MaxParts ?? 1000,
+              isTruncated: result.IsTruncated ?? false,
+              parts: (result.Parts ?? []).map((p) => ({
+                partNumber: p.PartNumber ?? 0,
+                lastModified: p.LastModified ?? new Date(),
+                etag: p.ETag ?? "",
+                size: p.Size ?? 0,
               })),
             })),
           ),

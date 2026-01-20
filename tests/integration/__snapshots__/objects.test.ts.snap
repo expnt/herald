@@ -1,6 +1,6 @@
 export const snapshot = {};
 
-snapshot[`Baseline/objects/put metadata 1`] = `
+snapshot[`Baseline/objects/multipart/basic metadata 1`] = `
 {
   headers: {
     "accept-ranges": "bytes",
@@ -13,52 +13,18 @@ snapshot[`Baseline/objects/put metadata 1`] = `
 }
 `;
 
-snapshot[`Proxy/objects/put metadata 1`] = `
+snapshot[`Proxy/objects/multipart/basic metadata 1`] = `
 {
   headers: {},
   status: 204,
 }
 `;
 
-snapshot[`Swift/objects/put metadata 1`] = `
-{
-  headers: {},
-  status: 204,
-}
-`;
-
-snapshot[`Baseline/objects/get/existing metadata 1`] = `
+snapshot[`Baseline/objects/multipart/abort metadata 1`] = `
 {
   headers: {
     "accept-ranges": "bytes",
-    "strict-transport-security": "max-age=31536000; includeSubDomains",
-    "x-content-type-options": "nosniff",
-    "x-xss-protection": "1; mode=block",
-    vary: "Origin, Accept-Encoding",
-  },
-  status: 204,
-}
-`;
-
-snapshot[`Proxy/objects/get/existing metadata 1`] = `
-{
-  headers: {},
-  status: 204,
-}
-`;
-
-snapshot[`Swift/objects/get/existing metadata 1`] = `
-{
-  headers: {},
-  status: 204,
-}
-`;
-
-snapshot[`Baseline/objects/get/non-existent metadata 1`] = `
-{
-  headers: {
-    "accept-ranges": "bytes",
-    "content-length": "359",
+    "content-length": "479",
     "content-type": "application/xml",
     "strict-transport-security": "max-age=31536000; includeSubDomains",
     "x-content-type-options": "nosniff",
@@ -69,12 +35,12 @@ snapshot[`Baseline/objects/get/non-existent metadata 1`] = `
 }
 `;
 
-snapshot[`Baseline/objects/get/non-existent body 1`] = `
+snapshot[`Baseline/objects/multipart/abort body 1`] = `
 '<?xml version="1.0" encoding="UTF-8"?>
-<Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message><Key>no-such</Key><BucketName>test-objects-bucket</BucketName><Resource>/test-objects-bucket/no-such</Resource><RequestId>ID</RequestId><HostId>HOST</HostId></Error>'
+<Error><Code>NoSuchUpload</Code><Message>The specified multipart upload does not exist. The upload ID may be invalid, or the upload may have been aborted or completed.</Message><Key>multipart-abort.txt</Key><BucketName>test-objects-bucket</BucketName><Resource>/test-objects-bucket/multipart-abort.txt</Resource><RequestId>ID</RequestId><HostId>HOST</HostId></Error>'
 `;
 
-snapshot[`Proxy/objects/get/non-existent metadata 1`] = `
+snapshot[`Proxy/objects/multipart/abort metadata 1`] = `
 {
   headers: {
     "content-type": "application/xml",
@@ -84,21 +50,9 @@ snapshot[`Proxy/objects/get/non-existent metadata 1`] = `
 }
 `;
 
-snapshot[`Proxy/objects/get/non-existent body 1`] = `'<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message></Error>'`;
+snapshot[`Proxy/objects/multipart/abort body 1`] = `'<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchUpload</Code><Message>The specified multipart upload does not exist. The upload ID may be invalid, or the upload may have been aborted or completed.</Message></Error>'`;
 
-snapshot[`Swift/objects/get/non-existent metadata 1`] = `
-{
-  headers: {
-    "content-type": "application/xml",
-    vary: "Accept-Encoding",
-  },
-  status: 404,
-}
-`;
-
-snapshot[`Swift/objects/get/non-existent body 1`] = `'<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchKey</Code><Message>Not Found</Message></Error>'`;
-
-snapshot[`Baseline/objects/head/existing metadata 1`] = `
+snapshot[`Baseline/objects/multipart/list-parts metadata 1`] = `
 {
   headers: {
     "accept-ranges": "bytes",
@@ -111,71 +65,14 @@ snapshot[`Baseline/objects/head/existing metadata 1`] = `
 }
 `;
 
-snapshot[`Proxy/objects/head/existing metadata 1`] = `
+snapshot[`Proxy/objects/multipart/list-parts metadata 1`] = `
 {
   headers: {},
   status: 204,
 }
 `;
 
-snapshot[`Swift/objects/head/existing metadata 1`] = `
-{
-  headers: {},
-  status: 204,
-}
-`;
-
-snapshot[`Baseline/objects/head/non-existent metadata 1`] = `
-{
-  headers: {
-    "accept-ranges": "bytes",
-    "content-length": "0",
-    "strict-transport-security": "max-age=31536000; includeSubDomains",
-    "x-content-type-options": "nosniff",
-    "x-minio-error-code": "NoSuchKey",
-    "x-minio-error-desc": '"The specified key does not exist."',
-    "x-xss-protection": "1; mode=block",
-    vary: "Origin, Accept-Encoding",
-  },
-  status: 404,
-}
-`;
-
-snapshot[`Proxy/objects/head/non-existent metadata 1`] = `
-{
-  headers: {},
-  status: 404,
-}
-`;
-
-snapshot[`Swift/objects/head/non-existent metadata 1`] = `
-{
-  headers: {},
-  status: 404,
-}
-`;
-
-snapshot[`Baseline/objects/delete/existing metadata 1`] = `
-{
-  headers: {
-    "accept-ranges": "bytes",
-    "strict-transport-security": "max-age=31536000; includeSubDomains",
-    "x-content-type-options": "nosniff",
-    "x-xss-protection": "1; mode=block",
-    vary: "Origin, Accept-Encoding",
-  },
-  status: 204,
-}
-`;
-
-snapshot[`Proxy/objects/delete/existing metadata 1`] = `
-{
-  headers: {},
-  status: 204,
-}
-`;
-
-snapshot[`Swift/objects/delete/existing metadata 1`] = `
+snapshot[`Proxy/objects/multipart/empty metadata 1`] = `
 {
   headers: {},
   status: 204,

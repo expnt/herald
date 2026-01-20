@@ -12,8 +12,15 @@ export const headObject = (
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
       const key = extractKey(request.url, bucket);
+      const url = new URL(request.url, "http://localhost");
+      const combinedHeaders = { ...request.headers };
+      if (url.searchParams.has("partNumber")) {
+        combinedHeaders["x-amz-part-number"] = url.searchParams.get(
+          "partNumber",
+        )!;
+      }
 
-      const result = yield* backend.headObject(key);
+      const result = yield* backend.headObject(key, combinedHeaders);
       return HttpServerResponse.empty({
         status: 200,
         headers: result.headers,

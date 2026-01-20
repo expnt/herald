@@ -330,14 +330,52 @@ export const makeSwiftBackend = (
           };
         }),
 
-      getObject: (key: string) =>
+      getObject: (
+        key: string,
+        headers: Record<string, string | string[] | undefined>,
+      ) =>
         Effect.gen(function* () {
           const { url, token, container } = yield* getTarget();
           const encodedKey = key.split("/").map(encodeURIComponent).join("/");
+          const swiftHeaders: Record<string, string> = {
+            "X-Auth-Token": token,
+          };
+          if (headers["range"] || headers["Range"]) {
+            swiftHeaders["Range"] = String(
+              headers["range"] || headers["Range"],
+            );
+          }
+          if (headers["if-match"] || headers["If-Match"]) {
+            swiftHeaders["If-Match"] = String(
+              headers["if-match"] ||
+                headers["If-Match"],
+            );
+          }
+          if (headers["if-none-match"] || headers["If-None-Match"]) {
+            swiftHeaders["If-None-Match"] = String(
+              headers["if-none-match"] ||
+                headers["If-None-Match"],
+            );
+          }
+          if (headers["if-modified-since"] || headers["If-Modified-Since"]) {
+            swiftHeaders["If-Modified-Since"] = String(
+              headers["if-modified-since"] ||
+                headers["If-Modified-Since"],
+            );
+          }
+          if (
+            headers["if-unmodified-since"] || headers["If-Unmodified-Since"]
+          ) {
+            swiftHeaders["If-Unmodified-Since"] = String(
+              headers["if-unmodified-since"] ||
+                headers["If-Unmodified-Since"],
+            );
+          }
+
           const response = yield* Effect.tryPromise({
             try: () =>
               fetch(`${url}/${encodedKey}`, {
-                headers: { "X-Auth-Token": token },
+                headers: swiftHeaders,
               }),
             catch: (e) => new InternalError({ message: String(e) }),
           });
@@ -396,15 +434,22 @@ export const makeSwiftBackend = (
           } satisfies ObjectResponse;
         }),
 
-      headObject: (key: string) =>
+      headObject: (
+        key: string,
+        _headers: Record<string, string | string[] | undefined>,
+      ) =>
         Effect.gen(function* () {
           const { url, token, container } = yield* getTarget();
           const encodedKey = key.split("/").map(encodeURIComponent).join("/");
+          const swiftHeaders: Record<string, string> = {
+            "X-Auth-Token": token,
+          };
+          // ... handle headers if needed
           const response = yield* Effect.tryPromise({
             try: () =>
               fetch(`${url}/${encodedKey}`, {
                 method: "HEAD",
-                headers: { "X-Auth-Token": token },
+                headers: swiftHeaders,
               }),
             catch: (e) => new InternalError({ message: String(e) }),
           });
@@ -588,5 +633,18 @@ export const makeSwiftBackend = (
 
           return { deleted, errors } satisfies DeleteObjectsResult;
         }),
+
+      createMultipartUpload: (_key, _headers) =>
+        Effect.fail(new InternalError({ message: "Not implemented" })),
+      uploadPart: (_key, _uploadId, _partNumber, _body) =>
+        Effect.fail(new InternalError({ message: "Not implemented" })),
+      completeMultipartUpload: (_key, _uploadId, _parts) =>
+        Effect.fail(new InternalError({ message: "Not implemented" })),
+      abortMultipartUpload: (_key, _uploadId) =>
+        Effect.fail(new InternalError({ message: "Not implemented" })),
+      listMultipartUploads: (_args) =>
+        Effect.fail(new InternalError({ message: "Not implemented" })),
+      listParts: (_key, _uploadId) =>
+        Effect.fail(new InternalError({ message: "Not implemented" })),
     };
   });
