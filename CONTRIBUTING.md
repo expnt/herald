@@ -5,8 +5,8 @@
 - `src/Domain`: Core logic and data models. Contains Effect Schemas for global
   configuration and logic for bucket matching.
 
-- `src/Config`: Application configuration loading. Defines the AppConfig service
-  layer.
+- `src/Config`: Application configuration loading. Defines the HeraldConfig
+  service layer.
 
 - `src/Services`: Shared service abstractions and implementations.
 

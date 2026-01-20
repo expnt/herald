@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect";
 import { S3Client as S3ClientSDK } from "@aws-sdk/client-s3";
 import type { MaterializedBucket } from "../../Domain/Config.ts";
-import { AppConfig } from "../../Config/Layer.ts";
+import { HeraldConfig } from "../../Config/Layer.ts";
 
 export class S3Client extends Context.Tag("S3Client")<
   S3Client,
@@ -14,7 +14,7 @@ export class S3Client extends Context.Tag("S3Client")<
 
 export const S3ClientLive = Layer.effect(
   S3Client,
-  AppConfig.pipe(
+  HeraldConfig.pipe(
     Effect.flatMap((appConfig) => {
       // A simple cache for SDK clients
       const clients = new Map<string, S3ClientSDK>();

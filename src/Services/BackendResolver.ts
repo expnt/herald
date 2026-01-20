@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Option } from "effect";
-import { AppConfig } from "../Config/Layer.ts";
+import { HeraldConfig } from "../Config/Layer.ts";
 import { Backend, type BackendService } from "./Backend.ts";
 import type { S3Client } from "../Backends/S3/Client.ts";
 import { makeS3Backend } from "../Backends/S3/Backend.ts";
@@ -19,7 +19,7 @@ export class BackendResolver extends Context.Tag("BackendResolver")<
     ) => Effect.Effect<
       A,
       E | Error,
-      Exclude<R, Backend> | AppConfig | S3Client | SwiftClient
+      Exclude<R, Backend> | HeraldConfig | S3Client | SwiftClient
     >;
 
     readonly provideForBackendId: <A, E, R>(
@@ -28,7 +28,7 @@ export class BackendResolver extends Context.Tag("BackendResolver")<
     ) => Effect.Effect<
       A,
       E | Error,
-      Exclude<R, Backend> | AppConfig | S3Client | SwiftClient
+      Exclude<R, Backend> | HeraldConfig | S3Client | SwiftClient
     >;
   }
 >() {}
@@ -36,7 +36,7 @@ export class BackendResolver extends Context.Tag("BackendResolver")<
 export const BackendResolverLive = Layer.effect(
   BackendResolver,
   Effect.gen(function* () {
-    const config = yield* AppConfig;
+    const config = yield* HeraldConfig;
 
     // Dynamic provision logic with memoization.
     const bucketCache = new Map<string, BackendService>();
@@ -81,7 +81,7 @@ export const BackendResolverLive = Layer.effect(
         }) as Effect.Effect<
           A,
           E | Error,
-          Exclude<R, Backend> | AppConfig | S3Client | SwiftClient
+          Exclude<R, Backend> | HeraldConfig | S3Client | SwiftClient
         >,
 
       provideForBackendId: <A, E, R>(
@@ -122,7 +122,7 @@ export const BackendResolverLive = Layer.effect(
         }) as Effect.Effect<
           A,
           E | Error,
-          Exclude<R, Backend> | AppConfig | S3Client | SwiftClient
+          Exclude<R, Backend> | HeraldConfig | S3Client | SwiftClient
         >,
     };
   }),

@@ -1,7 +1,7 @@
 import { Context, Effect, Layer, type Schema } from "effect";
 import { HttpClient, HttpClientRequest } from "@effect/platform";
 import type { MaterializedBucket, SwiftConfig } from "../../Domain/Config.ts";
-import { AppConfig } from "../../Config/Layer.ts";
+import { HeraldConfig } from "../../Config/Layer.ts";
 
 export interface SwiftAuthMeta {
   readonly token: string;
@@ -37,7 +37,7 @@ interface SwiftTokenResponse {
 export const SwiftClientLive = Layer.effect(
   SwiftClient,
   Effect.gen(function* () {
-    const appConfig = yield* AppConfig;
+    const appConfig = yield* HeraldConfig;
     const client = yield* HttpClient.HttpClient;
     const cache = new Map<string, SwiftAuthMeta & { expires: number }>();
 
@@ -46,11 +46,6 @@ export const SwiftClientLive = Layer.effect(
     ): Effect.Effect<SwiftAuthMeta, Error, never> => {
       const { auth_url, credentials, region } = config;
 
-      if (!auth_url) {
-        return Effect.fail(
-          new Error("auth_url is required for Swift backend"),
-        );
-      }
       if (!credentials || !("username" in credentials)) {
         return Effect.fail(
           new Error(

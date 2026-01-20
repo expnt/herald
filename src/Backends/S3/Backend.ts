@@ -23,7 +23,7 @@ import {
   UploadPartCommand,
 } from "@aws-sdk/client-s3";
 import type { MaterializedBucket } from "../../Domain/Config.ts";
-import { AppConfig } from "../../Config/Layer.ts";
+import { HeraldConfig } from "../../Config/Layer.ts";
 import {
   AccessDenied,
   type BackendError,
@@ -132,10 +132,10 @@ function mapS3Error(e: unknown, bucketName?: string): BackendError {
  */
 export const makeS3Backend = (
   bucket: MaterializedBucket | { backend_id: string },
-): Effect.Effect<BackendService, never, S3Client | AppConfig> =>
+): Effect.Effect<BackendService, never, S3Client | HeraldConfig> =>
   Effect.all({
     s3Service: S3Client,
-    config: AppConfig,
+    config: HeraldConfig,
   }).pipe(
     Effect.map(({ s3Service, config }) => {
       const getTargetBucket = (): MaterializedBucket => {
