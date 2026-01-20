@@ -1,5 +1,6 @@
 name: build image
 
+
 on:
   push:
     branches:
@@ -9,8 +10,7 @@ on:
       - "tools/**"
       - ".github/workflows/build-image.yml"
   pull_request:
-    branches:
-      - main
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "src/**"
       - "tools/**"
