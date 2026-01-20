@@ -1,11 +1,10 @@
-import { Context, Effect, Layer, type Option } from "effect";
+import { Config, Context, Effect, Layer, type Option, Schema } from "effect";
 import { parse } from "@std/yaml";
 import {
   GlobalConfig,
   lookupBucket,
   type MaterializedBucket,
 } from "../Domain/Config.ts";
-import { Schema } from "effect";
 
 export class AppConfig extends Context.Tag("AppConfig")<
   AppConfig,
@@ -15,25 +14,127 @@ export class AppConfig extends Context.Tag("AppConfig")<
   }
 >() {}
 
+function toConfigKey(str: string): string {
+  const mapping: Record<string, string> = {
+    "AUTH_URL": "auth_url",
+    "PROJECT_NAME": "project_name",
+    "USER_DOMAIN_NAME": "user_domain_name",
+    "PROJECT_DOMAIN_NAME": "project_domain_name",
+    "ACCESS_KEY_ID": "accessKeyId",
+    "SECRET_ACCESS_KEY": "secretAccessKey",
+  };
+  return mapping[str] || str.toLowerCase();
+}
+
+export function parseConfig(
+  yamlConfig: unknown,
+  env: Record<string, string>,
+): GlobalConfig {
+  const yamlBackends =
+    (yamlConfig && typeof yamlConfig === "object" && "backends" in yamlConfig)
+      ? (yamlConfig as { backends: Record<string, Record<string, unknown>> })
+        .backends
+      : {};
+
+  const backends: Record<string, Record<string, unknown>> = {};
+  for (const [k, v] of Object.entries(yamlBackends)) {
+    backends[k] = { ...v };
+  }
+
+  const commonKeys = [
+    "PROTOCOL",
+    "ENDPOINT",
+    "REGION",
+    "BUCKETS",
+    "ACCESS_KEY_ID",
+    "SECRET_ACCESS_KEY",
+    "AUTH_URL",
+    "CONTAINER",
+    "USERNAME",
+    "PASSWORD",
+    "PROJECT_NAME",
+    "USER_DOMAIN_NAME",
+    "PROJECT_DOMAIN_NAME",
+  ];
+
+  for (const [key, value] of Object.entries(env)) {
+    if (!key.startsWith("HERALD_")) continue;
+    if (key === "HERALD_CONFIG_PATH") continue;
+    if (key === "HERALD_LOG_LEVEL") continue;
+
+    const parts = key.substring(7).split("_");
+    let backendName: string;
+    let configParts: string[];
+
+    if (parts.length === 1 || commonKeys.includes(parts[0])) {
+      backendName = "default";
+      configParts = parts;
+    } else {
+      backendName = parts[0].toLowerCase();
+      configParts = parts.slice(1);
+    }
+
+    const configKey = toConfigKey(configParts.join("_"));
+    if (!backends[backendName]) backends[backendName] = {};
+    const backend = backends[backendName];
+
+    const credentialKeys = [
+      "accessKeyId",
+      "secretAccessKey",
+      "username",
+      "password",
+      "project_name",
+      "user_domain_name",
+      "project_domain_name",
+    ];
+
+    if (credentialKeys.includes(configKey)) {
+      if (!backend.credentials) {
+        backend.credentials = {} as Record<string, unknown>;
+      }
+      (backend.credentials as Record<string, unknown>)[configKey] = value;
+    } else {
+      backend[configKey] = value;
+    }
+  }
+
+  // Default backend fallback if no backends defined at all
+  if (Object.keys(backends).length === 0) {
+    backends["default"] = {
+      protocol: "s3",
+      buckets: "*",
+    };
+  }
+
+  return Schema.decodeUnknownSync(GlobalConfig)({ backends });
+}
+
 export const AppConfigLive = Layer.effect(
   AppConfig,
   Effect.gen(function* () {
-    const configPath = yield* Effect.succeed(
-      Deno.env.get("CONFIG_PATH") ?? "herald.yaml",
+    const configPath = yield* Config.string("HERALD_CONFIG_PATH").pipe(
+      Config.orElse(() => Config.string("CONFIG_PATH")),
+      Config.withDefault("herald.yaml"),
     );
 
-    const content = yield* Effect.tryPromise({
+    const yamlConfig = yield* Effect.tryPromise({
       try: () => Deno.readTextFile(configPath),
-      catch: (e) =>
-        new Error(`Failed to read config file at ${configPath}: ${e}`),
-    });
+      catch: () => new Error("Config file missing"),
+    }).pipe(
+      Effect.flatMap((content) =>
+        Effect.try({
+          try: () => parse(content),
+          catch: (e) => new Error(`YAML parse error: ${e}`),
+        })
+      ),
+      Effect.orElseSucceed(() => ({ backends: {} })),
+    );
 
-    const yaml = yield* Effect.try({
-      try: () => parse(content) as unknown,
-      catch: (e) => new Error(`Failed to parse YAML: ${e}`),
-    });
+    // Discovery needs the full environment. In Deno we use Deno.env.toObject().
+    // We can wrap this in an Effect to be more idiomatic.
+    const env = yield* Effect.sync(() => Deno.env.toObject());
 
-    const raw = yield* Schema.decodeUnknown(GlobalConfig)(yaml);
+    const raw = parseConfig(yamlConfig, env);
 
     return {
       raw,

@@ -108,99 +108,82 @@ export const S3XmlLive = Layer.succeed(
 
     formatListObjects: (result) => {
       const encode = (s: string) =>
-        result.encodingType === "url"
+        result.encodingType?.toLowerCase() === "url"
           ? encodeURIComponent(s).replace(/%2F/g, "/")
           : s;
 
-      const contentsXml = result.contents.map((c) => `
-        <Contents>
-          <Key>${encode(c.key)}</Key>
-          <LastModified>${c.lastModified.toISOString()}</LastModified>
-          <ETag>${c.etag}</ETag>
-          <Size>${c.size}</Size>
-          <StorageClass>${c.storageClass ?? "STANDARD"}</StorageClass>
-          ${
-        c.owner
-          ? `<Owner><ID>${c.owner.id}</ID><DisplayName>${c.owner.displayName}</DisplayName></Owner>`
-          : ""
-      }
-        </Contents>
-      `).join("");
+      const contentsXml = result.contents.map((c) =>
+        `<Contents><Key>${
+          encode(c.key)
+        }</Key><LastModified>${c.lastModified.toISOString()}</LastModified><ETag>${c.etag}</ETag><Size>${c.size}</Size><StorageClass>${
+          c.storageClass ??
+            "STANDARD"
+        }</StorageClass>${
+          c.owner
+            ? `<Owner><ID>${c.owner.id}</ID><DisplayName>${c.owner.displayName}</DisplayName></Owner>`
+            : ""
+        }</Contents>`
+      ).join("");
 
-      const commonPrefixesXml = result.commonPrefixes.map((cp) => `
-        <CommonPrefixes>
-          <Prefix>${encode(cp.prefix)}</Prefix>
-        </CommonPrefixes>
-      `).join("");
+      const commonPrefixesXml = result.commonPrefixes.map((cp) =>
+        `<CommonPrefixes><Prefix>${encode(cp.prefix)}</Prefix></CommonPrefixes>`
+      ).join("");
 
       let xml: string;
       if (result.listType === 2) {
         // ListObjectsV2
-        xml = `<?xml version="1.0" encoding="UTF-8"?>
-          <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
-            <Name>${result.name}</Name>
-            <Prefix>${encode(result.prefix ?? "")}</Prefix>
-            <KeyCount>${
-          result.keyCount ??
-            (result.contents.length + result.commonPrefixes.length)
-        }</KeyCount>
-            <MaxKeys>${result.maxKeys}</MaxKeys>
-            <Delimiter>${encode(result.delimiter ?? "")}</Delimiter>
-            <IsTruncated>${result.isTruncated}</IsTruncated>
-            ${
-          result.continuationToken
-            ? `<ContinuationToken>${result.continuationToken}</ContinuationToken>`
-            : ""
-        }
-            ${
-          result.nextContinuationToken
-            ? `<NextContinuationToken>${result.nextContinuationToken}</NextContinuationToken>`
-            : ""
-        }
-            ${
-          result.startAfter
-            ? `<StartAfter>${encode(result.startAfter)}</StartAfter>`
-            : ""
-        }
-            ${
-          result.encodingType
-            ? `<EncodingType>${result.encodingType}</EncodingType>`
-            : ""
-        }
-            ${contentsXml}
-            ${commonPrefixesXml}
-          </ListBucketResult>
-        `;
+        xml =
+          `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>${result.name}</Name><Prefix>${
+            encode(
+              result.prefix ?? "",
+            )
+          }</Prefix><KeyCount>${
+            result.keyCount ??
+              (result.contents.length + result.commonPrefixes.length)
+          }</KeyCount><MaxKeys>${result.maxKeys}</MaxKeys><Delimiter>${
+            encode(
+              result.delimiter ?? "",
+            )
+          }</Delimiter><IsTruncated>${result.isTruncated}</IsTruncated>${
+            result.continuationToken
+              ? `<ContinuationToken>${result.continuationToken}</ContinuationToken>`
+              : ""
+          }${
+            result.nextContinuationToken
+              ? `<NextContinuationToken>${result.nextContinuationToken}</NextContinuationToken>`
+              : ""
+          }${
+            result.startAfter
+              ? `<StartAfter>${encode(result.startAfter)}</StartAfter>`
+              : ""
+          }${
+            result.encodingType
+              ? `<EncodingType>${result.encodingType}</EncodingType>`
+              : ""
+          }${contentsXml}${commonPrefixesXml}</ListBucketResult>`;
       } else {
         // ListObjectsV1
-        xml = `<?xml version="1.0" encoding="UTF-8"?>
-          <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
-            <Name>${result.name}</Name>
-            <Prefix>${encode(result.prefix ?? "")}</Prefix>
-            <Marker>${encode(result.marker ?? "")}</Marker>
-            ${
-          result.nextMarker
-            ? `<NextMarker>${encode(result.nextMarker)}</NextMarker>`
-            : ""
-        }
-            <MaxKeys>${result.maxKeys}</MaxKeys>
-            <Delimiter>${encode(result.delimiter ?? "")}</Delimiter>
-            <IsTruncated>${result.isTruncated}</IsTruncated>
-            ${
-          result.encodingType
-            ? `<EncodingType>${result.encodingType}</EncodingType>`
-            : ""
-        }
-            ${contentsXml}
-            ${commonPrefixesXml}
-          </ListBucketResult>
-        `;
+        xml =
+          `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>${result.name}</Name><Prefix>${
+            encode(
+              result.prefix ?? "",
+            )
+          }</Prefix><Marker>${encode(result.marker ?? "")}</Marker>${
+            result.nextMarker
+              ? `<NextMarker>${encode(result.nextMarker)}</NextMarker>`
+              : ""
+          }<MaxKeys>${result.maxKeys}</MaxKeys><Delimiter>${
+            encode(
+              result.delimiter ?? "",
+            )
+          }</Delimiter><IsTruncated>${result.isTruncated}</IsTruncated>${
+            result.encodingType
+              ? `<EncodingType>${result.encodingType}</EncodingType>`
+              : ""
+          }${contentsXml}${commonPrefixesXml}</ListBucketResult>`;
       }
 
-      // Clean up whitespace between tags
-      const cleanXml = xml.replace(/>\s+</g, "><").trim();
-
-      return HttpServerResponse.text(cleanXml, {
+      return HttpServerResponse.text(xml, {
         headers: {
           "Content-Type": "application/xml",
         },
@@ -209,68 +192,69 @@ export const S3XmlLive = Layer.succeed(
 
     formatListVersions: (result) => {
       const encode = (s: string) =>
-        result.encodingType === "url"
+        result.encodingType?.toLowerCase() === "url"
           ? encodeURIComponent(s).replace(/%2F/g, "/")
           : s;
 
       const versionsXml = result.contents.filter((c) => !c.isDeleteMarker).map(
-        (v) => `
-        <Version>
-          <Key>${encode(v.key)}</Key>
-          <VersionId>${v.versionId ?? "null"}</VersionId>
-          <IsLatest>${v.isLatest ?? true}</IsLatest>
-          <LastModified>${v.lastModified.toISOString()}</LastModified>
-          <ETag>${v.etag}</ETag>
-          <Size>${v.size}</Size>
-          <StorageClass>${v.storageClass ?? "STANDARD"}</StorageClass>
-          ${
-          v.owner
-            ? `<Owner><ID>${v.owner.id}</ID><DisplayName>${v.owner.displayName}</DisplayName></Owner>`
-            : ""
-        }
-        </Version>
-      `,
+        (v) =>
+          `<Version><Key>${encode(v.key)}</Key><VersionId>${
+            v.versionId ??
+              "null"
+          }</VersionId><IsLatest>${
+            v.isLatest ??
+              true
+          }</IsLatest><LastModified>${v.lastModified.toISOString()}</LastModified><ETag>${v.etag}</ETag><Size>${v.size}</Size><StorageClass>${
+            v.storageClass ??
+              "STANDARD"
+          }</StorageClass>${
+            v.owner
+              ? `<Owner><ID>${v.owner.id}</ID><DisplayName>${v.owner.displayName}</DisplayName></Owner>`
+              : ""
+          }</Version>`,
       ).join("");
 
       const deleteMarkersXml = result.contents.filter((c) => c.isDeleteMarker)
-        .map((dm) => `
-        <DeleteMarker>
-          <Key>${encode(dm.key)}</Key>
-          <VersionId>${dm.versionId ?? "null"}</VersionId>
-          <IsLatest>${dm.isLatest ?? true}</IsLatest>
-          <LastModified>${dm.lastModified.toISOString()}</LastModified>
-          ${
-          dm.owner
-            ? `<Owner><ID>${dm.owner.id}</ID><DisplayName>${dm.owner.displayName}</DisplayName></Owner>`
+        .map((dm) =>
+          `<DeleteMarker><Key>${encode(dm.key)}</Key><VersionId>${
+            dm.versionId ??
+              "null"
+          }</VersionId><IsLatest>${
+            dm.isLatest ??
+              true
+          }</IsLatest><LastModified>${dm.lastModified.toISOString()}</LastModified>${
+            dm.owner
+              ? `<Owner><ID>${dm.owner.id}</ID><DisplayName>${dm.owner.displayName}</DisplayName></Owner>`
+              : ""
+          }</DeleteMarker>`
+        ).join("");
+
+      const commonPrefixesXml = result.commonPrefixes.map((cp) =>
+        `<CommonPrefixes><Prefix>${encode(cp.prefix)}</Prefix></CommonPrefixes>`
+      ).join("");
+
+      const xml =
+        `<?xml version="1.0" encoding="UTF-8"?><ListVersionsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>${result.name}</Name><Prefix>${
+          encode(
+            result.prefix ?? "",
+          )
+        }</Prefix><KeyMarker>${
+          encode(
+            result.marker ?? "",
+          )
+        }</KeyMarker><VersionIdMarker></VersionIdMarker><MaxKeys>${result.maxKeys}</MaxKeys><Delimiter>${
+          encode(
+            result.delimiter ?? "",
+          )
+        }</Delimiter><IsTruncated>${result.isTruncated}</IsTruncated>${
+          result.nextMarker
+            ? `<NextKeyMarker>${
+              encode(result.nextMarker)
+            }</NextKeyMarker><NextVersionIdMarker>null</NextVersionIdMarker>`
             : ""
-        }
-        </DeleteMarker>
-      `).join("");
+        }${versionsXml}${deleteMarkersXml}${commonPrefixesXml}</ListVersionsResult>`;
 
-      const commonPrefixesXml = result.commonPrefixes.map((cp) => `
-        <CommonPrefixes>
-          <Prefix>${encode(cp.prefix)}</Prefix>
-        </CommonPrefixes>
-      `).join("");
-
-      const xml = `<?xml version="1.0" encoding="UTF-8"?>
-        <ListVersionsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
-          <Name>${result.name}</Name>
-          <Prefix>${encode(result.prefix ?? "")}</Prefix>
-          <KeyMarker>${encode(result.marker ?? "")}</KeyMarker>
-          <VersionIdMarker></VersionIdMarker>
-          <MaxKeys>${result.maxKeys}</MaxKeys>
-          <Delimiter>${encode(result.delimiter ?? "")}</Delimiter>
-          <IsTruncated>${result.isTruncated}</IsTruncated>
-          ${versionsXml}
-          ${deleteMarkersXml}
-          ${commonPrefixesXml}
-        </ListVersionsResult>
-      `;
-
-      const cleanXml = xml.replace(/>\s+</g, "><").trim();
-
-      return HttpServerResponse.text(cleanXml, {
+      return HttpServerResponse.text(xml, {
         headers: {
           "Content-Type": "application/xml",
         },

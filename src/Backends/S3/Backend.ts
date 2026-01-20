@@ -1,4 +1,4 @@
-import { Chunk, Effect, Stream } from "effect";
+import { Chunk, Effect, Option, Stream } from "effect";
 import {
   CreateBucketCommand,
   DeleteBucketCommand,
@@ -111,15 +111,18 @@ export const makeS3Backend = (
         if ("bucket_name" in bucket) return bucket as MaterializedBucket;
 
         const backendConfig = config.raw.backends[bucket.backend_id];
-        return {
-          name: "",
-          backend_id: bucket.backend_id,
-          protocol: "s3" as const,
-          endpoint: backendConfig.endpoint,
-          region: backendConfig.region,
-          bucket_name: "",
-          credentials: backendConfig.credentials,
-        };
+        if (backendConfig && backendConfig.protocol === "s3") {
+          return {
+            name: "",
+            backend_id: bucket.backend_id,
+            protocol: "s3" as const,
+            endpoint: backendConfig.endpoint,
+            region: backendConfig.region,
+            bucket_name: "",
+            credentials: backendConfig.credentials,
+          };
+        }
+        throw new Error(`Backend ${bucket.backend_id} is not an S3 backend`);
       };
 
       const targetBucket = getTargetBucket();
@@ -431,11 +434,11 @@ export const makeS3Backend = (
               const metadata: Record<string, string> = {};
               if (result.Metadata) {
                 for (const [k, v] of Object.entries(result.Metadata)) {
-                  try {
-                    metadata[k] = decodeURIComponent(v ?? "");
-                  } catch {
-                    metadata[k] = v ?? "";
-                  }
+                  metadata[k] = Option.liftThrowable(decodeURIComponent)(
+                    v ?? "",
+                  ).pipe(
+                    Option.getOrElse(() => v ?? ""),
+                  );
                 }
               }
 
@@ -503,11 +506,11 @@ export const makeS3Backend = (
               const metadata: Record<string, string> = {};
               if (result.Metadata) {
                 for (const [k, v] of Object.entries(result.Metadata)) {
-                  try {
-                    metadata[k] = decodeURIComponent(v ?? "");
-                  } catch {
-                    metadata[k] = v ?? "";
-                  }
+                  metadata[k] = Option.liftThrowable(decodeURIComponent)(
+                    v ?? "",
+                  ).pipe(
+                    Option.getOrElse(() => v ?? ""),
+                  );
                 }
               }
 

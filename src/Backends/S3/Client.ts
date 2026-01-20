@@ -28,15 +28,23 @@ export const S3ClientLive = Layer.effect(
               resolved = bucket;
             } else {
               const backendConfig = appConfig.raw.backends[bucket.backend_id];
-              resolved = {
-                name: "",
-                backend_id: bucket.backend_id,
-                protocol: "s3" as const,
-                endpoint: backendConfig.endpoint,
-                region: backendConfig.region,
-                bucket_name: "",
-                credentials: backendConfig.credentials,
-              };
+              if (backendConfig && backendConfig.protocol === "s3") {
+                resolved = {
+                  name: "",
+                  backend_id: bucket.backend_id,
+                  protocol: "s3" as const,
+                  endpoint: backendConfig.endpoint,
+                  region: backendConfig.region,
+                  bucket_name: "",
+                  credentials: backendConfig.credentials,
+                };
+              } else {
+                return Effect.fail(
+                  new Error(
+                    `Backend ${bucket.backend_id} is not an S3 backend or not found`,
+                  ),
+                );
+              }
             }
 
             const key =
@@ -60,21 +68,27 @@ export const S3ClientLive = Layer.effect(
               );
             }
 
+            let accessKeyId: string | undefined;
+            let secretAccessKey: string | undefined;
+
             if (resolved.credentials) {
-              if (
-                resolved.credentials.accessKeyId === undefined &&
-                resolved.credentials.username === undefined
-              ) {
+              const creds = resolved.credentials;
+              if ("accessKeyId" in creds) {
+                accessKeyId = creds.accessKeyId;
+                secretAccessKey = creds.secretAccessKey;
+              } else if ("username" in creds) {
+                accessKeyId = creds.username;
+                secretAccessKey = creds.password;
+              }
+
+              if (accessKeyId === undefined) {
                 return Effect.fail(
                   new Error(
                     `Missing accessKeyId/username for backend ${resolved.backend_id}`,
                   ),
                 );
               }
-              if (
-                resolved.credentials.secretAccessKey === undefined &&
-                resolved.credentials.password === undefined
-              ) {
+              if (secretAccessKey === undefined) {
                 return Effect.fail(
                   new Error(
                     `Missing secretAccessKey/password for backend ${resolved.backend_id}`,
@@ -86,12 +100,10 @@ export const S3ClientLive = Layer.effect(
             const sdkClient = new S3ClientSDK({
               endpoint: resolved.endpoint,
               region: resolved.region,
-              credentials: resolved.credentials
+              credentials: accessKeyId && secretAccessKey
                 ? {
-                  accessKeyId: (resolved.credentials.accessKeyId ??
-                    resolved.credentials.username)!,
-                  secretAccessKey: (resolved.credentials.secretAccessKey ??
-                    resolved.credentials.password)!,
+                  accessKeyId,
+                  secretAccessKey,
                 }
                 : undefined,
               forcePathStyle: true,

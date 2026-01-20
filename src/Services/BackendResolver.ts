@@ -3,6 +3,8 @@ import { AppConfig } from "../Config/Layer.ts";
 import { Backend, type BackendService } from "./Backend.ts";
 import type { S3Client } from "../Backends/S3/Client.ts";
 import { makeS3Backend } from "../Backends/S3/Backend.ts";
+import { makeSwiftBackend } from "../Backends/Swift/Backend.ts";
+import type { SwiftClient } from "../Backends/Swift/Client.ts";
 
 /**
  * BackendResolver handles dynamic resolution and provisioning of Backend implementations
@@ -17,7 +19,7 @@ export class BackendResolver extends Context.Tag("BackendResolver")<
     ) => Effect.Effect<
       A,
       E | Error,
-      Exclude<R, Backend> | AppConfig | S3Client
+      Exclude<R, Backend> | AppConfig | S3Client | SwiftClient
     >;
 
     readonly provideForBackendId: <A, E, R>(
@@ -26,7 +28,7 @@ export class BackendResolver extends Context.Tag("BackendResolver")<
     ) => Effect.Effect<
       A,
       E | Error,
-      Exclude<R, Backend> | AppConfig | S3Client
+      Exclude<R, Backend> | AppConfig | S3Client | SwiftClient
     >;
   }
 >() {}
@@ -66,6 +68,8 @@ export const BackendResolverLive = Layer.effect(
 
           if (bucketConfig.protocol === "s3") {
             backendImpl = yield* makeS3Backend(bucketConfig);
+          } else if (bucketConfig.protocol === "swift") {
+            backendImpl = yield* makeSwiftBackend(bucketConfig);
           } else {
             return yield* Effect.fail(
               new Error(`Unsupported protocol: ${bucketConfig.protocol}`),
@@ -77,7 +81,7 @@ export const BackendResolverLive = Layer.effect(
         }) as Effect.Effect<
           A,
           E | Error,
-          Exclude<R, Backend> | AppConfig | S3Client
+          Exclude<R, Backend> | AppConfig | S3Client | SwiftClient
         >,
 
       provideForBackendId: <A, E, R>(
@@ -104,9 +108,12 @@ export const BackendResolverLive = Layer.effect(
 
           if (backendConfig.protocol === "s3") {
             backendImpl = yield* makeS3Backend({ backend_id: backendId });
+          } else if (backendConfig.protocol === "swift") {
+            backendImpl = yield* makeSwiftBackend({ backend_id: backendId });
           } else {
+            const protocol = (backendConfig as { protocol: string }).protocol;
             return yield* Effect.fail(
-              new Error(`Unsupported protocol: ${backendConfig.protocol}`),
+              new Error(`Unsupported protocol: ${protocol}`),
             );
           }
 
@@ -115,7 +122,7 @@ export const BackendResolverLive = Layer.effect(
         }) as Effect.Effect<
           A,
           E | Error,
-          Exclude<R, Backend> | AppConfig | S3Client
+          Exclude<R, Backend> | AppConfig | S3Client | SwiftClient
         >,
     };
   }),

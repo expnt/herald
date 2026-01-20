@@ -5,16 +5,16 @@ on:
     branches:
       - main
     paths:
-      - 'src/**'
-      - 'tools/**'
-      - '.github/workflows/build-image.yml'
+      - "src/**"
+      - "tools/**"
+      - ".github/workflows/build-image.yml"
   pull_request:
     branches:
       - main
     paths:
-      - 'src/**'
-      - 'tools/**'
-      - '.github/workflows/build-image.yml'
+      - "src/**"
+      - "tools/**"
+      - ".github/workflows/build-image.yml"
   workflow_dispatch:
 
 env:
