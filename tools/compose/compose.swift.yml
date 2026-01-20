@@ -1,5 +1,0 @@
-services:
-  swift:
-    image: docker.io/openstackswift/saio:latest
-    ports:
-      - "8080:8080"
