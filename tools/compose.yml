@@ -1,6 +1,7 @@
 name: herald
 services:
   redis:
+    profiles: ["db"]
     image: docker.io/library/redis:alpine
     command: --save 60 1 --loglevel warning
     healthcheck:
@@ -15,6 +16,7 @@ services:
       - redisdata:/data
 
   minio:
+    profiles: ["s3"]
     image: docker.io/minio/minio:latest
     command: server /data --console-address ":9001"
     ports:
