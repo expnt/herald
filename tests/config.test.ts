@@ -1,0 +1,363 @@
+import { type Context, Either, Layer, Option, Schema } from "effect";
+import { GlobalConfig, lookupBucket } from "../src/Domain/Config.ts";
+import { Effect } from "effect";
+import { assertEquals, EffectAssert, testEffect } from "./utils.ts";
+import {
+  BackendResolver,
+  BackendResolverLive,
+} from "../src/Services/BackendResolver.ts";
+import { AppConfig } from "../src/Config/Layer.ts";
+import { S3Client } from "../src/Backends/S3/Client.ts";
+import type { S3Client as S3ClientSDK } from "@aws-sdk/client-s3";
+import { Backend } from "../src/Services/Backend.ts";
+
+interface TestCase {
+  id: string;
+  name: string;
+  input: unknown;
+  expectedBuckets?: Record<string, Record<string, unknown>>;
+  expectError?: boolean;
+}
+
+const cases: TestCase[] = [
+  {
+    id: "basic_inheritance",
+    name: "basic inheritance",
+    input: {
+      backends: {
+        s3_main: {
+          protocol: "s3",
+          endpoint: "http://s3.amazonaws.com",
+          buckets: {
+            my_bucket: {},
+          },
+        },
+      },
+    },
+    expectedBuckets: {
+      my_bucket: {
+        name: "my_bucket",
+        backend_id: "s3_main",
+        protocol: "s3",
+        endpoint: "http://s3.amazonaws.com",
+        bucket_name: "my_bucket",
+      },
+    },
+  },
+  {
+    id: "bucket_overrides_endpoint",
+    name: "bucket overrides endpoint",
+    input: {
+      backends: {
+        s3_main: {
+          protocol: "s3",
+          endpoint: "http://s3.amazonaws.com",
+          buckets: {
+            special_bucket: {
+              endpoint: "http://custom-endpoint.com",
+            },
+          },
+        },
+      },
+    },
+    expectedBuckets: {
+      special_bucket: {
+        name: "special_bucket",
+        backend_id: "s3_main",
+        protocol: "s3",
+        endpoint: "http://custom-endpoint.com",
+        bucket_name: "special_bucket",
+      },
+    },
+  },
+  {
+    id: "bucket_overrides_bucket_name",
+    name: "bucket overrides bucket_name",
+    input: {
+      backends: {
+        s3_main: {
+          protocol: "s3",
+          buckets: {
+            my_logical_name: {
+              bucket_name: "actual-s3-bucket-name",
+            },
+          },
+        },
+      },
+    },
+    expectedBuckets: {
+      my_logical_name: {
+        name: "my_logical_name",
+        backend_id: "s3_main",
+        protocol: "s3",
+        bucket_name: "actual-s3-bucket-name",
+      },
+    },
+  },
+  {
+    id: "invalid_protocol",
+    name: "invalid protocol fails",
+    input: {
+      backends: {
+        bad: {
+          protocol: "not-real",
+          buckets: { b: {} },
+        },
+      },
+    },
+    expectError: true,
+  },
+  {
+    id: "priority_direct_over_glob",
+    name: "direct match takes priority over glob across backends",
+    input: {
+      backends: {
+        fallback: {
+          protocol: "s3",
+          endpoint: "http://fallback.com",
+          buckets: "*",
+        },
+        specific: {
+          protocol: "s3",
+          endpoint: "http://specific.com",
+          buckets: {
+            my_bucket: {},
+          },
+        },
+      },
+    },
+    expectedBuckets: {
+      my_bucket: {
+        backend_id: "specific",
+        endpoint: "http://specific.com",
+      },
+    },
+  },
+  {
+    id: "priority_glob_key_over_string",
+    name: "glob key takes priority over glob string across backends",
+    input: {
+      backends: {
+        string_glob: {
+          protocol: "s3",
+          endpoint: "http://string.com",
+          buckets: "*",
+        },
+        key_glob: {
+          protocol: "s3",
+          endpoint: "http://key.com",
+          buckets: {
+            "prod-*": {},
+          },
+        },
+      },
+    },
+    expectedBuckets: {
+      "prod-logs": {
+        backend_id: "key_glob",
+        endpoint: "http://key.com",
+      },
+    },
+  },
+  {
+    id: "priority_backend_order",
+    name: "first backend wins for same priority level",
+    input: {
+      backends: {
+        first: {
+          protocol: "s3",
+          endpoint: "http://first.com",
+          buckets: "*",
+        },
+        second: {
+          protocol: "s3",
+          endpoint: "http://second.com",
+          buckets: "*",
+        },
+      },
+    },
+    expectedBuckets: {
+      any_bucket: {
+        backend_id: "first",
+        endpoint: "http://first.com",
+      },
+    },
+  },
+  {
+    id: "complex_glob_matching",
+    name: "complex glob matching (prefix, suffix, infix)",
+    input: {
+      backends: {
+        s3: {
+          protocol: "s3",
+          buckets: {
+            "logs-*": { bucket_name: "prefix-match" },
+            "*-backups": { bucket_name: "suffix-match" },
+            "data-*-internal": { bucket_name: "infix-match" },
+          },
+        },
+      },
+    },
+    expectedBuckets: {
+      "logs-2024": { bucket_name: "prefix-match" },
+      "db-backups": { bucket_name: "suffix-match" },
+      "data-customer-internal": { bucket_name: "infix-match" },
+    },
+  },
+];
+
+for (const tc of cases) {
+  testEffect(`config/${tc.id}`, () =>
+    Effect.gen(function* () {
+      const program = Schema.decodeUnknown(GlobalConfig)(tc.input);
+
+      if (tc.expectError) {
+        const result = yield* Effect.either(program);
+        assertEquals(
+          Either.isLeft(result),
+          true,
+          `Expected decoding error for ${tc.name}`,
+        );
+      } else {
+        const config = yield* program;
+
+        if (tc.expectedBuckets) {
+          for (const [id, expected] of Object.entries(tc.expectedBuckets)) {
+            const actualOpt = lookupBucket(config, id);
+            if (Option.isNone(actualOpt)) {
+              return yield* Effect.fail(new Error(`Bucket ${id} not found`));
+            }
+            const actual = actualOpt.value;
+            for (const [key, value] of Object.entries(expected)) {
+              const actualValue =
+                (actual as unknown as Record<string, unknown>)[key];
+              yield* EffectAssert.strictEqual(
+                actualValue,
+                value,
+                `Mismatch in ${id}.${key} for ${tc.name}`,
+              );
+            }
+          }
+        }
+      }
+    }));
+}
+
+interface ResolverTestCase {
+  id: string;
+  name: string;
+  config: GlobalConfig;
+  op: (
+    resolver: Context.Tag.Service<BackendResolver>,
+  ) => Effect.Effect<unknown, unknown, AppConfig | S3Client>;
+  expectedError?: string;
+}
+
+const resolverCases: ResolverTestCase[] = [
+  {
+    id: "resolve_by_bucket",
+    name: "resolves backend by bucket name",
+    config: {
+      backends: {
+        s3_main: {
+          protocol: "s3",
+          endpoint: "http://s3.amazonaws.com",
+          buckets: "*",
+        },
+      },
+    },
+    op: (resolver) =>
+      resolver.provideForBucket(
+        "any",
+        Effect.gen(function* () {
+          yield* Backend;
+          return "success";
+        }),
+      ),
+  },
+  {
+    id: "resolve_missing_bucket",
+    name: "fails when bucket matches no backend",
+    config: {
+      backends: {
+        s3_main: {
+          protocol: "s3",
+          buckets: { "only-this": {} },
+        },
+      },
+    },
+    op: (resolver) =>
+      resolver.provideForBucket("not-found", Effect.succeed("ok")),
+    expectedError: "No configuration found for bucket: not-found",
+  },
+  {
+    id: "resolve_by_id",
+    name: "resolves backend by backend ID",
+    config: {
+      backends: {
+        s3_main: {
+          protocol: "s3",
+          endpoint: "http://s3.amazonaws.com",
+          buckets: "*",
+        },
+      },
+    },
+    op: (resolver) =>
+      resolver.provideForBackendId("s3_main", Effect.succeed("ok")),
+  },
+  {
+    id: "resolve_missing_id",
+    name: "fails when backend ID is not found",
+    config: {
+      backends: {},
+    },
+    op: (resolver) =>
+      resolver.provideForBackendId("missing", Effect.succeed("ok")),
+    expectedError: "No configuration found for backend: missing",
+  },
+];
+
+for (const tc of resolverCases) {
+  testEffect(`resolver/${tc.id}`, () =>
+    Effect.gen(function* () {
+      const AppConfigLive = Layer.succeed(AppConfig, {
+        raw: tc.config,
+        lookupBucket: (name: string) => lookupBucket(tc.config, name),
+      });
+
+      // Mock S3Client
+      const S3ClientLive = Layer.succeed(S3Client, {
+        getClient: () => Effect.succeed({} as S3ClientSDK),
+      });
+
+      const program = Effect.gen(function* () {
+        const resolver = yield* BackendResolver;
+        return yield* tc.op(resolver);
+      }).pipe(
+        Effect.provide(BackendResolverLive),
+        Effect.provide(AppConfigLive),
+        Effect.provide(S3ClientLive),
+        Effect.either,
+      );
+
+      const result = yield* program;
+
+      if (tc.expectedError) {
+        yield* EffectAssert.strictEqual(
+          Either.isLeft(result),
+          true,
+          `Expected error for ${tc.name}`,
+        );
+        if (Either.isLeft(result)) {
+          const error = result.left as Error;
+          yield* EffectAssert.strictEqual(error.message, tc.expectedError);
+        }
+      } else {
+        yield* EffectAssert.strictEqual(
+          Either.isRight(result),
+          true,
+          `Expected success for ${tc.name}`,
+        );
+      }
+    }));
+}

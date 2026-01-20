@@ -1,0 +1,168 @@
+export const snapshot = {};
+
+snapshot[`Baseline/buckets/create/new metadata 1`] = `
+{
+  headers: {
+    "accept-ranges": "bytes",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-xss-protection": "1; mode=block",
+    vary: "Origin, Accept-Encoding",
+  },
+  status: 204,
+}
+`;
+
+snapshot[`Proxy/buckets/create/new metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Baseline/buckets/create/existing metadata 1`] = `
+{
+  headers: {
+    "accept-ranges": "bytes",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-xss-protection": "1; mode=block",
+    vary: "Origin, Accept-Encoding",
+  },
+  status: 204,
+}
+`;
+
+snapshot[`Proxy/buckets/create/existing metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Baseline/buckets/delete/existing metadata 1`] = `
+{
+  headers: {
+    "accept-ranges": "bytes",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-xss-protection": "1; mode=block",
+    vary: "Origin, Accept-Encoding",
+  },
+  status: 204,
+}
+`;
+
+snapshot[`Proxy/buckets/delete/existing metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Baseline/buckets/delete/non-existent metadata 1`] = `
+{
+  headers: {
+    "accept-ranges": "bytes",
+    "content-length": "315",
+    "content-type": "application/xml",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-xss-protection": "1; mode=block",
+    vary: "Origin, Accept-Encoding",
+  },
+  status: 404,
+}
+`;
+
+snapshot[`Baseline/buckets/delete/non-existent body 1`] = `
+'<?xml version="1.0" encoding="UTF-8"?>
+<Error><Code>NoSuchBucket</Code><Message>The specified bucket does not exist</Message><BucketName>no-such</BucketName><Resource>/no-such/</Resource><RequestId>ID</RequestId><HostId>HOST</HostId></Error>'
+`;
+
+snapshot[`Proxy/buckets/delete/non-existent metadata 1`] = `
+{
+  headers: {
+    "content-type": "application/xml",
+    vary: "Accept-Encoding",
+  },
+  status: 404,
+}
+`;
+
+snapshot[`Proxy/buckets/delete/non-existent body 1`] = `'<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchBucket</Code><Message>The specified bucket does not exist</Message></Error>'`;
+
+snapshot[`Baseline/buckets/head/existing metadata 1`] = `
+{
+  headers: {
+    "accept-ranges": "bytes",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-xss-protection": "1; mode=block",
+    vary: "Origin, Accept-Encoding",
+  },
+  status: 204,
+}
+`;
+
+snapshot[`Proxy/buckets/head/existing metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Baseline/buckets/head/non-existent metadata 1`] = `
+{
+  headers: {
+    "accept-ranges": "bytes",
+    "content-length": "0",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-minio-error-code": "NoSuchBucket",
+    "x-minio-error-desc": '"The specified bucket does not exist"',
+    "x-xss-protection": "1; mode=block",
+    vary: "Origin, Accept-Encoding",
+  },
+  status: 404,
+}
+`;
+
+snapshot[`Proxy/buckets/head/non-existent metadata 1`] = `
+{
+  headers: {},
+  status: 404,
+}
+`;
+
+snapshot[`Baseline/buckets/list metadata 1`] = `
+{
+  headers: {
+    "accept-ranges": "bytes",
+    "content-length": "275",
+    "content-type": "application/xml",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-xss-protection": "1; mode=block",
+    vary: "Origin, Accept-Encoding",
+  },
+  status: 200,
+}
+`;
+
+snapshot[`Baseline/buckets/list body 1`] = `
+'<?xml version="1.0" encoding="UTF-8"?>
+<ListAllMyBucketsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Owner><ID>02d6176db174dc93cb1b899f7c6078f08654445fe8cf1b6ce98d8855f66bdbf4</ID><DisplayName>minio</DisplayName></Owner><Buckets></Buckets></ListAllMyBucketsResult>'
+`;
+
+snapshot[`Proxy/buckets/list metadata 1`] = `
+{
+  headers: {
+    "content-type": "application/xml",
+    vary: "Accept-Encoding",
+  },
+  status: 200,
+}
+`;
+
+snapshot[`Proxy/buckets/list body 1`] = `'<?xml version="1.0" encoding="UTF-8"?><ListAllMyBucketsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Owner><ID>02d6176db174dc93cb1b899f7c6078f08654445fe8cf1b6ce98d8855f66bdbf4</ID><DisplayName>minio</DisplayName></Owner><Buckets></Buckets></ListAllMyBucketsResult>'`;
