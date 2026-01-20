@@ -1,4 +1,5 @@
-import { Effect, Option, Stream } from "effect";
+import { Effect, Option } from "effect";
+import { HttpClient, HttpClientRequest } from "@effect/platform";
 import {
   type BackendError,
   type BackendService,
@@ -38,9 +39,10 @@ interface SwiftObject {
 
 export const makeSwiftBackend = (
   bucket: MaterializedBucket | { backend_id: string },
-): Effect.Effect<BackendService, never, SwiftClient> =>
+): Effect.Effect<BackendService, never, SwiftClient | HttpClient.HttpClient> =>
   Effect.gen(function* () {
     const swiftClient = yield* SwiftClient;
+    const client = yield* HttpClient.HttpClient;
 
     const getTarget = () =>
       Effect.gen(function* () {
@@ -112,31 +114,34 @@ export const makeSwiftBackend = (
         if (args.continuationToken) query.set("marker", args.continuationToken);
         if (args.startAfter) query.set("marker", args.startAfter);
 
-        const response = yield* Effect.tryPromise({
-          try: () =>
-            fetch(`${url}?${query.toString()}`, {
-              headers: { "X-Auth-Token": token },
-            }),
-          catch: (e) => new InternalError({ message: String(e) }),
-        });
+        const response = yield* client.execute(
+          HttpClientRequest.get(`${url}?${query.toString()}`).pipe(
+            HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+          ),
+        ).pipe(
+          Effect.mapError((e) => new InternalError({ message: String(e) })),
+        );
 
         yield* Effect.logDebug(
           `Swift listObjects query=[${query.toString()}] status=${response.status}`,
         );
 
-        if (!response.ok) {
+        if (response.status < 200 || response.status >= 300) {
+          const message = yield* response.text.pipe(
+            Effect.orElseSucceed(() => "Error"),
+          );
           return yield* Effect.fail(
-            mapError(response.status, response.statusText, container, "GET"),
+            mapError(response.status, message || "Error", container, "GET"),
           );
         }
 
-        const rawObjects = (yield* Effect.tryPromise({
-          try: () => response.json(),
-          catch: (e) =>
+        const rawObjects = (yield* response.json.pipe(
+          Effect.mapError((e) =>
             new InternalError({
               message: `Failed to parse Swift response: ${e}`,
-            }),
-        })) as readonly SwiftObject[];
+            })
+          ),
+        )) as readonly SwiftObject[];
 
         const isTruncated = rawObjects.length > limit;
         const objects = isTruncated ? rawObjects.slice(0, limit) : rawObjects;
@@ -187,27 +192,30 @@ export const makeSwiftBackend = (
       listBuckets: () =>
         Effect.gen(function* () {
           const { storageUrl, token } = yield* getTarget();
-          const response = yield* Effect.tryPromise({
-            try: () =>
-              fetch(`${storageUrl}?format=json`, {
-                headers: { "X-Auth-Token": token },
-              }),
-            catch: (e) => new InternalError({ message: String(e) }),
-          });
+          const response = yield* client.execute(
+            HttpClientRequest.get(`${storageUrl}?format=json`).pipe(
+              HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+            ),
+          ).pipe(
+            Effect.mapError((e) => new InternalError({ message: String(e) })),
+          );
 
-          if (!response.ok) {
+          if (response.status < 200 || response.status >= 300) {
+            const message = yield* response.text.pipe(
+              Effect.orElseSucceed(() => "Error"),
+            );
             return yield* Effect.fail(
-              mapError(response.status, response.statusText, "", "GET"),
+              mapError(response.status, message || "Error", "", "GET"),
             );
           }
 
-          const buckets = (yield* Effect.tryPromise({
-            try: () => response.json(),
-            catch: (e) =>
+          const buckets = (yield* response.json.pipe(
+            Effect.mapError((e) =>
               new InternalError({
                 message: `Failed to parse Swift response: ${e}`,
-              }),
-          })) as readonly SwiftContainer[];
+              })
+            ),
+          )) as readonly SwiftContainer[];
 
           const bucketInfos: BucketInfo[] = buckets.map((b) => ({
             name: b.name,
@@ -224,14 +232,13 @@ export const makeSwiftBackend = (
       createBucket: () =>
         Effect.gen(function* () {
           const { url, token, container } = yield* getTarget();
-          const response = yield* Effect.tryPromise({
-            try: () =>
-              fetch(url, {
-                method: "PUT",
-                headers: { "X-Auth-Token": token },
-              }),
-            catch: (e) => new InternalError({ message: String(e) }),
-          });
+          const response = yield* client.execute(
+            HttpClientRequest.put(url).pipe(
+              HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+            ),
+          ).pipe(
+            Effect.mapError((e) => new InternalError({ message: String(e) })),
+          );
 
           if (response.status === 201) {
             return yield* Effect.void;
@@ -246,9 +253,12 @@ export const makeSwiftBackend = (
             );
           }
 
-          if (!response.ok) {
+          if (response.status < 200 || response.status >= 300) {
+            const message = yield* response.text.pipe(
+              Effect.orElseSucceed(() => "Error"),
+            );
             return yield* Effect.fail(
-              mapError(response.status, response.statusText, container, "PUT"),
+              mapError(response.status, message || "Error", container, "PUT"),
             );
           }
 
@@ -258,14 +268,13 @@ export const makeSwiftBackend = (
       deleteBucket: () =>
         Effect.gen(function* () {
           const { url, token, container } = yield* getTarget();
-          const response = yield* Effect.tryPromise({
-            try: () =>
-              fetch(url, {
-                method: "DELETE",
-                headers: { "X-Auth-Token": token },
-              }),
-            catch: (e) => new InternalError({ message: String(e) }),
-          });
+          const response = yield* client.execute(
+            HttpClientRequest.del(url).pipe(
+              HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+            ),
+          ).pipe(
+            Effect.mapError((e) => new InternalError({ message: String(e) })),
+          );
 
           yield* Effect.logDebug(
             `Swift deleteBucket container=[${container}] status=${response.status}`,
@@ -275,11 +284,14 @@ export const makeSwiftBackend = (
             return yield* Effect.void;
           }
 
-          if (!response.ok) {
+          if (response.status < 200 || response.status >= 300) {
+            const message = yield* response.text.pipe(
+              Effect.orElseSucceed(() => "Error"),
+            );
             return yield* Effect.fail(
               mapError(
                 response.status,
-                response.statusText,
+                message || "Error",
                 container,
                 "DELETE",
               ),
@@ -292,18 +304,20 @@ export const makeSwiftBackend = (
       headBucket: () =>
         Effect.gen(function* () {
           const { url, token, container } = yield* getTarget();
-          const response = yield* Effect.tryPromise({
-            try: () =>
-              fetch(url, {
-                method: "HEAD",
-                headers: { "X-Auth-Token": token },
-              }),
-            catch: (e) => new InternalError({ message: String(e) }),
-          });
+          const response = yield* client.execute(
+            HttpClientRequest.head(url).pipe(
+              HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+            ),
+          ).pipe(
+            Effect.mapError((e) => new InternalError({ message: String(e) })),
+          );
 
-          if (!response.ok) {
+          if (response.status < 200 || response.status >= 300) {
+            const message = yield* response.text.pipe(
+              Effect.orElseSucceed(() => "Error"),
+            );
             return yield* Effect.fail(
-              mapError(response.status, response.statusText, container, "HEAD"),
+              mapError(response.status, message || "Error", container, "HEAD"),
             );
           }
 
@@ -372,19 +386,22 @@ export const makeSwiftBackend = (
             );
           }
 
-          const response = yield* Effect.tryPromise({
-            try: () =>
-              fetch(`${url}/${encodedKey}`, {
-                headers: swiftHeaders,
-              }),
-            catch: (e) => new InternalError({ message: String(e) }),
-          });
+          const response = yield* client.execute(
+            HttpClientRequest.get(`${url}/${encodedKey}`).pipe(
+              HttpClientRequest.setHeaders(swiftHeaders),
+            ),
+          ).pipe(
+            Effect.mapError((e) => new InternalError({ message: String(e) })),
+          );
 
-          if (!response.ok) {
+          if (response.status < 200 || response.status >= 300) {
+            const message = yield* response.text.pipe(
+              Effect.orElseSucceed(() => "Error"),
+            );
             return yield* Effect.fail(
               mapError(
                 response.status,
-                response.statusText,
+                message || "Error",
                 container,
                 "GET",
                 key,
@@ -394,41 +411,52 @@ export const makeSwiftBackend = (
 
           const metadata: Record<string, string> = {};
           const s3Headers: Record<string, string> = {};
-          response.headers.forEach((v, k) => {
+
+          // HttpClientResponse.headers is a Record<string, string | string[]>
+          for (const [k, v] of Object.entries(response.headers)) {
             const lowK = k.toLowerCase();
+            const value = Array.isArray(v) ? v.join(", ") : v;
             if (lowK.startsWith("x-object-meta-")) {
               const metaKey = lowK.substring("x-object-meta-".length);
-              const value = (v.includes("%"))
-                ? Option.liftThrowable(decodeURIComponent)(v).pipe(
-                  Option.getOrElse(() => v),
+              const decodedValue = (value.includes("%"))
+                ? Option.liftThrowable(decodeURIComponent)(value).pipe(
+                  Option.getOrElse(() => value),
                 )
-                : v;
-              metadata[metaKey] = value;
-              s3Headers[`x-amz-meta-${metaKey}`] = value;
+                : value;
+              metadata[metaKey] = decodedValue;
+              s3Headers[`x-amz-meta-${metaKey}`] = decodedValue;
             } else if (lowK === "content-type") {
-              s3Headers["Content-Type"] = v;
+              s3Headers["Content-Type"] = value;
             } else if (lowK === "content-length") {
-              s3Headers["Content-Length"] = v;
+              s3Headers["Content-Length"] = value;
             } else if (lowK === "etag") {
-              s3Headers["ETag"] = v;
+              s3Headers["ETag"] = value;
             } else if (lowK === "last-modified") {
-              s3Headers["Last-Modified"] = v;
+              s3Headers["Last-Modified"] = value;
             }
-          });
+          }
+
+          const contentLengthHeader = response.headers["content-length"];
+          const contentLength = Array.isArray(contentLengthHeader)
+            ? parseInt(contentLengthHeader[0] || "0")
+            : parseInt(contentLengthHeader || "0");
+
+          const etagHeader = response.headers["etag"];
+          const etag = Array.isArray(etagHeader) ? etagHeader[0] : etagHeader;
+
+          const lastModifiedHeader = response.headers["last-modified"];
+          const lastModified = Array.isArray(lastModifiedHeader)
+            ? lastModifiedHeader[0]
+            : lastModifiedHeader;
 
           return {
-            stream: Stream.fromReadableStream(
-              () => response.body!,
-              (e) => new InternalError({ message: String(e) }),
-            ),
-            contentType: response.headers.get("Content-Type") || undefined,
-            contentLength: parseInt(
-              response.headers.get("Content-Length") || "0",
-            ),
-            etag: response.headers.get("ETag") || undefined,
-            lastModified: response.headers.get("Last-Modified")
-              ? new Date(response.headers.get("Last-Modified")!)
-              : undefined,
+            stream: response.stream,
+            contentType: (Array.isArray(response.headers["content-type"])
+              ? response.headers["content-type"][0]
+              : response.headers["content-type"]) || undefined,
+            contentLength,
+            etag: etag || undefined,
+            lastModified: lastModified ? new Date(lastModified) : undefined,
             metadata,
             headers: s3Headers,
           } satisfies ObjectResponse;
@@ -445,20 +473,22 @@ export const makeSwiftBackend = (
             "X-Auth-Token": token,
           };
           // ... handle headers if needed
-          const response = yield* Effect.tryPromise({
-            try: () =>
-              fetch(`${url}/${encodedKey}`, {
-                method: "HEAD",
-                headers: swiftHeaders,
-              }),
-            catch: (e) => new InternalError({ message: String(e) }),
-          });
+          const response = yield* client.execute(
+            HttpClientRequest.head(`${url}/${encodedKey}`).pipe(
+              HttpClientRequest.setHeaders(swiftHeaders),
+            ),
+          ).pipe(
+            Effect.mapError((e) => new InternalError({ message: String(e) })),
+          );
 
-          if (!response.ok) {
+          if (response.status < 200 || response.status >= 300) {
+            const message = yield* response.text.pipe(
+              Effect.orElseSucceed(() => "Error"),
+            );
             return yield* Effect.fail(
               mapError(
                 response.status,
-                response.statusText,
+                message || "Error",
                 container,
                 "HEAD",
                 key,
@@ -468,37 +498,50 @@ export const makeSwiftBackend = (
 
           const metadata: Record<string, string> = {};
           const s3Headers: Record<string, string> = {};
-          response.headers.forEach((v, k) => {
+
+          for (const [k, v] of Object.entries(response.headers)) {
             const lowK = k.toLowerCase();
+            const value = Array.isArray(v) ? v.join(", ") : v;
             if (lowK.startsWith("x-object-meta-")) {
               const metaKey = lowK.substring("x-object-meta-".length);
-              const value = (v.includes("%"))
-                ? Option.liftThrowable(decodeURIComponent)(v).pipe(
-                  Option.getOrElse(() => v),
+              const decodedValue = (value.includes("%"))
+                ? Option.liftThrowable(decodeURIComponent)(value).pipe(
+                  Option.getOrElse(() => value),
                 )
-                : v;
-              metadata[metaKey] = value;
-              s3Headers[`x-amz-meta-${metaKey}`] = value;
+                : value;
+              metadata[metaKey] = decodedValue;
+              s3Headers[`x-amz-meta-${metaKey}`] = decodedValue;
             } else if (lowK === "content-type") {
-              s3Headers["Content-Type"] = v;
+              s3Headers["Content-Type"] = value;
             } else if (lowK === "content-length") {
-              s3Headers["Content-Length"] = v;
+              s3Headers["Content-Length"] = value;
             } else if (lowK === "etag") {
-              s3Headers["ETag"] = v;
+              s3Headers["ETag"] = value;
             } else if (lowK === "last-modified") {
-              s3Headers["Last-Modified"] = v;
+              s3Headers["Last-Modified"] = value;
             }
-          });
+          }
+
+          const contentLengthHeader = response.headers["content-length"];
+          const contentLength = Array.isArray(contentLengthHeader)
+            ? parseInt(contentLengthHeader[0] || "0")
+            : parseInt(contentLengthHeader || "0");
+
+          const etagHeader = response.headers["etag"];
+          const etag = Array.isArray(etagHeader) ? etagHeader[0] : etagHeader;
+
+          const lastModifiedHeader = response.headers["last-modified"];
+          const lastModified = Array.isArray(lastModifiedHeader)
+            ? lastModifiedHeader[0]
+            : lastModifiedHeader;
 
           return {
-            contentType: response.headers.get("Content-Type") || undefined,
-            contentLength: parseInt(
-              response.headers.get("Content-Length") || "0",
-            ),
-            etag: response.headers.get("ETag") || undefined,
-            lastModified: response.headers.get("Last-Modified")
-              ? new Date(response.headers.get("Last-Modified")!)
-              : undefined,
+            contentType: (Array.isArray(response.headers["content-type"])
+              ? response.headers["content-type"][0]
+              : response.headers["content-type"]) || undefined,
+            contentLength,
+            etag: etag || undefined,
+            lastModified: lastModified ? new Date(lastModified) : undefined,
             metadata,
             headers: s3Headers,
           } satisfies HeadObjectResult;
@@ -531,26 +574,27 @@ export const makeSwiftBackend = (
             }
           }
 
-          const response = yield* Effect.tryPromise({
-            try: () =>
-              fetch(`${url}/${encodedKey}`, {
-                method: "PUT",
-                headers: swiftHeaders,
-                body: Stream.toReadableStream(stream),
-                // @ts-ignore: duplex is required for streaming body in fetch
-                duplex: "half",
-              }),
-            catch: (e) => new InternalError({ message: String(e) }),
-          });
+          const request = HttpClientRequest.put(`${url}/${encodedKey}`).pipe(
+            HttpClientRequest.setHeaders(swiftHeaders),
+            HttpClientRequest.bodyStream(stream),
+          );
+
+          const response = yield* client.execute(request).pipe(
+            Effect.mapError((e) => new InternalError({ message: String(e) })),
+          );
+
           yield* Effect.logDebug(
             `Swift putObject key=[${key}] status=${response.status}`,
           );
 
-          if (!response.ok) {
+          if (response.status < 200 || response.status >= 300) {
+            const message = yield* response.text.pipe(
+              Effect.orElseSucceed(() => "Error"),
+            );
             return yield* Effect.fail(
               mapError(
                 response.status,
-                response.statusText,
+                message || "Error",
                 container,
                 "PUT",
                 key,
@@ -558,8 +602,13 @@ export const makeSwiftBackend = (
             );
           }
 
+          const etagHeader = response.headers["etag"];
+          const etagValue = Array.isArray(etagHeader)
+            ? etagHeader[0]
+            : etagHeader;
+
           return {
-            etag: response.headers.get("ETag") || undefined,
+            etag: etagValue || undefined,
           } satisfies PutObjectResult;
         }),
 
@@ -567,20 +616,25 @@ export const makeSwiftBackend = (
         Effect.gen(function* () {
           const { url, token, container } = yield* getTarget();
           const encodedKey = key.split("/").map(encodeURIComponent).join("/");
-          const response = yield* Effect.tryPromise({
-            try: () =>
-              fetch(`${url}/${encodedKey}`, {
-                method: "DELETE",
-                headers: { "X-Auth-Token": token },
-              }),
-            catch: (e) => new InternalError({ message: String(e) }),
-          });
+          const response = yield* client.execute(
+            HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
+              HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+            ),
+          ).pipe(
+            Effect.mapError((e) => new InternalError({ message: String(e) })),
+          );
 
-          if (!response.ok && response.status !== 204) {
+          if (response.status < 200 || response.status >= 300) {
+            if (response.status === 404) {
+              return yield* Effect.void;
+            }
+            const message = yield* response.text.pipe(
+              Effect.orElseSucceed(() => "Error"),
+            );
             return yield* Effect.fail(
               mapError(
                 response.status,
-                response.statusText,
+                message || "Error",
                 container,
                 "DELETE",
                 key,
@@ -601,28 +655,27 @@ export const makeSwiftBackend = (
             const encodedKey = obj.key.split("/").map(encodeURIComponent).join(
               "/",
             );
-            const response = yield* Effect.tryPromise({
-              try: () =>
-                fetch(`${url}/${encodedKey}`, {
-                  method: "DELETE",
-                  headers: { "X-Auth-Token": token },
-                }),
-              catch: (e) => new InternalError({ message: String(e) }),
-            });
+            const response = yield* client.execute(
+              HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
+                HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+              ),
+            ).pipe(
+              Effect.mapError((e) => new InternalError({ message: String(e) })),
+            );
 
             yield* Effect.logDebug(
               `Swift deleteObject key=[${obj.key}] status=${response.status}`,
             );
 
             if (
-              response.ok || response.status === 204 || response.status === 404
+              (response.status >= 200 && response.status < 300) ||
+              response.status === 204 || response.status === 404
             ) {
               deleted.push(obj.key);
             } else {
-              const errorBody = yield* Effect.tryPromise(() => response.text())
-                .pipe(
-                  Effect.orElseSucceed(() => "Unknown error"),
-                );
+              const errorBody = yield* response.text.pipe(
+                Effect.orElseSucceed(() => "Unknown error"),
+              );
               errors.push({
                 key: obj.key,
                 code: String(response.status),

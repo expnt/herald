@@ -7,8 +7,12 @@ import { HttpLive } from "./Http.ts";
 import { TracingLive } from "./Tracing.ts";
 
 HttpLive.pipe(
+  // add otel
   Layer.provide(TracingLive),
+  // provider an HttpClient impl based on `fetch`
+  // used to talk the the swift impl
   Layer.provide(FetchHttpClient.layer),
+  // run layer until interrupted
   Layer.launch,
   NodeRuntime.runMain,
 );

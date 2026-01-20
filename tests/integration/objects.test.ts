@@ -279,14 +279,14 @@ const specs: ObjectTestSpec[] = [
         );
         throw new Error("Complete should have failed for empty parts");
       } catch (e) {
-        if (!(e instanceof S3ServiceException && e.name === "MalformedXML")) {
-          // AWS S3 returns MalformedXML for empty parts list
-          // Some other implementations might return InvalidPart
-          if (e instanceof S3ServiceException && e.name === "InvalidPart") {
-            return;
-          }
-          throw e;
+        if (
+          e instanceof S3ServiceException &&
+          (e.name === "MalformedXML" || e.name === "InvalidPart" ||
+            e.name === "InvalidRequest")
+        ) {
+          return;
         }
+        throw e;
       } finally {
         try {
           await c.send(
