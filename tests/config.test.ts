@@ -6,7 +6,7 @@ import {
   BackendResolver,
   BackendResolverLive,
 } from "../src/Services/BackendResolver.ts";
-import { AppConfig, parseConfig } from "../src/Config/Layer.ts";
+import { HeraldConfig, parseConfig } from "../src/Config/Layer.ts";
 import { S3Client } from "../src/Backends/S3/Client.ts";
 import { SwiftClient } from "../src/Backends/Swift/Client.ts";
 import type { S3Client as S3ClientSDK } from "@aws-sdk/client-s3";
@@ -333,7 +333,7 @@ interface ResolverTestCase {
   config: GlobalConfig;
   op: (
     resolver: Context.Tag.Service<BackendResolver>,
-  ) => Effect.Effect<unknown, unknown, AppConfig | S3Client | SwiftClient>;
+  ) => Effect.Effect<unknown, unknown, HeraldConfig | S3Client | SwiftClient>;
   expectedError?: string;
 }
 
@@ -404,7 +404,7 @@ const resolverCases: ResolverTestCase[] = [
 for (const tc of resolverCases) {
   testEffect(`resolver/${tc.id}`, () =>
     Effect.gen(function* () {
-      const AppConfigLive = Layer.succeed(AppConfig, {
+      const HeraldConfigLive = Layer.succeed(HeraldConfig, {
         raw: tc.config,
         lookupBucket: (name: string) => lookupBucket(tc.config, name),
       });
@@ -425,7 +425,7 @@ for (const tc of resolverCases) {
         return yield* tc.op(resolver);
       }).pipe(
         Effect.provide(BackendResolverLive),
-        Effect.provide(AppConfigLive),
+        Effect.provide(HeraldConfigLive),
         Effect.provide(S3ClientLive),
         Effect.provide(SwiftClientLive),
         Effect.either,

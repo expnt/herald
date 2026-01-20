@@ -41,7 +41,9 @@
         ];
         shellHook = ''
           export PATH=$PATH:$PWD/x/
-          exec $(getent passwd $USER | cut -d: -f7)
+          if [[ -t 0 ]]; then
+            exec $(getent passwd $USER | cut -d: -f7)
+          fi
         '';
       };
 

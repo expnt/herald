@@ -9,33 +9,38 @@ import { Config, Effect, Layer } from "effect";
 // deno-lint-ignore no-external-import
 import { createServer } from "node:http";
 
-export { Api } from "./Api.ts";
+export { HttpHeraldApi as HeraldHttpApi } from "./Api.ts";
 export { HttpHealthLive } from "./Frontend/Health/Http.ts";
 export { HttpS3Live } from "./Frontend/Http.ts";
-import { AppConfigLive } from "./Config/Layer.ts";
+import { HeraldConfigLive } from "./Config/Layer.ts";
 import { HttpHealthLive } from "./Frontend/Health/Http.ts";
 import { HttpS3Live } from "./Frontend/Http.ts";
-import { Api } from "./Api.ts";
+import { HttpHeraldApi } from "./Api.ts";
 
-export const ApiLive = HttpApiBuilder.api(Api).pipe(
+export const HttpHeraldLive = HttpApiBuilder.api(HttpHeraldApi).pipe(
   Layer.provide(HttpHealthLive),
   Layer.provide(HttpS3Live),
 );
 
-export const HttpLive = Layer.unwrapEffect(
+export const HttpServerHeraldLive = Layer.unwrapEffect(
   Effect.gen(function* () {
     const port = yield* Config.withDefault(
       Config.integer("PORT"),
       3000,
     );
     return HttpApiBuilder.serve(HttpMiddleware.logger).pipe(
+      // provides swagger ui for http api
       Layer.provide(HttpApiSwagger.layer()),
+      // provides openapi.json endpoint
       Layer.provide(HttpApiBuilder.middlewareOpenApi()),
+      // adds cors support
+      // FIXME: config support
       Layer.provide(HttpApiBuilder.middlewareCors()),
-      Layer.provide(ApiLive),
+      Layer.provide(HttpHeraldLive),
+      // log address at startup
       HttpServer.withLogAddress,
       Layer.provide(NodeHttpServer.layer(createServer, { port })),
-      Layer.provide(AppConfigLive),
+      Layer.provide(HeraldConfigLive),
     );
   }),
 );

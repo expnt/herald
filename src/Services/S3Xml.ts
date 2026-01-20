@@ -21,6 +21,9 @@ import {
   type OwnerInfo,
 } from "./Backend.ts";
 
+/**
+ * This service centeralizes XML authoring logic.
+ */
 export class S3Xml extends Context.Tag("S3Xml")<
   S3Xml,
   {

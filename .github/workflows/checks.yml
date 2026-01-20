@@ -1,0 +1,94 @@
+name: checks
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+env:
+  DOCKER_CMD: docker
+  UV_CACHE_DIR: /tmp/.uv-cache
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    env:
+      HERALD_SWIFTTEST_OS_USERNAME: ${{ secrets.OPENSTACK_USERNAME }}
+      HERALD_SWIFTTEST_OS_PASSWORD: ${{ secrets.OPENSTACK_PASSWORD }}
+      HERALD_SWIFTTEST_OS_PROJECT_NAME: ${{ secrets.OPENSTACK_PROJECT }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v16
+
+      - name: Set up Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@v9
+
+      - name: Run pre-commit hooks via prek
+        run: nix develop --command prek run --all-files
+
+      - name: Cache Deno
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/deno
+          key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-deno-
+
+      - name: Restore uv cache
+        uses: actions/cache@v5
+        with:
+          path: /tmp/.uv-cache
+          key: uv-${{ runner.os }}-${{ hashFiles('s3-tests/requirements.txt') }}
+          restore-keys: |
+            uv-${{ runner.os }}-${{ hashFiles('s3-tests/requirements.txt') }}
+            uv-${{ runner.os }}
+
+      - name: Start services
+        run: nix develop --command deno run --allow-all x/compose-up.ts s3 db
+
+      - name: Wait for MinIO
+        run: |
+          for i in {1..30}; do
+            if curl -f http://localhost:9000/minio/health/live; then
+              echo "MinIO is ready"
+              exit 0
+            fi
+            echo "Waiting for MinIO..."
+            sleep 2
+          done
+          echo "MinIO failed to start"
+          exit 1
+
+      - name: Integration tests
+        run: nix develop --command deno task test
+
+      - name: S3 Compatibility (MinIO)
+        run: nix develop --command deno run --allow-all x/s3-tests.ts --backend minio
+
+      - name: S3 Compatibility (Swift)
+        if: env.HERALD_SWIFTTEST_OS_USERNAME != ''
+        env:
+          HERALD_SWIFTTEST_OS_REGION_NAME: dc3-a
+          HERALD_SWIFTTEST_AUTH_URL: https://api.pub1.infomaniak.cloud/identity/v3
+        run: nix develop --command deno run --allow-all x/s3-tests.ts --backend swift
+
+      - name: Minimize uv cache
+        run: nix develop --command uv cache prune --ci
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          echo "--- s3-tests/s3-tests.log ---"
+          cat s3-tests/s3-tests.log || true
+          echo "--- s3-tests/herald-proxy.log ---"
+          cat s3-tests/herald-proxy.log || true
+          echo "--- s3-tests/herald-proxy-swift.log ---"
+          cat s3-tests/herald-proxy-swift.log || true

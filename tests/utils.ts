@@ -1,7 +1,7 @@
 import { S3Client } from "@aws-sdk/client-s3";
 import { Config, Effect, Layer, Logger, LogLevel, Option } from "effect";
-import { ApiLive } from "../src/Http.ts";
-import { AppConfig } from "../src/Config/Layer.ts";
+import { HttpHeraldLive } from "../src/Http.ts";
+import { HeraldConfig } from "../src/Config/Layer.ts";
 import { lookupBucket } from "../src/Domain/Config.ts";
 import { BackendResolverLive } from "../src/Services/BackendResolver.ts";
 import { S3ClientLive } from "../src/Backends/S3/Client.ts";
@@ -39,17 +39,17 @@ export const makeTestHarness = (
   ),
 ) =>
   Effect.gen(function* () {
-    const AppConfigLive = Layer.succeed(AppConfig, {
+    const HeraldConfigLive = Layer.succeed(HeraldConfig, {
       raw: config,
       lookupBucket: (name: string) => lookupBucket(config, name),
     });
 
-    const ApiWithRequirements = ApiLive.pipe(
+    const ApiWithRequirements = HttpHeraldLive.pipe(
       Layer.provide(BackendResolverLive),
       Layer.provide(S3ClientLive),
       Layer.provide(SwiftClientLive),
       Layer.provide(S3XmlLive),
-      Layer.provide(AppConfigLive),
+      Layer.provide(HeraldConfigLive),
       Layer.provide(FetchHttpClient.layer),
       Layer.provideMerge(HttpServer.layerContext),
       Layer.provideMerge(loggingLayer),

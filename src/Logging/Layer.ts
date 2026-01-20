@@ -1,4 +1,4 @@
-import { Config, Effect, Layer, Logger, LogLevel } from "effect";
+import { Config, Effect, Layer, Logger, LogLevel, Option } from "effect";
 
 export const LoggingLive = Layer.mergeAll(
   Layer.unwrapEffect(
@@ -7,7 +7,7 @@ export const LoggingLive = Layer.mergeAll(
         Config.string("HERALD_LOG_LEVEL"),
       );
 
-      if (logLevelStr._tag === "None") {
+      if (Option.isNone(logLevelStr)) {
         return Logger.minimumLogLevel(LogLevel.Info);
       }
 

@@ -1,3 +1,7 @@
+/**
+ * The `Backend` service represents a single impl that herald can proxy to.
+ */
+
 import { Context, type Effect, Schema, type Stream } from "effect";
 
 export interface BucketInfo {

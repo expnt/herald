@@ -6,6 +6,6 @@ const profiles = $.argv
   .map((prof) => `--profile ${prof}`)
   .join(" ");
 
-await $.raw`${DOCKER_CMD} compose ${profiles} up -d`.cwd(
-  $.relativeDir("../tools/"),
+await $.raw`${DOCKER_CMD} compose -f compose.yml ${profiles} up -d`.cwd(
+  $.path(import.meta.resolve("../tools/")),
 );

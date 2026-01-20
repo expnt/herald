@@ -1,11 +1,11 @@
 import { Effect } from "effect";
-import { AppConfig } from "../../Config/Layer.ts";
+import { HeraldConfig } from "../../Config/Layer.ts";
 import { S3Xml } from "../../Services/S3Xml.ts";
 import { resolveBackend } from "../Utils.ts";
 
 export const listBuckets = () =>
   Effect.gen(function* () {
-    const config = yield* AppConfig;
+    const config = yield* HeraldConfig;
 
     // For ListBuckets, we need to decide which backend to proxy to.
     // We prefer an S3 backend if available, otherwise we take the first one.

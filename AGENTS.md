@@ -1,5 +1,7 @@
 - We're using the effects library https://effect.website/llms.txt
   - Their HTTP implementation is described in ./HTTP_PLATFORM.md
+  - **ALWAYS** use `@effect/platform/HttpClient` instead of native `fetch` for
+    all HTTP requests.
   - Prefer generators over effect piping.
   - Use methods on `Effect.Option` like `Option.isNone` instead of looking at
     _tag.

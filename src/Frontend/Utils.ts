@@ -1,4 +1,4 @@
-import { Effect, Option } from "effect";
+import { Context, Effect, Either, Option, Schema } from "effect";
 import { BackendResolver } from "../Services/BackendResolver.ts";
 import { S3Xml } from "../Services/S3Xml.ts";
 import {
@@ -18,8 +18,12 @@ import {
   NoSuchKey,
   NoSuchUpload,
 } from "../Services/Backend.ts";
-import { HttpServerRequest, type HttpServerResponse } from "@effect/platform";
-import type { AppConfig } from "../Config/Layer.ts";
+import {
+  HttpServerRequest,
+  type HttpServerResponse,
+  Url,
+} from "@effect/platform";
+import type { HeraldConfig } from "../Config/Layer.ts";
 import type { S3Client } from "../Backends/S3/Client.ts";
 import type { SwiftClient } from "../Backends/Swift/Client.ts";
 import { BadGateway } from "./Api.ts";
@@ -45,9 +49,10 @@ export function fixHeaderEncoding(value: string): string {
  * Extracts the object key from the request URL, given the bucket name.
  */
 export function extractKey(requestUrl: string, bucket: string): string {
-  const pathname = requestUrl.startsWith("/")
-    ? requestUrl
-    : new URL(requestUrl).pathname;
+  const urlResult = Url.fromString(requestUrl, "http://localhost");
+  const pathname = Either.isRight(urlResult)
+    ? urlResult.right.pathname
+    : requestUrl;
   const [pathOnly] = pathname.split("?");
 
   const bucketPrefixWithSlash = `/${bucket}/`;
@@ -59,6 +64,112 @@ export function extractKey(requestUrl: string, bucket: string): string {
     return "";
   }
   return "";
+}
+
+/**
+ * Context for S3 operations (bucket or object).
+ */
+export class RequestContext extends Context.Tag("RequestContext")<
+  RequestContext,
+  {
+    readonly backend: typeof Backend.Service;
+    readonly bucket: string;
+    readonly key: string;
+    readonly params: S3QueryParams;
+    readonly request: HttpServerRequest.HttpServerRequest;
+  }
+>() {}
+
+/**
+ * Higher-order function to handle S3 context.
+ */
+export function provideRequestContext<
+  A extends HttpServerResponse.HttpServerResponse,
+  E,
+  R,
+>(
+  fn: () => Effect.Effect<A, E, R>,
+): (
+  args: { path: { bucket: string } },
+) => Effect.Effect<
+  HttpServerResponse.HttpServerResponse,
+  BadGateway,
+  | Exclude<R, RequestContext>
+  | BackendResolver
+  | S3Xml
+  | HeraldConfig
+  | S3Client
+  | SwiftClient
+  | HttpServerRequest.HttpServerRequest
+> {
+  return ({ path: { bucket } }) =>
+    resolveBucket(bucket, (backend) =>
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest;
+        const urlResult = Url.fromString(request.url, "http://localhost");
+        if (Either.isLeft(urlResult)) {
+          return yield* Effect.fail(
+            new InternalError({ message: String(urlResult.left) }),
+          );
+        }
+        const url = urlResult.right;
+        const key = extractKey(request.url, bucket);
+        const params = yield* parseQueryParams(url.searchParams, S3QueryParams);
+        const ctx = {
+          backend,
+          bucket,
+          key,
+          params,
+          request,
+        };
+        return yield* fn().pipe(Effect.provideService(RequestContext, ctx));
+      }) as unknown as Effect.Effect<
+        HttpServerResponse.HttpServerResponse,
+        BadGateway,
+        Exclude<R, RequestContext>
+      >);
+}
+
+/**
+ * Common S3 Query Parameters Schema
+ */
+export const S3QueryParams = Schema.Struct({
+  uploadId: Schema.optional(Schema.String),
+  partNumber: Schema.optional(Schema.NumberFromString),
+  prefix: Schema.optional(Schema.String),
+  delimiter: Schema.optional(Schema.String),
+  marker: Schema.optional(Schema.String),
+  "max-keys": Schema.optional(Schema.NumberFromString),
+  "max-uploads": Schema.optional(Schema.NumberFromString),
+  "encoding-type": Schema.optional(Schema.String),
+  "continuation-token": Schema.optional(Schema.String),
+  "start-after": Schema.optional(Schema.String),
+  "list-type": Schema.optional(Schema.String),
+  "version-id-marker": Schema.optional(Schema.String),
+  "key-marker": Schema.optional(Schema.String),
+  "upload-id-marker": Schema.optional(Schema.String),
+  versions: Schema.optional(Schema.String),
+  uploads: Schema.optional(Schema.String),
+  delete: Schema.optional(Schema.String),
+  acl: Schema.optional(Schema.String),
+});
+
+export type S3QueryParams = Schema.Schema.Type<typeof S3QueryParams>;
+
+/**
+ * Utility to parse search params using a Schema.
+ */
+export function parseQueryParams<A, I, R>(
+  searchParams: URLSearchParams,
+  schema: Schema.Schema<A, I, R>,
+): Effect.Effect<A, InternalError, R> {
+  const paramsRecord: Record<string, string> = {};
+  searchParams.forEach((value, key) => {
+    paramsRecord[key] = value;
+  });
+  return Schema.decodeUnknown(schema)(paramsRecord).pipe(
+    Effect.mapError((e) => new InternalError({ message: String(e) })),
+  );
 }
 
 /**
@@ -78,7 +189,7 @@ export function resolveBucket<
   | R
   | BackendResolver
   | S3Xml
-  | AppConfig
+  | HeraldConfig
   | S3Client
   | SwiftClient
   | HttpServerRequest.HttpServerRequest
@@ -171,7 +282,7 @@ export function resolveBackend<
   | R
   | BackendResolver
   | S3Xml
-  | AppConfig
+  | HeraldConfig
   | S3Client
   | SwiftClient
   | HttpServerRequest.HttpServerRequest
