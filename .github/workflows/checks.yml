@@ -13,25 +13,7 @@ env:
   UV_CACHE_DIR: /tmp/.uv-cache
 
 jobs:
-  pre-commit:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v16
-
-      - name: Set up Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@v9
-
-      - name: Run pre-commit hooks via prek
-        run: nix develop --command prek run --all-files
-
-  tests:
-    needs: [pre-commit]
+  checks:
     runs-on: ubuntu-latest
     env:
       HERALD_SWIFTTEST_OS_USERNAME: ${{ secrets.OPENSTACK_USERNAME }}
@@ -48,6 +30,9 @@ jobs:
 
       - name: Set up Nix cache
         uses: DeterminateSystems/magic-nix-cache-action@v9
+
+      - name: Run pre-commit hooks via prek
+        run: nix develop --command prek run --all-files
 
       - name: Cache Deno
         uses: actions/cache@v4
