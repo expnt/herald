@@ -2,4 +2,6 @@
 
 import { $, DOCKER_CMD } from "./utils.ts";
 
-await $.raw`${DOCKER_CMD} compose down`.cwd($.relativeDir("../tools/"));
+await $.raw`${DOCKER_CMD} compose -f compose.yml down`.cwd(
+  $.path(import.meta.resolve("../tools/")),
+);
