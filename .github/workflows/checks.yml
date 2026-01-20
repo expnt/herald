@@ -33,6 +33,10 @@ jobs:
   tests:
     needs: [pre-commit]
     runs-on: ubuntu-latest
+    env:
+      HERALD_SWIFTTEST_OS_USERNAME: ${{ secrets.OPENSTACK_USERNAME }}
+      HERALD_SWIFTTEST_OS_PASSWORD: ${{ secrets.OPENSTACK_PASSWORD }}
+      HERALD_SWIFTTEST_OS_PROJECT_NAME: ${{ secrets.OPENSTACK_PROJECT }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -85,11 +89,8 @@ jobs:
         run: nix develop --command deno run --allow-all x/s3-tests.ts --backend minio
 
       - name: S3 Compatibility (Swift)
-        if: ${{ secrets.OPENSTACK_USERNAME != '' }}
+        if: env.HERALD_SWIFTTEST_OS_USERNAME != ''
         env:
-          HERALD_SWIFTTEST_OS_USERNAME: ${{ secrets.OPENSTACK_USERNAME }}
-          HERALD_SWIFTTEST_OS_PASSWORD: ${{ secrets.OPENSTACK_PASSWORD }}
-          HERALD_SWIFTTEST_OS_PROJECT_NAME: ${{ secrets.OPENSTACK_PROJECT }}
           HERALD_SWIFTTEST_OS_REGION_NAME: dc3-a
           HERALD_SWIFTTEST_AUTH_URL: https://api.pub1.infomaniak.cloud/identity/v3
         run: nix develop --command deno run --allow-all x/s3-tests.ts --backend swift
