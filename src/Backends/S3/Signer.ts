@@ -22,10 +22,21 @@ function getV4Signer(config: BackendConfig) {
       );
     }
 
-    const accessKeyId = config.credentials.accessKeyId ??
-      config.credentials.username;
-    const secretAccessKey = config.credentials.secretAccessKey ??
-      config.credentials.password;
+    const creds = config.credentials;
+    let accessKeyId: string | undefined;
+    let secretAccessKey: string | undefined;
+
+    if ("accessKeyId" in creds) {
+      accessKeyId = creds.accessKeyId;
+    } else if ("username" in creds) {
+      accessKeyId = creds.username;
+    }
+
+    if ("secretAccessKey" in creds) {
+      secretAccessKey = creds.secretAccessKey;
+    } else if ("password" in creds) {
+      secretAccessKey = creds.password;
+    }
 
     if (!accessKeyId || !secretAccessKey) {
       return yield* Effect.fail(

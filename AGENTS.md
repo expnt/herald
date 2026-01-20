@@ -1,8 +1,15 @@
 - We're using the effects library https://effect.website/llms.txt
   - Their HTTP implementation is described in ./HTTP_PLATFORM.md
+  - **ALWAYS** use `@effect/platform/HttpClient` instead of native `fetch` for
+    all HTTP requests.
   - Prefer generators over effect piping.
   - Use methods on `Effect.Option` like `Option.isNone` instead of looking at
     _tag.
+  - **NEVER** use standard `try/catch` or `try/finally` blocks around `yield*`
+    in Effect generators. Use `Effect.addFinalizer`, `Effect.try`,
+    `Effect.catchAll`, or `Effect.orElse`.
+  - **ALWAYS** use the `Config` module from Effect for environment variable
+    access instead of `Deno.env.get`.
 - **NEVER** assume default values using `??` or ternary operators for critical
   configuration or external input (e.g., `bucket.region ?? "us-east-1"`,
   `request.headers.host ?? "localhost"`). Always fail explicitly with a

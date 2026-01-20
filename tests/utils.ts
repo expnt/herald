@@ -1,10 +1,11 @@
 import { S3Client } from "@aws-sdk/client-s3";
-import { Effect, Layer } from "effect";
-import { ApiLive } from "../src/Http.ts";
-import { AppConfig } from "../src/Config/Layer.ts";
+import { Config, Effect, Layer, Logger, LogLevel, Option } from "effect";
+import { HttpHeraldLive } from "../src/Http.ts";
+import { HeraldConfig } from "../src/Config/Layer.ts";
 import { lookupBucket } from "../src/Domain/Config.ts";
 import { BackendResolverLive } from "../src/Services/BackendResolver.ts";
 import { S3ClientLive } from "../src/Backends/S3/Client.ts";
+import { SwiftClientLive } from "../src/Backends/Swift/Client.ts";
 import { S3XmlLive } from "../src/Services/S3Xml.ts";
 import { HttpApiBuilder, HttpServer } from "@effect/platform";
 import { FetchHttpClient } from "@effect/platform";
@@ -31,20 +32,27 @@ export type Snapshot = {
   body: string;
 };
 
-export const makeTestHarness = (config: GlobalConfig) =>
+export const makeTestHarness = (
+  config: GlobalConfig,
+  loggingLayer: Layer.Layer<never, never, never> = Logger.minimumLogLevel(
+    LogLevel.Info,
+  ),
+) =>
   Effect.gen(function* () {
-    const AppConfigLive = Layer.succeed(AppConfig, {
+    const HeraldConfigLive = Layer.succeed(HeraldConfig, {
       raw: config,
       lookupBucket: (name: string) => lookupBucket(config, name),
     });
 
-    const ApiWithRequirements = ApiLive.pipe(
+    const ApiWithRequirements = HttpHeraldLive.pipe(
       Layer.provide(BackendResolverLive),
       Layer.provide(S3ClientLive),
+      Layer.provide(SwiftClientLive),
       Layer.provide(S3XmlLive),
-      Layer.provide(AppConfigLive),
+      Layer.provide(HeraldConfigLive),
       Layer.provide(FetchHttpClient.layer),
       Layer.provideMerge(HttpServer.layerContext),
+      Layer.provideMerge(loggingLayer),
     );
 
     // In @effect/platform 0.90.x, toWebHandler returns the object directly, not an Effect.
@@ -53,7 +61,9 @@ export const makeTestHarness = (config: GlobalConfig) =>
     // Start Deno.serve on a random port
     const server = Deno.serve(
       { port: 0, onListen: () => {} },
-      (req) => webHandler.handler(req),
+      (req) => {
+        return webHandler.handler(req);
+      },
     );
 
     // Ensure cleanup
@@ -388,6 +398,137 @@ function proxyRunner(tc: ProxyTestCase, t: Deno.TestContext) {
   );
 }
 
+const getSwiftConfig = () =>
+  Effect.gen(function* () {
+    const authUrl = yield* Config.string("HEARLD_SWIFTTEST_AUTH_URL").pipe(
+      Config.orElse(() => Config.string("HERALD_SWIFTTEST_AUTH_URL")),
+      Config.orElse(() => Config.string("OS_AUTH_URL")),
+      Config.withDefault("https://api.pub1.infomaniak.cloud/identity/v3"),
+      Config.option,
+    );
+
+    const username = yield* Config.string("HERALD_SWIFTTEST_OS_USERNAME").pipe(
+      Config.orElse(() => Config.string("TF_VAR_OS_USERNAME")),
+      Config.orElse(() => Config.string("OS_USERNAME")),
+      Config.option,
+    );
+    const password = yield* Config.string("HERALD_SWIFTTEST_OS_PASSWORD").pipe(
+      Config.orElse(() => Config.string("TF_VAR_OS_PASSWORD")),
+      Config.orElse(() => Config.string("OS_PASSWORD")),
+      Config.option,
+    );
+    const projectName = yield* Config.string("HERALD_SWIFTTEST_OS_PROJECT_NAME")
+      .pipe(
+        Config.orElse(() => Config.string("TF_VAR_OS_PROJECT_NAME")),
+        Config.orElse(() => Config.string("OS_PROJECT_NAME")),
+        Config.option,
+      );
+    const region = yield* Config.string("HEARLD_SWIFTTEST_OS_REGION_NAME").pipe(
+      Config.orElse(() => Config.string("HERALD_SWIFTTEST_OS_REGION_NAME")),
+      Config.orElse(() => Config.string("TF_VAR_OS_REGION_NAME")),
+      Config.orElse(() => Config.string("OS_REGION_NAME")),
+      Config.withDefault("dc3-a"),
+      Config.option,
+    );
+
+    if (
+      Option.isNone(username) || Option.isNone(password) ||
+      Option.isNone(projectName) || Option.isNone(authUrl)
+    ) {
+      return Option.none();
+    }
+
+    const config: GlobalConfig = {
+      backends: {
+        swift: {
+          protocol: "swift",
+          auth_url: authUrl.value,
+          region: Option.getOrUndefined(region),
+          credentials: {
+            username: username.value,
+            password: password.value,
+            project_name: projectName.value,
+            user_domain_name: "Default",
+            project_domain_name: "Default",
+          },
+          buckets: "*",
+        },
+      },
+    };
+    return Option.some(config);
+  });
+
+function swiftRunner(tc: ProxyTestCase, t: Deno.TestContext) {
+  return Effect.gen(function* () {
+    const swiftConfig = yield* getSwiftConfig();
+    if (Option.isNone(swiftConfig)) {
+      return yield* Effect.fail(
+        new Error(
+          "Swift credentials missing. Set HERALD_SWIFTTEST_OS_USERNAME etc or run with infisical.",
+        ),
+      );
+    }
+
+    const h = yield* makeTestHarness(swiftConfig.value);
+
+    if (tc.beforeAll) {
+      const beforeResult = tc.beforeAll(h.proxyClient);
+      if (Effect.isEffect(beforeResult)) {
+        yield* beforeResult;
+      } else {
+        yield* Effect.tryPromise(() => beforeResult as Promise<void>).pipe(
+          Effect.orDie,
+        );
+      }
+    }
+
+    const resultEffect = Effect.gen(function* () {
+      const result = tc.fn(h.proxyClient);
+      if (Effect.isEffect(result)) {
+        yield* result;
+      } else {
+        yield* Effect.tryPromise({
+          try: () => result as Promise<void>,
+          catch: (e) => new Error(`Test function failed for ${tc.name}: ${e}`),
+        });
+      }
+    });
+
+    yield* resultEffect;
+
+    const lastResponse = h.getLastResponse();
+    if (lastResponse) {
+      yield* Effect.tryPromise(() =>
+        assertSnapshot(t, {
+          status: lastResponse.status,
+          headers: lastResponse.headers,
+        }, { name: `Swift/${tc.name} metadata` })
+      );
+      if (lastResponse.body) {
+        yield* Effect.tryPromise(() =>
+          assertSnapshot(t, lastResponse.body, {
+            name: `Swift/${tc.name} body`,
+          })
+        );
+      }
+    }
+
+    if (tc.afterAll) {
+      const afterResult = tc.afterAll(h.proxyClient);
+      if (Effect.isEffect(afterResult)) {
+        yield* afterResult;
+      } else {
+        yield* Effect.tryPromise(() => afterResult as Promise<void>).pipe(
+          Effect.orDie,
+        );
+      }
+    }
+  }).pipe(
+    Effect.tapErrorCause(Effect.logError),
+    Effect.scoped,
+  );
+}
+
 export function harness(cases: ProxyTestCase[]) {
   const namePrefix = "";
   for (const tc of cases) {
@@ -400,6 +541,10 @@ export function harness(cases: ProxyTestCase[]) {
       },
     );
     testEffect(`${namePrefix}Proxy/${tc.name}`, (t) => proxyRunner(tc, t), {
+      ignore: tc.ignore,
+      only: tc.only,
+    });
+    testEffect(`${namePrefix}Swift/${tc.name}`, (t) => swiftRunner(tc, t), {
       ignore: tc.ignore,
       only: tc.only,
     });

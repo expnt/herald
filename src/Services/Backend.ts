@@ -1,3 +1,7 @@
+/**
+ * The `Backend` service represents a single impl that herald can proxy to.
+ */
+
 import { Context, type Effect, Schema, type Stream } from "effect";
 
 export interface BucketInfo {
@@ -68,6 +72,67 @@ export interface PutObjectResult {
   readonly versionId?: string;
 }
 
+export interface MultipartUploadResult {
+  readonly uploadId: string;
+}
+
+export interface UploadPartResult {
+  readonly etag: string;
+}
+
+export interface CompleteMultipartUploadResult {
+  readonly location: string;
+  readonly bucket: string;
+  readonly key: string;
+  readonly etag: string;
+  readonly versionId?: string;
+}
+
+export interface PartInfo {
+  readonly partNumber: number;
+  readonly lastModified: Date;
+  readonly etag: string;
+  readonly size: number;
+}
+
+export interface ListPartsResult {
+  readonly bucket: string;
+  readonly key: string;
+  readonly uploadId: string;
+  readonly owner: OwnerInfo;
+  readonly initiator: OwnerInfo;
+  readonly storageClass: string;
+  readonly partNumberMarker: number;
+  readonly nextPartNumberMarker: number;
+  readonly maxParts: number;
+  readonly isTruncated: boolean;
+  readonly parts: readonly PartInfo[];
+}
+
+export interface MultipartUploadInfo {
+  readonly key: string;
+  readonly uploadId: string;
+  readonly owner: OwnerInfo;
+  readonly initiator: OwnerInfo;
+  readonly storageClass: string;
+  readonly initiated: Date;
+}
+
+export interface ListMultipartUploadsResult {
+  readonly bucket: string;
+  readonly prefix?: string;
+  readonly keyMarker?: string;
+  readonly uploadIdMarker?: string;
+  readonly nextKeyMarker?: string;
+  readonly nextUploadIdMarker?: string;
+  readonly maxUploads: number;
+  readonly delimiter?: string;
+  readonly isTruncated: boolean;
+  readonly uploads: readonly MultipartUploadInfo[];
+  readonly commonPrefixes: readonly CommonPrefix[];
+  readonly encodingType?: string;
+}
+
 export class NoSuchBucket
   extends Schema.TaggedError<NoSuchBucket>()("NoSuchBucket", {
     bucketName: Schema.String,
@@ -111,6 +176,37 @@ export class BucketNotEmpty
     message: Schema.String,
   }) {}
 
+export class NoSuchUpload
+  extends Schema.TaggedError<NoSuchUpload>()("NoSuchUpload", {
+    uploadId: Schema.String,
+    message: Schema.String,
+  }) {}
+
+export class InvalidPart
+  extends Schema.TaggedError<InvalidPart>()("InvalidPart", {
+    message: Schema.String,
+  }) {}
+
+export class InvalidPartOrder
+  extends Schema.TaggedError<InvalidPartOrder>()("InvalidPartOrder", {
+    message: Schema.String,
+  }) {}
+
+export class EntityTooSmall
+  extends Schema.TaggedError<EntityTooSmall>()("EntityTooSmall", {
+    message: Schema.String,
+  }) {}
+
+export class InvalidRequest
+  extends Schema.TaggedError<InvalidRequest>()("InvalidRequest", {
+    message: Schema.String,
+  }) {}
+
+export class MalformedXML
+  extends Schema.TaggedError<MalformedXML>()("MalformedXML", {
+    message: Schema.String,
+  }) {}
+
 export interface DeleteError {
   readonly key: string;
   readonly code: string;
@@ -141,7 +237,13 @@ export type BackendError =
   | AccessDenied
   | NoSuchKey
   | BucketNotEmpty
-  | DeleteObjectsError;
+  | DeleteObjectsError
+  | NoSuchUpload
+  | InvalidPart
+  | InvalidPartOrder
+  | EntityTooSmall
+  | InvalidRequest
+  | MalformedXML;
 
 export interface BackendService {
   readonly listBuckets: () => Effect.Effect<
@@ -171,9 +273,11 @@ export interface BackendService {
   }) => Effect.Effect<ListObjectsResult, BackendError>;
   readonly getObject: (
     key: string,
+    headers: Record<string, string | string[] | undefined>,
   ) => Effect.Effect<ObjectResponse, BackendError>;
   readonly headObject: (
     key: string,
+    headers: Record<string, string | string[] | undefined>,
   ) => Effect.Effect<HeadObjectResult, BackendError>;
   readonly putObject: (
     key: string,
@@ -184,6 +288,39 @@ export interface BackendService {
   readonly deleteObjects: (
     objects: readonly { key: string; versionId?: string }[],
   ) => Effect.Effect<DeleteObjectsResult, BackendError>;
+
+  // Multipart Upload
+  readonly createMultipartUpload: (
+    key: string,
+    headers: Record<string, string | string[] | undefined>,
+  ) => Effect.Effect<MultipartUploadResult, BackendError>;
+  readonly uploadPart: (
+    key: string,
+    uploadId: string,
+    partNumber: number,
+    body: Stream.Stream<Uint8Array, Error>,
+  ) => Effect.Effect<UploadPartResult, BackendError>;
+  readonly completeMultipartUpload: (
+    key: string,
+    uploadId: string,
+    parts: readonly { etag: string; partNumber: number }[],
+  ) => Effect.Effect<CompleteMultipartUploadResult, BackendError>;
+  readonly abortMultipartUpload: (
+    key: string,
+    uploadId: string,
+  ) => Effect.Effect<void, BackendError>;
+  readonly listMultipartUploads: (args: {
+    prefix?: string;
+    delimiter?: string;
+    keyMarker?: string;
+    uploadIdMarker?: string;
+    maxUploads?: number;
+    encodingType?: string;
+  }) => Effect.Effect<ListMultipartUploadsResult, BackendError>;
+  readonly listParts: (
+    key: string,
+    uploadId: string,
+  ) => Effect.Effect<ListPartsResult, BackendError>;
 }
 
 /**

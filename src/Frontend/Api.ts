@@ -5,7 +5,11 @@ export class BadGateway extends Schema.TaggedError<BadGateway>()("BadGateway", {
   message: Schema.String,
 }) {}
 
-export const S3Api = HttpApiGroup.make("s3")
+export const HttpS3Api = HttpApiGroup.make("s3")
+  .add(
+    HttpApiEndpoint.post("postRoot", "/")
+      .addError(BadGateway, { status: 502 }),
+  )
   .add(
     HttpApiEndpoint.get("listBuckets", "/")
       .addError(BadGateway, { status: 502 }),

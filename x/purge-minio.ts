@@ -2,7 +2,6 @@ import {
   DeleteBucketCommand,
   DeleteObjectsCommand,
   ListBucketsCommand,
-  ListObjectsV2Command,
   ListObjectVersionsCommand,
   S3Client,
 } from "npm:@aws-sdk/client-s3";
