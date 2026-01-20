@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, type Schema } from "effect";
+import { Cache, Context, Effect, Layer, type Schema } from "effect";
 import { HttpClient, HttpClientRequest } from "@effect/platform";
 import type { MaterializedBucket, SwiftConfig } from "../../Domain/Config.ts";
 import { HeraldConfig } from "../../Config/Layer.ts";
@@ -39,7 +39,6 @@ export const SwiftClientLive = Layer.effect(
   Effect.gen(function* () {
     const appConfig = yield* HeraldConfig;
     const client = yield* HttpClient.HttpClient;
-    const cache = new Map<string, SwiftAuthMeta & { expires: number }>();
 
     const fetchAuthMeta = (
       config: Schema.Schema.Type<typeof SwiftConfig>,
@@ -149,6 +148,13 @@ export const SwiftClientLive = Layer.effect(
       });
     };
 
+    const cache = yield* Cache.make({
+      capacity: 100,
+      timeToLive: "50 minutes", // Swift tokens usually last 1h
+      lookup: (config: Schema.Schema.Type<typeof SwiftConfig>) =>
+        fetchAuthMeta(config),
+    });
+
     return SwiftClient.of({
       getAuthMeta: (
         bucket: MaterializedBucket | { backend_id: string },
@@ -174,26 +180,7 @@ export const SwiftClientLive = Layer.effect(
           );
         }
 
-        const cacheKey = `${backend_id}:${config.auth_url}:${config.region}`;
-        const cached = cache.get(cacheKey);
-        const now = Date.now();
-
-        if (cached && cached.expires > now) {
-          return Effect.succeed({
-            token: cached.token,
-            storageUrl: cached.storageUrl,
-          });
-        }
-
-        return fetchAuthMeta(config).pipe(
-          Effect.tap((meta) => {
-            // Cache for 50 minutes (Swift tokens usually last 1h)
-            cache.set(cacheKey, {
-              ...meta,
-              expires: now + 50 * 60 * 1000,
-            });
-          }),
-        );
+        return cache.get(config);
       },
     });
   }),
