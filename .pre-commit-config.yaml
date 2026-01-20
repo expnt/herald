@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
+    rev: v6.0.0
     hooks:
       - id: check-added-large-files
         exclude: tests/res
@@ -39,9 +39,14 @@ repos:
         types:
           - ts
   - repo: https://github.com/tofuutils/pre-commit-opentofu
-    rev: v1.0.3
+    rev: v2.2.2
     hooks:
       - id: tofu_fmt
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.36.0
+    hooks:
+      - id: check-dependabot
+      - id: check-github-workflows
   # - repo: https://github.com/shellcheck-py/shellcheck-py
   #   rev: v0.10.0.1
   #   hooks:

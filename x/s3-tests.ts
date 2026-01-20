@@ -179,9 +179,6 @@ const program = Effect.gen(function* () {
   const FileLoggingLive = Logger.replace(
     Logger.defaultLogger,
     Logger.make(({ message, logLevel: currentLogLevel }) => {
-      if (currentLogLevel.syslog > minLogLevel.syslog) {
-        return;
-      }
       const timestamp = new Date().toISOString();
       const level = currentLogLevel.label;
       const msg = typeof message === "string" ? message : String(message);

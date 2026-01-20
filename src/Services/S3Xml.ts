@@ -6,13 +6,24 @@ import {
   BucketAlreadyOwnedByYou,
   type BucketInfo,
   BucketNotEmpty,
+  EntityTooSmall,
   InternalError,
+  InvalidPart,
+  InvalidPartOrder,
+  InvalidRequest,
+  type ListMultipartUploadsResult,
   type ListObjectsResult,
+  type ListPartsResult,
+  MalformedXML,
   NoSuchBucket,
   NoSuchKey,
+  NoSuchUpload,
   type OwnerInfo,
 } from "./Backend.ts";
 
+/**
+ * This service centeralizes XML authoring logic.
+ */
 export class S3Xml extends Context.Tag("S3Xml")<
   S3Xml,
   {
@@ -29,6 +40,25 @@ export class S3Xml extends Context.Tag("S3Xml")<
     ) => HttpServerResponse.HttpServerResponse;
     readonly formatListVersions: (
       result: ListObjectsResult,
+    ) => HttpServerResponse.HttpServerResponse;
+    readonly formatListMultipartUploads: (
+      result: ListMultipartUploadsResult,
+    ) => HttpServerResponse.HttpServerResponse;
+    readonly formatInitiateMultipartUpload: (
+      bucket: string,
+      key: string,
+      uploadId: string,
+    ) => HttpServerResponse.HttpServerResponse;
+    readonly formatCompleteMultipartUpload: (
+      result: {
+        location: string;
+        bucket: string;
+        key: string;
+        etag: string;
+      },
+    ) => HttpServerResponse.HttpServerResponse;
+    readonly formatListParts: (
+      result: ListPartsResult,
     ) => HttpServerResponse.HttpServerResponse;
   }
 >() {}
@@ -66,6 +96,30 @@ export const S3XmlLive = Layer.succeed(
         code = "BucketNotEmpty";
         message = e.message;
         status = 409;
+      } else if (e instanceof NoSuchUpload) {
+        code = "NoSuchUpload";
+        message = e.message;
+        status = 404;
+      } else if (e instanceof InvalidPart) {
+        code = "InvalidPart";
+        message = e.message;
+        status = 400;
+      } else if (e instanceof InvalidPartOrder) {
+        code = "InvalidPartOrder";
+        message = e.message;
+        status = 400;
+      } else if (e instanceof EntityTooSmall) {
+        code = "EntityTooSmall";
+        message = e.message;
+        status = 400;
+      } else if (e instanceof InvalidRequest) {
+        code = "InvalidRequest";
+        message = e.message;
+        status = 400;
+      } else if (e instanceof MalformedXML) {
+        code = "MalformedXML";
+        message = e.message;
+        status = 400;
       } else if (e instanceof InternalError) {
         code = "InternalError";
         message = e.message;
@@ -253,6 +307,68 @@ export const S3XmlLive = Layer.succeed(
             }</NextKeyMarker><NextVersionIdMarker>null</NextVersionIdMarker>`
             : ""
         }${versionsXml}${deleteMarkersXml}${commonPrefixesXml}</ListVersionsResult>`;
+
+      return HttpServerResponse.text(xml, {
+        headers: {
+          "Content-Type": "application/xml",
+        },
+      });
+    },
+
+    formatListMultipartUploads: (result) => {
+      const uploadsXml = result.uploads.map((u) =>
+        `<Upload><Key>${u.key}</Key><UploadId>${u.uploadId}</UploadId><Initiator><ID>${u.initiator.id}</ID><DisplayName>${u.initiator.displayName}</DisplayName></Initiator><Owner><ID>${u.owner.id}</ID><DisplayName>${u.owner.displayName}</DisplayName></Owner><StorageClass>${u.storageClass}</StorageClass><Initiated>${u.initiated.toISOString()}</Initiated></Upload>`
+      ).join("");
+
+      const commonPrefixesXml = result.commonPrefixes.map((cp) =>
+        `<CommonPrefixes><Prefix>${cp.prefix}</Prefix></CommonPrefixes>`
+      ).join("");
+
+      const xml =
+        `<?xml version="1.0" encoding="UTF-8"?><ListMultipartUploadsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Bucket>${result.bucket}</Bucket><KeyMarker>${
+          result.keyMarker ?? ""
+        }</KeyMarker><UploadIdMarker>${
+          result.uploadIdMarker ?? ""
+        }</UploadIdMarker><NextKeyMarker>${
+          result.nextKeyMarker ?? ""
+        }</NextKeyMarker><NextUploadIdMarker>${
+          result.nextUploadIdMarker ?? ""
+        }</NextUploadIdMarker><MaxUploads>${result.maxUploads}</MaxUploads><IsTruncated>${result.isTruncated}</IsTruncated>${uploadsXml}${commonPrefixesXml}</ListMultipartUploadsResult>`;
+
+      return HttpServerResponse.text(xml, {
+        headers: { "Content-Type": "application/xml" },
+      });
+    },
+
+    formatInitiateMultipartUpload: (bucket, key, uploadId) => {
+      const xml =
+        `<?xml version="1.0" encoding="UTF-8"?><InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Bucket>${bucket}</Bucket><Key>${key}</Key><UploadId>${uploadId}</UploadId></InitiateMultipartUploadResult>`;
+
+      return HttpServerResponse.text(xml, {
+        headers: {
+          "Content-Type": "application/xml",
+        },
+      });
+    },
+
+    formatCompleteMultipartUpload: (result) => {
+      const xml =
+        `<?xml version="1.0" encoding="UTF-8"?><CompleteMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Location>${result.location}</Location><Bucket>${result.bucket}</Bucket><Key>${result.key}</Key><ETag>${result.etag}</ETag></CompleteMultipartUploadResult>`;
+
+      return HttpServerResponse.text(xml, {
+        headers: {
+          "Content-Type": "application/xml",
+        },
+      });
+    },
+
+    formatListParts: (result) => {
+      const partsXml = result.parts.map((p) =>
+        `<Part><PartNumber>${p.partNumber}</PartNumber><LastModified>${p.lastModified.toISOString()}</LastModified><ETag>${p.etag}</ETag><Size>${p.size}</Size></Part>`
+      ).join("");
+
+      const xml =
+        `<?xml version="1.0" encoding="UTF-8"?><ListPartsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Bucket>${result.bucket}</Bucket><Key>${result.key}</Key><UploadId>${result.uploadId}</UploadId><Initiator><ID>${result.initiator.id}</ID><DisplayName>${result.initiator.displayName}</DisplayName></Initiator><Owner><ID>${result.owner.id}</ID><DisplayName>${result.owner.displayName}</DisplayName></Owner><StorageClass>${result.storageClass}</StorageClass><PartNumberMarker>${result.partNumberMarker}</PartNumberMarker><NextPartNumberMarker>${result.nextPartNumberMarker}</NextPartNumberMarker><MaxParts>${result.maxParts}</MaxParts><IsTruncated>${result.isTruncated}</IsTruncated>${partsXml}</ListPartsResult>`;
 
       return HttpServerResponse.text(xml, {
         headers: {

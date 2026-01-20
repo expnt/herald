@@ -1,9 +1,9 @@
 #!/usr/bin/env -S deno run --allow-all
 import { Effect, Logger, LogLevel } from "effect";
 import { SwiftClient, SwiftClientLive } from "../src/Backends/Swift/Client.ts";
-import { AppConfigLive } from "../src/Config/Layer.ts";
+import { HeraldConfigLive } from "../src/Config/Layer.ts";
 import { makeSwiftBackend } from "../src/Backends/Swift/Backend.ts";
-import { Backend } from "../src/Services/Backend.ts";
+import { FetchHttpClient } from "@effect/platform";
 
 const program = Effect.gen(function* () {
   console.log("Checking Swift connection...");
@@ -27,7 +27,8 @@ const program = Effect.gen(function* () {
   }
 }).pipe(
   Effect.provide(SwiftClientLive),
-  Effect.provide(AppConfigLive),
+  Effect.provide(HeraldConfigLive),
+  Effect.provide(FetchHttpClient.layer),
   Effect.provide(Logger.minimumLogLevel(LogLevel.Debug)),
 );
 

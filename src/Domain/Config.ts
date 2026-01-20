@@ -41,7 +41,7 @@ export const S3Config = Schema.Struct({
 
 export const SwiftConfig = Schema.Struct({
   protocol: Schema.Literal("swift"),
-  auth_url: Schema.optional(Schema.String),
+  auth_url: Schema.String,
   region: Schema.optional(Schema.String),
   container: Schema.optional(Schema.String),
   credentials: Schema.optional(SwiftCredentials),

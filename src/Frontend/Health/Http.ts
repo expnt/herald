@@ -1,9 +1,9 @@
 import { HttpApiBuilder } from "@effect/platform";
 import { Effect } from "effect";
-import { Api } from "../../Api.ts";
+import { HttpHeraldApi } from "../../Api.ts";
 
 export const HttpHealthLive = HttpApiBuilder.group(
-  Api,
+  HttpHeraldApi,
   "health",
   (handlers) =>
     handlers.handle(

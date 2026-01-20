@@ -1,12 +1,10 @@
 import { Effect } from "effect";
 import { HttpServerResponse } from "@effect/platform";
-import { resolveBucket } from "../Utils.ts";
+import { RequestContext } from "../Utils.ts";
 
-export const deleteBucket = (
-  { path: { bucket } }: { path: { bucket: string } },
-) =>
-  resolveBucket(bucket, (backend) =>
-    Effect.gen(function* () {
-      yield* backend.deleteBucket();
-      return HttpServerResponse.empty({ status: 204 });
-    }));
+export const deleteBucket = () =>
+  Effect.gen(function* () {
+    const { backend } = yield* RequestContext;
+    yield* backend.deleteBucket();
+    return HttpServerResponse.empty({ status: 204 });
+  });

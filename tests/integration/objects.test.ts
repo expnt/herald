@@ -1,12 +1,17 @@
 import {
+  AbortMultipartUploadCommand,
+  CompleteMultipartUploadCommand,
   CreateBucketCommand,
+  CreateMultipartUploadCommand,
   DeleteBucketCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListPartsCommand,
   PutObjectCommand,
   type S3Client,
   S3ServiceException,
+  UploadPartCommand,
 } from "@aws-sdk/client-s3";
 import { harness, type ProxyTestCase } from "../utils.ts";
 import type { GlobalConfig } from "../../src/Domain/Config.ts";
@@ -119,6 +124,180 @@ const specs: ObjectTestSpec[] = [
           Body: "content to delete",
         }),
       );
+    },
+  },
+  {
+    name: "objects/multipart/basic",
+    fn: async (c) => {
+      const key = "multipart-basic.txt";
+      const { UploadId } = await c.send(
+        new CreateMultipartUploadCommand({ Bucket: BUCKET, Key: key }),
+      );
+      if (!UploadId) throw new Error("No UploadId");
+
+      const partSize = 5 * 1024 * 1024 + 1;
+      const body1 = new Uint8Array(partSize).fill(97); // 'a'
+      const body2 = new Uint8Array(10).fill(98); // 'b'
+
+      const { ETag: etag1 } = await c.send(
+        new UploadPartCommand({
+          Bucket: BUCKET,
+          Key: key,
+          UploadId,
+          PartNumber: 1,
+          Body: body1,
+        }),
+      );
+      const { ETag: etag2 } = await c.send(
+        new UploadPartCommand({
+          Bucket: BUCKET,
+          Key: key,
+          UploadId,
+          PartNumber: 2,
+          Body: body2,
+        }),
+      );
+
+      await c.send(
+        new CompleteMultipartUploadCommand({
+          Bucket: BUCKET,
+          Key: key,
+          UploadId,
+          MultipartUpload: {
+            Parts: [
+              { ETag: etag1, PartNumber: 1 },
+              { ETag: etag2, PartNumber: 2 },
+            ],
+          },
+        }),
+      );
+
+      const { ContentLength } = await c.send(
+        new HeadObjectCommand({ Bucket: BUCKET, Key: key }),
+      );
+      if (ContentLength !== partSize + 10) {
+        throw new Error(
+          `Size mismatch: expected ${partSize + 10}, got ${ContentLength}`,
+        );
+      }
+    },
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: "multipart-basic.txt",
+          }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
+  {
+    name: "objects/multipart/abort",
+    fn: async (c) => {
+      const key = "multipart-abort.txt";
+      const { UploadId } = await c.send(
+        new CreateMultipartUploadCommand({ Bucket: BUCKET, Key: key }),
+      );
+      if (!UploadId) throw new Error("No UploadId");
+
+      await c.send(
+        new UploadPartCommand({
+          Bucket: BUCKET,
+          Key: key,
+          UploadId,
+          PartNumber: 1,
+          Body: "part 1",
+        }),
+      );
+
+      await c.send(
+        new AbortMultipartUploadCommand({ Bucket: BUCKET, Key: key, UploadId }),
+      );
+
+      try {
+        await c.send(
+          new ListPartsCommand({ Bucket: BUCKET, Key: key, UploadId }),
+        );
+        throw new Error("ListParts should have failed after Abort");
+      } catch (e) {
+        if (!(e instanceof S3ServiceException && e.name === "NoSuchUpload")) {
+          throw e;
+        }
+      }
+    },
+  },
+  {
+    name: "objects/multipart/list-parts",
+    fn: async (c) => {
+      const key = "multipart-list.txt";
+      const { UploadId } = await c.send(
+        new CreateMultipartUploadCommand({ Bucket: BUCKET, Key: key }),
+      );
+      if (!UploadId) throw new Error("No UploadId");
+
+      await c.send(
+        new UploadPartCommand({
+          Bucket: BUCKET,
+          Key: key,
+          UploadId,
+          PartNumber: 1,
+          Body: "part 1",
+        }),
+      );
+
+      const { Parts } = await c.send(
+        new ListPartsCommand({ Bucket: BUCKET, Key: key, UploadId }),
+      );
+
+      if (!Parts || Parts.length !== 1 || Parts[0].PartNumber !== 1) {
+        throw new Error(`Unexpected parts list: ${JSON.stringify(Parts)}`);
+      }
+
+      await c.send(
+        new AbortMultipartUploadCommand({ Bucket: BUCKET, Key: key, UploadId }),
+      );
+    },
+  },
+  {
+    name: "objects/multipart/empty",
+    fn: async (c) => {
+      const key = "multipart-empty.txt";
+      const { UploadId } = await c.send(
+        new CreateMultipartUploadCommand({ Bucket: BUCKET, Key: key }),
+      );
+      if (!UploadId) throw new Error("No UploadId");
+
+      try {
+        await c.send(
+          new CompleteMultipartUploadCommand({
+            Bucket: BUCKET,
+            Key: key,
+            UploadId,
+            MultipartUpload: { Parts: [] },
+          }),
+        );
+        throw new Error("Complete should have failed for empty parts");
+      } catch (e) {
+        if (
+          e instanceof S3ServiceException &&
+          (e.name === "MalformedXML" || e.name === "InvalidPart" ||
+            e.name === "InvalidRequest")
+        ) {
+          return;
+        }
+        throw e;
+      } finally {
+        try {
+          await c.send(
+            new AbortMultipartUploadCommand({
+              Bucket: BUCKET,
+              Key: key,
+              UploadId,
+            }),
+          );
+        } catch { /* ignore */ }
+      }
     },
   },
 ];

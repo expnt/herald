@@ -6,8 +6,8 @@ import {
   type MaterializedBucket,
 } from "../Domain/Config.ts";
 
-export class AppConfig extends Context.Tag("AppConfig")<
-  AppConfig,
+export class HeraldConfig extends Context.Tag("HeraldConfig")<
+  HeraldConfig,
   {
     readonly raw: GlobalConfig;
     readonly lookupBucket: (name: string) => Option.Option<MaterializedBucket>;
@@ -109,8 +109,8 @@ export function parseConfig(
   return Schema.decodeUnknownSync(GlobalConfig)({ backends });
 }
 
-export const AppConfigLive = Layer.effect(
-  AppConfig,
+export const HeraldConfigLive = Layer.effect(
+  HeraldConfig,
   Effect.gen(function* () {
     const configPath = yield* Config.string("HERALD_CONFIG_PATH").pipe(
       Config.orElse(() => Config.string("CONFIG_PATH")),
