@@ -32,7 +32,8 @@
           # For systems that do not ship with Python by default (required by `node-gyp`)
           # python3
 
-          # infisical
+          infisical
+          openstack-rs
           #
           # opentofu
           # terragrunt

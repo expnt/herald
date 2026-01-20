@@ -1,0 +1,90 @@
+logs
+*.log
+
+# MacOS specific
+.DS_Store
+
+# Local environment variables
+.env
+.env.local
+.env.*.local
+
+# build
+/build
+test.http
+
+############################
+# OS X
+############################
+
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+.Spotlight-V100
+.Trashes
+._*
+
+############################
+# Linux
+############################
+
+*~
+
+############################
+# Windows
+############################
+
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msm
+*.msp
+
+############################
+# Logs and databases
+############################
+
+.tmp
+*.log
+*.sql
+*.sqlite
+*.sqlite3
+
+############################
+# Misc.
+############################
+
+*#
+ssl
+.idea
+nbproject
+public/uploads/*
+!public/uploads/.gitkeep
+
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+.terragrunt-cache
+
+############################
+# Others
+############################
+*tshscript.sh
+tests/**/.terraform.lock.hcl
+examples/**/.terraform.lock.hcl
+*.crt
+token
+venv/
+bucket_differences.json
+*.crt
+token
+*.db
+*.db-shm
+*.db-wal
+.vscode

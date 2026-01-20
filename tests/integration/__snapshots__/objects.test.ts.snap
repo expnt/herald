@@ -20,6 +20,13 @@ snapshot[`Proxy/objects/put metadata 1`] = `
 }
 `;
 
+snapshot[`Swift/objects/put metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
 snapshot[`Baseline/objects/get/existing metadata 1`] = `
 {
   headers: {
@@ -34,6 +41,13 @@ snapshot[`Baseline/objects/get/existing metadata 1`] = `
 `;
 
 snapshot[`Proxy/objects/get/existing metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Swift/objects/get/existing metadata 1`] = `
 {
   headers: {},
   status: 204,
@@ -72,6 +86,18 @@ snapshot[`Proxy/objects/get/non-existent metadata 1`] = `
 
 snapshot[`Proxy/objects/get/non-existent body 1`] = `'<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message></Error>'`;
 
+snapshot[`Swift/objects/get/non-existent metadata 1`] = `
+{
+  headers: {
+    "content-type": "application/xml",
+    vary: "Accept-Encoding",
+  },
+  status: 404,
+}
+`;
+
+snapshot[`Swift/objects/get/non-existent body 1`] = `'<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchKey</Code><Message>Not Found</Message></Error>'`;
+
 snapshot[`Baseline/objects/head/existing metadata 1`] = `
 {
   headers: {
@@ -86,6 +112,13 @@ snapshot[`Baseline/objects/head/existing metadata 1`] = `
 `;
 
 snapshot[`Proxy/objects/head/existing metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Swift/objects/head/existing metadata 1`] = `
 {
   headers: {},
   status: 204,
@@ -115,6 +148,13 @@ snapshot[`Proxy/objects/head/non-existent metadata 1`] = `
 }
 `;
 
+snapshot[`Swift/objects/head/non-existent metadata 1`] = `
+{
+  headers: {},
+  status: 404,
+}
+`;
+
 snapshot[`Baseline/objects/delete/existing metadata 1`] = `
 {
   headers: {
@@ -129,6 +169,13 @@ snapshot[`Baseline/objects/delete/existing metadata 1`] = `
 `;
 
 snapshot[`Proxy/objects/delete/existing metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Swift/objects/delete/existing metadata 1`] = `
 {
   headers: {},
   status: 204,

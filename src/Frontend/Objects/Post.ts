@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect";
+import { Effect, Option, Stream } from "effect";
 import { HttpServerRequest, HttpServerResponse } from "@effect/platform";
 import { extractKey, resolveBucket } from "../Utils.ts";
 
@@ -41,28 +41,29 @@ export const postObject = (
           const keyMatch = content.match(/<Key>(.*?)<\/Key>/);
           const versionIdMatch = content.match(/<VersionId>(.*?)<\/VersionId>/);
           if (keyMatch) {
-            try {
-              objects.push({
-                key: decodeURIComponent(keyMatch[1]),
-                versionId: versionIdMatch ? versionIdMatch[1] : undefined,
-              });
-            } catch {
-              objects.push({
-                key: keyMatch[1],
-                versionId: versionIdMatch ? versionIdMatch[1] : undefined,
-              });
-            }
+            const rawKey = keyMatch[1];
+            const key = Option.liftThrowable(decodeURIComponent)(rawKey).pipe(
+              Option.getOrElse(() => rawKey),
+            );
+            yield* Effect.logDebug(`DeleteObjects extracted key=[${key}]`);
+            objects.push({
+              key,
+              versionId: versionIdMatch ? versionIdMatch[1] : undefined,
+            });
           }
         }
 
         if (objects.length > 0) {
           const deleteResult = yield* backend.deleteObjects(objects);
+          const deletedXml = deleteResult.deleted.map((k) =>
+            `<Deleted><Key>${k}</Key></Deleted>`
+          ).join("");
+          const errorsXml = deleteResult.errors.map((e) =>
+            `<Error><Key>${e.key}</Key><Code>${e.code}</Code><Message>${e.message}</Message></Error>`
+          ).join("");
+
           const xml =
-            `<?xml version="1.0" encoding="UTF-8"?><DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">${
-              deleteResult.deleted.map((k) =>
-                `<Deleted><Key>${k}</Key></Deleted>`
-              ).join("")
-            }</DeleteResult>`;
+            `<?xml version="1.0" encoding="UTF-8"?><DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">${deletedXml}${errorsXml}</DeleteResult>`;
           return HttpServerResponse.text(xml, {
             headers: { "Content-Type": "application/xml" },
           });

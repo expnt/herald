@@ -1,8 +1,39 @@
-import { Effect, Layer, Logger, LogLevel } from "effect";
+import { Config, Effect, Layer, Logger, LogLevel } from "effect";
 
 export const LoggingLive = Layer.mergeAll(
-  Logger.minimumLogLevel(LogLevel.Info),
-  // You can add more logger configuration here, like changing the format to JSON for production
+  Layer.unwrapEffect(
+    Effect.gen(function* () {
+      const logLevelStr = yield* Config.option(
+        Config.string("HERALD_LOG_LEVEL"),
+      );
+
+      if (logLevelStr._tag === "None") {
+        return Logger.minimumLogLevel(LogLevel.Info);
+      }
+
+      const level = logLevelStr.value.toUpperCase();
+      switch (level) {
+        case "ALL":
+          return Logger.minimumLogLevel(LogLevel.All);
+        case "TRACE":
+          return Logger.minimumLogLevel(LogLevel.Trace);
+        case "DEBUG":
+          return Logger.minimumLogLevel(LogLevel.Debug);
+        case "INFO":
+          return Logger.minimumLogLevel(LogLevel.Info);
+        case "WARN":
+          return Logger.minimumLogLevel(LogLevel.Warning);
+        case "ERROR":
+          return Logger.minimumLogLevel(LogLevel.Error);
+        case "FATAL":
+          return Logger.minimumLogLevel(LogLevel.Fatal);
+        case "NONE":
+          return Logger.minimumLogLevel(LogLevel.None);
+        default:
+          return Logger.minimumLogLevel(LogLevel.Info);
+      }
+    }),
+  ),
 );
 
 /**

@@ -7,7 +7,6 @@ import {
   BucketAlreadyExists,
   BucketAlreadyOwnedByYou,
   BucketNotEmpty,
-  DeleteObjectsError,
   InternalError,
   NoSuchBucket,
   NoSuchKey,
@@ -15,7 +14,25 @@ import {
 import { HttpServerRequest, type HttpServerResponse } from "@effect/platform";
 import type { AppConfig } from "../Config/Layer.ts";
 import type { S3Client } from "../Backends/S3/Client.ts";
+import type { SwiftClient } from "../Backends/Swift/Client.ts";
 import { BadGateway } from "./Api.ts";
+
+/**
+ * Fixes header values that might have been incorrectly decoded as Latin-1
+ * instead of UTF-8 by the HTTP server.
+ */
+export function fixHeaderEncoding(value: string): string {
+  // deno-lint-ignore no-control-regex
+  if (!/[^\x00-\x7F]/.test(value)) {
+    return value;
+  }
+  return Option.liftThrowable(() => {
+    const bytes = Uint8Array.from(value, (c) => c.charCodeAt(0));
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  })().pipe(
+    Option.getOrElse(() => value),
+  );
+}
 
 /**
  * Extracts the object key from the request URL, given the bucket name.
@@ -56,6 +73,7 @@ export function resolveBucket<
   | S3Xml
   | AppConfig
   | S3Client
+  | SwiftClient
   | HttpServerRequest.HttpServerRequest
 > {
   return Effect.gen(function* () {
@@ -67,6 +85,26 @@ export function resolveBucket<
     const isHead = Option.isSome(request)
       ? request.value.method === "HEAD"
       : false;
+
+    if (Option.isSome(request)) {
+      const auth = request.value.headers["authorization"];
+      yield* Effect.logDebug(
+        `${request.value.method} ${request.value.url} auth: [${auth}]`,
+      );
+      if (
+        !auth || auth.trim() === "" ||
+        (auth.startsWith("AWS ") && auth.split(":").length < 2 &&
+          !auth.includes("Signature=")) ||
+        (auth.startsWith("AWS4-") && !auth.includes("Signature="))
+      ) {
+        return s3Xml.formatError(
+          new AccessDenied({
+            message: "Access Denied",
+          }),
+          isHead,
+        );
+      }
+    }
 
     const program = Effect.gen(function* () {
       const backend = yield* Backend;
@@ -82,8 +120,7 @@ export function resolveBucket<
           e instanceof BucketAlreadyOwnedByYou ||
           e instanceof InternalError ||
           e instanceof AccessDenied ||
-          e instanceof BucketNotEmpty ||
-          e instanceof DeleteObjectsError
+          e instanceof BucketNotEmpty
         ) {
           return Effect.succeed(s3Xml.formatError(e, isHead));
         }
@@ -122,6 +159,7 @@ export function resolveBackend<
   | S3Xml
   | AppConfig
   | S3Client
+  | SwiftClient
   | HttpServerRequest.HttpServerRequest
 > {
   return Effect.gen(function* () {
@@ -148,8 +186,7 @@ export function resolveBackend<
           e instanceof BucketAlreadyOwnedByYou ||
           e instanceof InternalError ||
           e instanceof AccessDenied ||
-          e instanceof BucketNotEmpty ||
-          e instanceof DeleteObjectsError
+          e instanceof BucketNotEmpty
         ) {
           return Effect.succeed(s3Xml.formatError(e, isHead));
         }

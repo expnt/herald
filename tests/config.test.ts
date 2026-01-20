@@ -6,8 +6,9 @@ import {
   BackendResolver,
   BackendResolverLive,
 } from "../src/Services/BackendResolver.ts";
-import { AppConfig } from "../src/Config/Layer.ts";
+import { AppConfig, parseConfig } from "../src/Config/Layer.ts";
 import { S3Client } from "../src/Backends/S3/Client.ts";
+import { SwiftClient } from "../src/Backends/Swift/Client.ts";
 import type { S3Client as S3ClientSDK } from "@aws-sdk/client-s3";
 import { Backend } from "../src/Services/Backend.ts";
 
@@ -204,6 +205,50 @@ const cases: TestCase[] = [
       "data-customer-internal": { bucket_name: "infix-match" },
     },
   },
+  {
+    id: "swift_basic",
+    name: "swift basic config",
+    input: {
+      backends: {
+        swift_main: {
+          protocol: "swift",
+          auth_url: "http://keystone.example.com",
+          container: "my-container",
+          buckets: "*",
+        },
+      },
+    },
+    expectedBuckets: {
+      "any-bucket": {
+        backend_id: "swift_main",
+        protocol: "swift",
+        auth_url: "http://keystone.example.com",
+        container: "my-container",
+      },
+    },
+  },
+  {
+    id: "swift_with_credentials",
+    name: "swift with credentials",
+    input: {
+      backends: {
+        swift_main: {
+          protocol: "swift",
+          credentials: {
+            username: "user1",
+            password: "pw1",
+            project_name: "proj1",
+          },
+        },
+      },
+    },
+    expectedBuckets: {
+      "any": {
+        backend_id: "swift_main",
+        protocol: "swift",
+      },
+    },
+  },
 ];
 
 for (const tc of cases) {
@@ -243,13 +288,52 @@ for (const tc of cases) {
     }));
 }
 
+testEffect("config/parseConfig/env_vars", () =>
+  Effect.gen(function* () {
+    const env = {
+      HERALD_DEFAULT_PROTOCOL: "s3",
+      HERALD_DEFAULT_ENDPOINT: "http://localhost:9000",
+      HERALD_MYBACKEND_PROTOCOL: "swift",
+      HERALD_MYBACKEND_AUTH_URL: "http://swift.com",
+    };
+    const config = parseConfig({ backends: {} }, env);
+
+    const defaultBackend = config.backends.default;
+    yield* EffectAssert.strictEqual(defaultBackend.protocol, "s3");
+    if (defaultBackend.protocol === "s3") {
+      yield* EffectAssert.strictEqual(
+        defaultBackend.endpoint,
+        "http://localhost:9000",
+      );
+    }
+
+    const myBackend = config.backends.mybackend;
+    yield* EffectAssert.strictEqual(myBackend.protocol, "swift");
+    if (myBackend.protocol === "swift") {
+      yield* EffectAssert.strictEqual(
+        myBackend.auth_url,
+        "http://swift.com",
+      );
+    }
+  }));
+
+testEffect(
+  "config/parseConfig/default_fallback",
+  () =>
+    Effect.gen(function* () {
+      const config = parseConfig({ backends: {} }, {});
+      yield* EffectAssert.strictEqual(config.backends.default.protocol, "s3");
+      yield* EffectAssert.strictEqual(config.backends.default.buckets, "*");
+    }),
+);
+
 interface ResolverTestCase {
   id: string;
   name: string;
   config: GlobalConfig;
   op: (
     resolver: Context.Tag.Service<BackendResolver>,
-  ) => Effect.Effect<unknown, unknown, AppConfig | S3Client>;
+  ) => Effect.Effect<unknown, unknown, AppConfig | S3Client | SwiftClient>;
   expectedError?: string;
 }
 
@@ -330,6 +414,12 @@ for (const tc of resolverCases) {
         getClient: () => Effect.succeed({} as S3ClientSDK),
       });
 
+      // Mock SwiftClient
+      const SwiftClientLive = Layer.succeed(SwiftClient, {
+        getAuthMeta: () =>
+          Effect.succeed({ token: "test", storageUrl: "http://test" }),
+      });
+
       const program = Effect.gen(function* () {
         const resolver = yield* BackendResolver;
         return yield* tc.op(resolver);
@@ -337,6 +427,7 @@ for (const tc of resolverCases) {
         Effect.provide(BackendResolverLive),
         Effect.provide(AppConfigLive),
         Effect.provide(S3ClientLive),
+        Effect.provide(SwiftClientLive),
         Effect.either,
       );
 
