@@ -19,7 +19,12 @@ import {
   type PutObjectResult,
   type UploadPartResult,
 } from "../../Services/Backend.ts";
-import { mapError, type SwiftTarget } from "./Utils.ts";
+import {
+  mapError,
+  MP_META_PREFIX,
+  MP_SEGMENTS_PREFIX,
+  type SwiftTarget,
+} from "./Utils.ts";
 import { fixHeaderEncoding } from "../../Frontend/Utils.ts";
 
 export interface SwiftObject {
@@ -564,8 +569,7 @@ export const makeObjectOps = (
     ): Effect.Effect<UploadPartResult, BackendError> =>
       Effect.gen(function* () {
         const { url, token, container } = target;
-        const segmentKey =
-          `.herald/multipart-segments/${uploadId}/${partNumber}`;
+        const segmentKey = `${MP_SEGMENTS_PREFIX}${uploadId}/${partNumber}`;
         const encodedSegmentKey = segmentKey.split("/").map(encodeURIComponent)
           .join("/");
 
@@ -625,7 +629,7 @@ export const makeObjectOps = (
         let segmentMarker: string | undefined = undefined;
         while (true) {
           const segmentsResult: ListObjectsResult = yield* listObjects({
-            prefix: `.herald/multipart-segments/${uploadId}/`,
+            prefix: `${MP_SEGMENTS_PREFIX}${uploadId}/`,
             marker: segmentMarker,
           });
           for (const c of segmentsResult.contents) {
@@ -640,8 +644,7 @@ export const makeObjectOps = (
         // 1. Build SLO manifest
         const manifest = [];
         for (const p of parts) {
-          const segmentKey =
-            `.herald/multipart-segments/${uploadId}/${p.partNumber}`;
+          const segmentKey = `${MP_SEGMENTS_PREFIX}${uploadId}/${p.partNumber}`;
           const info = segmentMap.get(segmentKey);
           if (!info) {
             return yield* Effect.fail(
@@ -714,6 +717,17 @@ export const makeObjectOps = (
           ? etagHeader[0]
           : etagHeader;
 
+        // 3. Delete the metadata object
+        const metaKey = `${MP_META_PREFIX}${key}/${uploadId}`;
+        const encodedMetaKey = metaKey.split("/").map(encodeURIComponent).join(
+          "/",
+        );
+        yield* client.execute(
+          HttpClientRequest.del(`${url}/${encodedMetaKey}`).pipe(
+            HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+          ),
+        ).pipe(Effect.ignore);
+
         return {
           location: `${url}/${encodedKey}`,
           bucket: container,
@@ -723,7 +737,7 @@ export const makeObjectOps = (
       }),
 
     abortMultipartUpload: (
-      _key: string,
+      key: string,
       uploadId: string,
     ): Effect.Effect<void, BackendError> =>
       Effect.gen(function* () {
@@ -733,7 +747,7 @@ export const makeObjectOps = (
         let marker: string | undefined = undefined;
         while (true) {
           const segmentsResult: ListObjectsResult = yield* listObjects({
-            prefix: `.herald/multipart-segments/${uploadId}/`,
+            prefix: `${MP_SEGMENTS_PREFIX}${uploadId}/`,
             marker,
           });
 
@@ -754,7 +768,7 @@ export const makeObjectOps = (
         }
 
         // 2. Delete the metadata object
-        const metaKey = `.herald/multipart-meta/${uploadId}`;
+        const metaKey = `${MP_META_PREFIX}${key}/${uploadId}`;
         const encodedMetaKey = metaKey.split("/").map(encodeURIComponent).join(
           "/",
         );
@@ -775,16 +789,24 @@ export const makeObjectOps = (
     }): Effect.Effect<ListMultipartUploadsResult, BackendError> =>
       Effect.gen(function* () {
         const { container } = target;
+        const prefix = `${MP_META_PREFIX}${args.prefix ?? ""}`;
+        const marker = args.keyMarker
+          ? `${MP_META_PREFIX}${args.keyMarker}/${args.uploadIdMarker ?? ""}`
+          : undefined;
+
         const metaResult = yield* listObjects({
-          prefix: ".herald/multipart-meta/",
+          prefix,
+          delimiter: args.delimiter,
           maxKeys: args.maxUploads,
-          marker: args.uploadIdMarker,
+          marker,
         });
 
         const uploads: MultipartUploadInfo[] = metaResult.contents.map((c) => {
-          const uploadId = c.key.substring(".herald/multipart-meta/".length);
+          const parts = c.key.substring(MP_META_PREFIX.length).split("/");
+          const uploadId = parts.pop()!;
+          const key = parts.join("/");
           return {
-            key: "unknown",
+            key,
             uploadId,
             owner: { id: "swift", displayName: "Swift User" },
             initiator: { id: "swift", displayName: "Swift User" },
@@ -802,7 +824,9 @@ export const makeObjectOps = (
           delimiter: args.delimiter,
           isTruncated: metaResult.isTruncated,
           uploads,
-          commonPrefixes: [],
+          commonPrefixes: metaResult.commonPrefixes.map((cp) => ({
+            prefix: cp.prefix.substring(MP_META_PREFIX.length),
+          })),
           encodingType: args.encodingType,
         } satisfies ListMultipartUploadsResult;
       }),
@@ -815,9 +839,12 @@ export const makeObjectOps = (
         const { url, token, container } = target;
 
         // Check if upload exists by checking for metadata object
-        const metaKey = `.herald/multipart-meta/${uploadId}`;
+        const metaKey = `${MP_META_PREFIX}${key}/${uploadId}`;
+        const encodedMetaKey = metaKey.split("/").map(encodeURIComponent).join(
+          "/",
+        );
         const metaResponse = yield* client.execute(
-          HttpClientRequest.head(`${url}/${metaKey}`).pipe(
+          HttpClientRequest.head(`${url}/${encodedMetaKey}`).pipe(
             HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
           ),
         ).pipe(
@@ -835,7 +862,7 @@ export const makeObjectOps = (
         }
 
         const segmentsResult = yield* listObjects({
-          prefix: `.herald/multipart-segments/${uploadId}/`,
+          prefix: `${MP_SEGMENTS_PREFIX}${uploadId}/`,
         });
 
         const parts: PartInfo[] = segmentsResult.contents.map((c) => {

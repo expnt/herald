@@ -234,6 +234,7 @@ const cases: TestCase[] = [
       backends: {
         swift_main: {
           protocol: "swift",
+          auth_url: "http://keystone.example.com",
           credentials: {
             username: "user1",
             password: "pw1",

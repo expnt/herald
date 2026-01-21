@@ -18,6 +18,10 @@ export interface SwiftTarget {
   readonly url: string;
 }
 
+export const INTERNAL_PREFIX = ".hrld/";
+export const MP_META_PREFIX = `${INTERNAL_PREFIX}mmp/`;
+export const MP_SEGMENTS_PREFIX = `${INTERNAL_PREFIX}msg/`;
+
 export const mapError = (
   status: number,
   message: string,

@@ -4,7 +4,7 @@ import type { BackendError, BackendService } from "../../Services/Backend.ts";
 import type { MaterializedBucket } from "../../Domain/Config.ts";
 import { makeBucketOps } from "./Buckets.ts";
 import { makeObjectOps } from "./Objects.ts";
-import { getTarget } from "./Utils.ts";
+import { getTarget, MP_META_PREFIX } from "./Utils.ts";
 import type { SwiftClient } from "./Client.ts";
 import { makeBackendKeyValueStore } from "../../Services/BackendKeyValueStore.ts";
 
@@ -35,7 +35,7 @@ export const makeSwiftBackend = (
       ...baseBackend,
       multipartMetadataStore: makeBackendKeyValueStore(
         objectOps,
-        ".herald/multipart-meta/",
+        MP_META_PREFIX,
       ),
     };
 

@@ -7,7 +7,7 @@ import {
   type ListObjectsResult,
   type OwnerInfo,
 } from "../../Services/Backend.ts";
-import { mapError, type SwiftTarget } from "./Utils.ts";
+import { INTERNAL_PREFIX, mapError, type SwiftTarget } from "./Utils.ts";
 
 export interface SwiftContainer {
   readonly name: string;
@@ -96,20 +96,22 @@ export const makeBucketOps = (
     Effect.gen(function* () {
       const { url, token, container } = target;
 
-      // 1. Cleanup .herald/ objects so bucket can be deleted
-      let marker: string | undefined = undefined;
-      while (true) {
-        const heraldObjects: ListObjectsResult = yield* objectOps.listObjects({
-          prefix: ".herald/",
-          marker,
-        });
-        for (const obj of heraldObjects.contents) {
-          yield* objectOps.deleteObject(obj.key).pipe(Effect.ignore);
+      // 1. Cleanup .herald/ and .hrld/ objects so bucket can be deleted
+      for (const prefix of [".herald/", INTERNAL_PREFIX]) {
+        let marker: string | undefined = undefined;
+        while (true) {
+          const objects: ListObjectsResult = yield* objectOps.listObjects({
+            prefix,
+            marker,
+          });
+          for (const obj of objects.contents) {
+            yield* objectOps.deleteObject(obj.key).pipe(Effect.ignore);
+          }
+          if (!objects.isTruncated || !objects.nextMarker) {
+            break;
+          }
+          marker = objects.nextMarker;
         }
-        if (!heraldObjects.isTruncated || !heraldObjects.nextMarker) {
-          break;
-        }
-        marker = heraldObjects.nextMarker;
       }
 
       // 2. Delete the bucket

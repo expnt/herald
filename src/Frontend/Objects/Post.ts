@@ -2,7 +2,6 @@ import { Effect, Option } from "effect";
 import { HttpServerResponse } from "@effect/platform";
 import { RequestContext } from "../Utils.ts";
 import { S3Xml } from "../../Services/S3Xml.ts";
-import { NoSuchUpload } from "../../Services/Backend.ts";
 
 /**
  * Handler for POST requests on buckets or objects.
@@ -82,7 +81,7 @@ export const postObject = () =>
         }
       }
       yield* backend.multipartMetadataStore.set(
-        result.uploadId,
+        `${key}/${result.uploadId}`,
         JSON.stringify(metadata),
       ).pipe(
         Effect.tapError((e) =>
@@ -121,35 +120,30 @@ export const postObject = () =>
 
       // Retrieve metadata
       const metadataOpt = yield* backend.multipartMetadataStore.get(
-        params.uploadId,
+        `${key}/${params.uploadId}`,
       );
 
+      let metadata: Record<string, string> = {};
+
       if (Option.isNone(metadataOpt)) {
+        // Check for idempotency
         const head = yield* backend.headObject(key, {}).pipe(
-          Effect.orElseFail(() =>
-            new NoSuchUpload({
-              uploadId: params.uploadId!,
-              message: "The specified upload does not exist.",
-            })
-          ),
+          Effect.option,
         );
-        if (head.etag) {
+        if (Option.isSome(head) && head.value.etag) {
           return s3Xml.formatCompleteMultipartUpload({
             location: `http://localhost/${bucket}/${key}`, // Approximate
             bucket,
             key,
-            etag: head.etag,
+            etag: head.value.etag,
           });
         }
-        return yield* Effect.fail(
-          new NoSuchUpload({
-            uploadId: params.uploadId!,
-            message: "The specified upload does not exist.",
-          }),
-        );
+        // If not completed and no metadata, proceed with empty metadata
+        // Backends like Swift will fail if the upload doesn't exist (no segments)
+        // Backends like S3 will succeed if S3 says it's okay.
+      } else {
+        metadata = JSON.parse(metadataOpt.value);
       }
-
-      const metadata = JSON.parse(metadataOpt.value);
 
       const result = yield* backend.completeMultipartUpload(
         key,
@@ -158,9 +152,10 @@ export const postObject = () =>
         metadata,
       ).pipe(
         Effect.tap(() =>
-          backend.multipartMetadataStore.remove(params.uploadId!).pipe(
-            Effect.ignore,
-          )
+          backend.multipartMetadataStore.remove(`${key}/${params.uploadId!}`)
+            .pipe(
+              Effect.ignore,
+            )
         ),
       );
 

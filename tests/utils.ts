@@ -276,6 +276,7 @@ export type ProxyTestCase = {
   ) => Promise<void> | Effect.Effect<void, unknown, never>;
   ignore?: boolean;
   only?: boolean;
+  skipSnapshot?: boolean;
 };
 
 function baselineRunner(tc: ProxyTestCase, t: Deno.TestContext) {
@@ -308,7 +309,7 @@ function baselineRunner(tc: ProxyTestCase, t: Deno.TestContext) {
     yield* resultEffect;
 
     const lastResponse = h.getLastResponse();
-    if (lastResponse) {
+    if (lastResponse && !tc.skipSnapshot) {
       yield* Effect.tryPromise(() =>
         assertSnapshot(t, {
           status: lastResponse.status,
@@ -370,7 +371,7 @@ function proxyRunner(tc: ProxyTestCase, t: Deno.TestContext) {
     yield* resultEffect;
 
     const lastResponse = h.getLastResponse();
-    if (lastResponse) {
+    if (lastResponse && !tc.skipSnapshot) {
       yield* Effect.tryPromise(() =>
         assertSnapshot(t, {
           status: lastResponse.status,
@@ -501,7 +502,7 @@ function swiftRunner(tc: ProxyTestCase, t: Deno.TestContext) {
     yield* resultEffect;
 
     const lastResponse = h.getLastResponse();
-    if (lastResponse) {
+    if (lastResponse && !tc.skipSnapshot) {
       yield* Effect.tryPromise(() =>
         assertSnapshot(t, {
           status: lastResponse.status,
