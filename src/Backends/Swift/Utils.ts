@@ -35,7 +35,12 @@ export const mapError = (
       if (method === "DELETE") {
         return new BucketNotEmpty({ bucketName, message });
       }
-      return new BucketAlreadyExists({ bucketName, message });
+      if (method === "PUT" && !key) {
+        return new BucketAlreadyExists({ bucketName, message });
+      }
+      return new InternalError({
+        message: `Swift conflict error (${status}): ${message}`,
+      });
     case 202:
       if (method === "PUT") {
         return new BucketAlreadyOwnedByYou({ bucketName, message });
@@ -63,7 +68,7 @@ export const getTarget = (
     );
     const container = "bucket_name" in bucket ? bucket.bucket_name : "";
     const encodedContainer = container ? encodeURIComponent(container) : "";
-    return {
+    const res = {
       storageUrl: auth.storageUrl,
       token: auth.token,
       container,
@@ -71,4 +76,8 @@ export const getTarget = (
         ? `${auth.storageUrl}/${encodedContainer}`
         : auth.storageUrl,
     };
+    yield* Effect.logDebug(
+      `SwiftTarget resolved: url=[${res.url}] container=[${res.container}]`,
+    );
+    return res;
   });

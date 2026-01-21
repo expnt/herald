@@ -6,6 +6,7 @@ import { makeBucketOps } from "./Buckets.ts";
 import { makeObjectOps } from "./Objects.ts";
 import { getTarget } from "./Utils.ts";
 import type { SwiftClient } from "./Client.ts";
+import { makeBackendKeyValueStore } from "../../Services/BackendKeyValueStore.ts";
 
 /**
  * Creates a Swift-specific Backend implementation for a given configuration context.
@@ -22,8 +23,21 @@ export const makeSwiftBackend = (
   Effect.gen(function* () {
     const target = yield* getTarget(bucket);
     const client = yield* HttpClient.HttpClient;
-    return {
-      ...makeBucketOps(target, client),
-      ...makeObjectOps(target, client),
-    } satisfies BackendService;
+    const objectOps = makeObjectOps(target, client);
+    const bucketOps = makeBucketOps(target, client, objectOps);
+
+    const baseBackend = {
+      ...bucketOps,
+      ...objectOps,
+    };
+
+    const backend: BackendService = {
+      ...baseBackend,
+      multipartMetadataStore: makeBackendKeyValueStore(
+        objectOps,
+        ".herald/multipart-meta/",
+      ),
+    };
+
+    return backend;
   });

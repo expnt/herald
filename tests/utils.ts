@@ -61,8 +61,12 @@ export const makeTestHarness = (
     // Start Deno.serve on a random port
     const server = Deno.serve(
       { port: 0, onListen: () => {} },
-      (req) => {
-        return webHandler.handler(req);
+      async (req) => {
+        try {
+          return await webHandler.handler(req);
+        } catch (_e) {
+          return new Response("Internal Server Error", { status: 500 });
+        }
       },
     );
 

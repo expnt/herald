@@ -68,6 +68,14 @@
   - `x/snapdiff.ts`: Tool for comparing Herald proxy snapshots against baseline
     responses.
 
+  - `x/swift-s3-tests.ts`: Orchestration script for running the ceph `s3-tests`
+    suite against the proxy with a Swift backend. Requires `infisical` for
+    secrets.
+
+    ```bash
+    infisical run -- deno task test x/swift-s3-tests.ts
+    ```
+
   - `x/utils.ts`: Shell scripting utilities powered by `dax`.
 
 - `tools/`: Infrastructure and development tools.

@@ -3,6 +3,7 @@
  */
 
 import { Context, type Effect, Schema, type Stream } from "effect";
+import type { KeyValueStore } from "@effect/platform";
 
 export interface BucketInfo {
   readonly name: string;
@@ -289,6 +290,8 @@ export interface BackendService {
     objects: readonly { key: string; versionId?: string }[],
   ) => Effect.Effect<DeleteObjectsResult, BackendError>;
 
+  readonly multipartMetadataStore: KeyValueStore.KeyValueStore;
+
   // Multipart Upload
   readonly createMultipartUpload: (
     key: string,
@@ -304,6 +307,7 @@ export interface BackendService {
     key: string,
     uploadId: string,
     parts: readonly { etag: string; partNumber: number }[],
+    metadata: Record<string, string>,
   ) => Effect.Effect<CompleteMultipartUploadResult, BackendError>;
   readonly abortMultipartUpload: (
     key: string,

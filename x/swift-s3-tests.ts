@@ -7,7 +7,7 @@
  * configured with an OpenStack Swift backend.
  */
 
-import { Config, Effect, Layer, Logger, LogLevel } from "effect";
+import { Config, Effect, Layer, Logger, LogLevel, Stream } from "effect";
 import { makeTestHarness } from "../tests/utils.ts";
 import type { GlobalConfig } from "../src/Domain/Config.ts";
 import * as path from "@std/path";
@@ -22,20 +22,31 @@ const program = Effect.gen(function* () {
   // Read Swift config from environment
   const authUrl = yield* Config.string("HERALD_SWIFTTEST_AUTH_URL").pipe(
     Config.orElse(() => Config.string("HEARLD_SWIFTTEST_AUTH_URL")),
-    Config.withDefault(""),
+    Config.orElse(() => Config.string("OS_AUTH_URL")),
+    Config.withDefault("https://api.pub1.infomaniak.cloud/identity/v3"),
   );
   const region = yield* Config.string("HERALD_SWIFTTEST_OS_REGION_NAME").pipe(
     Config.orElse(() => Config.string("HEARLD_SWIFTTEST_OS_REGION_NAME")),
-    Config.withDefault(""),
+    Config.orElse(() => Config.string("TF_VAR_OS_REGION_NAME")),
+    Config.orElse(() => Config.string("OS_REGION_NAME")),
+    Config.withDefault("dc3-a"),
   );
   const username = yield* Config.string("HERALD_SWIFTTEST_OS_USERNAME").pipe(
+    Config.orElse(() => Config.string("TF_VAR_OS_USERNAME")),
+    Config.orElse(() => Config.string("OS_USERNAME")),
     Config.withDefault(""),
   );
   const password = yield* Config.string("HERALD_SWIFTTEST_OS_PASSWORD").pipe(
+    Config.orElse(() => Config.string("TF_VAR_OS_PASSWORD")),
+    Config.orElse(() => Config.string("OS_PASSWORD")),
     Config.withDefault(""),
   );
   const projectName = yield* Config.string("HERALD_SWIFTTEST_OS_PROJECT_NAME")
-    .pipe(Config.withDefault(""));
+    .pipe(
+      Config.orElse(() => Config.string("TF_VAR_OS_PROJECT_NAME")),
+      Config.orElse(() => Config.string("OS_PROJECT_NAME")),
+      Config.withDefault(""),
+    );
 
   if (!authUrl || !username || !password || !projectName) {
     return yield* Effect.fail(
@@ -103,6 +114,33 @@ display_name = alt
 email = alt@example.com
 access_key = dummy
 secret_key = dummy
+
+[s3 tenant]
+user_id = tenant
+display_name = tenant
+email = tenant@example.com
+access_key = dummy
+secret_key = dummy
+tenant = dummy
+
+[iam]
+email = s3@example.com
+user_id = 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+access_key = dummy
+secret_key = dummy
+display_name = youruseridhere
+
+[iam root]
+access_key = dummyroot
+secret_key = dummyroot
+user_id = RGW11111111111111111
+email = account1@ceph.com
+
+[iam alt root]
+access_key = dummyaltroot
+secret_key = dummyaltroot
+user_id = RGW22222222222222222
+email = account2@ceph.com
 `;
 
   const confPath = yield* Effect.promise(() =>
@@ -194,7 +232,7 @@ secret_key = dummy
   console.log(colors.green(`\n✓ s3-tests completed successfully.`));
 }).pipe(
   Effect.scoped,
-  Effect.provide(Logger.minimumLogLevel(LogLevel.Info)),
+  Effect.provide(Logger.minimumLogLevel(LogLevel.Debug)),
 );
 
 if (import.meta.main) {

@@ -4,7 +4,7 @@
     all HTTP requests.
   - Prefer generators over effect piping.
   - Use methods on `Effect.Option` like `Option.isNone` instead of looking at
-    _tag.
+    `_tag`.
   - **NEVER** use standard `try/catch` or `try/finally` blocks around `yield*`
     in Effect generators. Use `Effect.addFinalizer`, `Effect.try`,
     `Effect.catchAll`, or `Effect.orElse`.
@@ -28,3 +28,6 @@
   agent.
 - Maintain strict type safety. Avoid "any" casts or requirement hacks.
 - Use the structured `Logger` layer for all diagnostic output.
+
+- Always fix deno lint and deno check issues before running tests, the type
+  system is there to help.

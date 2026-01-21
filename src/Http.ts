@@ -29,15 +29,10 @@ export const HttpServerHeraldLive = Layer.unwrapEffect(
       3000,
     );
     return HttpApiBuilder.serve(HttpMiddleware.logger).pipe(
-      // provides swagger ui for http api
       Layer.provide(HttpApiSwagger.layer()),
-      // provides openapi.json endpoint
       Layer.provide(HttpApiBuilder.middlewareOpenApi()),
-      // adds cors support
-      // FIXME: config support
       Layer.provide(HttpApiBuilder.middlewareCors()),
       Layer.provide(HttpHeraldLive),
-      // log address at startup
       HttpServer.withLogAddress,
       Layer.provide(NodeHttpServer.layer(createServer, { port })),
       Layer.provide(HeraldConfigLive),

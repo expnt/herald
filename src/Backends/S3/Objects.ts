@@ -597,6 +597,7 @@ export const makeObjectOps = (target: S3Target) => ({
     key: string,
     uploadId: string,
     parts: readonly { etag: string; partNumber: number }[],
+    _metadata: Record<string, string>,
   ) =>
     Effect.gen(function* () {
       const { client, bucketName } = target;

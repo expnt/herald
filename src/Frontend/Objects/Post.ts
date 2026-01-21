@@ -1,7 +1,8 @@
-import { Effect, Option, Stream } from "effect";
+import { Effect, Option } from "effect";
 import { HttpServerResponse } from "@effect/platform";
 import { RequestContext } from "../Utils.ts";
 import { S3Xml } from "../../Services/S3Xml.ts";
+import { NoSuchUpload } from "../../Services/Backend.ts";
 
 /**
  * Handler for POST requests on buckets or objects.
@@ -15,18 +16,7 @@ export const postObject = () =>
 
     if (params.delete !== undefined) {
       // Multi-Object Delete
-      const bodyChunks = yield* Stream.runCollect(request.stream);
-      let totalLength = 0;
-      for (const chunk of Array.from(bodyChunks)) {
-        totalLength += chunk.length;
-      }
-      const bodyBytes = new Uint8Array(totalLength);
-      let offset = 0;
-      for (const chunk of Array.from(bodyChunks)) {
-        bodyBytes.set(chunk, offset);
-        offset += chunk.length;
-      }
-      const bodyText = new TextDecoder().decode(bodyBytes);
+      const bodyText = yield* request.text;
 
       const objects: { key: string; versionId?: string }[] = [];
       // Simple XML parsing for Multi-Object Delete
@@ -78,7 +68,28 @@ export const postObject = () =>
       const result = yield* backend.createMultipartUpload(
         key,
         request.headers,
+      ).pipe(
+        Effect.tapError((e) =>
+          Effect.logError(`createMultipartUpload failed: ${e}`)
+        ),
       );
+      // Save metadata
+      const metadata: Record<string, string> = {};
+      for (const [k, v] of Object.entries(request.headers)) {
+        const lowK = k.toLowerCase();
+        if (lowK.startsWith("x-amz-meta-") || lowK === "content-type") {
+          metadata[lowK] = String(v);
+        }
+      }
+      yield* backend.multipartMetadataStore.set(
+        result.uploadId,
+        JSON.stringify(metadata),
+      ).pipe(
+        Effect.tapError((e) =>
+          Effect.logError(`metadataStore.set failed: ${e}`)
+        ),
+      );
+
       return s3Xml.formatInitiateMultipartUpload(
         bucket,
         key,
@@ -88,18 +99,7 @@ export const postObject = () =>
 
     if (params.uploadId) {
       // Complete Multipart Upload
-      const bodyChunks = yield* Stream.runCollect(request.stream);
-      let totalLength = 0;
-      for (const chunk of Array.from(bodyChunks)) {
-        totalLength += chunk.length;
-      }
-      const bodyBytes = new Uint8Array(totalLength);
-      let offset = 0;
-      for (const chunk of Array.from(bodyChunks)) {
-        bodyBytes.set(chunk, offset);
-        offset += chunk.length;
-      }
-      const bodyText = new TextDecoder().decode(bodyBytes);
+      const bodyText = yield* request.text;
 
       const parts: { etag: string; partNumber: number }[] = [];
       const partMatches = Array.from(
@@ -119,33 +119,61 @@ export const postObject = () =>
         }
       }
 
+      // Retrieve metadata
+      const metadataOpt = yield* backend.multipartMetadataStore.get(
+        params.uploadId,
+      );
+
+      if (Option.isNone(metadataOpt)) {
+        const head = yield* backend.headObject(key, {}).pipe(
+          Effect.orElseFail(() =>
+            new NoSuchUpload({
+              uploadId: params.uploadId!,
+              message: "The specified upload does not exist.",
+            })
+          ),
+        );
+        if (head.etag) {
+          return s3Xml.formatCompleteMultipartUpload({
+            location: `http://localhost/${bucket}/${key}`, // Approximate
+            bucket,
+            key,
+            etag: head.etag,
+          });
+        }
+        return yield* Effect.fail(
+          new NoSuchUpload({
+            uploadId: params.uploadId!,
+            message: "The specified upload does not exist.",
+          }),
+        );
+      }
+
+      const metadata = JSON.parse(metadataOpt.value);
+
       const result = yield* backend.completeMultipartUpload(
         key,
         params.uploadId,
         parts,
+        metadata,
       ).pipe(
-        Effect.catchTag("NoSuchUpload", (e) =>
-          Effect.gen(function* () {
-            // Idempotency: check if object already exists
-            const head = yield* backend.headObject(key, {}).pipe(
-              Effect.orElseFail(() => e),
-            );
-            if (head.etag) {
-              return {
-                location: `http://localhost/${bucket}/${key}`, // Approximate
-                bucket,
-                key,
-                etag: head.etag,
-                versionId: head.headers["x-amz-version-id"],
-              };
-            }
-            return yield* Effect.fail(e);
-          })),
+        Effect.tap(() =>
+          backend.multipartMetadataStore.remove(params.uploadId!).pipe(
+            Effect.ignore,
+          )
+        ),
       );
+
       return s3Xml.formatCompleteMultipartUpload(result);
     }
 
     return yield* Effect.fail(
       new Error(`Method POST for key [${key}] not implemented`),
     );
-  });
+  }).pipe(
+    Effect.catchAll((e) => {
+      return Effect.logError(`postObject error: ${e}`).pipe(
+        Effect.zipRight(Effect.fail(e)),
+      );
+    }),
+  );

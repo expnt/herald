@@ -1,8 +1,10 @@
 import { Effect } from "effect";
 import { type HttpClient, HttpClientRequest } from "@effect/platform";
 import {
+  type BackendService,
   BucketAlreadyOwnedByYou,
   type BucketInfo,
+  type ListObjectsResult,
   type OwnerInfo,
 } from "../../Services/Backend.ts";
 import { mapError, type SwiftTarget } from "./Utils.ts";
@@ -15,6 +17,10 @@ export interface SwiftContainer {
 export const makeBucketOps = (
   target: SwiftTarget,
   client: HttpClient.HttpClient,
+  objectOps: {
+    listObjects: BackendService["listObjects"];
+    deleteObject: BackendService["deleteObject"];
+  },
 ) => ({
   listBuckets: () =>
     Effect.gen(function* () {
@@ -89,6 +95,24 @@ export const makeBucketOps = (
   deleteBucket: () =>
     Effect.gen(function* () {
       const { url, token, container } = target;
+
+      // 1. Cleanup .herald/ objects so bucket can be deleted
+      let marker: string | undefined = undefined;
+      while (true) {
+        const heraldObjects: ListObjectsResult = yield* objectOps.listObjects({
+          prefix: ".herald/",
+          marker,
+        });
+        for (const obj of heraldObjects.contents) {
+          yield* objectOps.deleteObject(obj.key).pipe(Effect.ignore);
+        }
+        if (!heraldObjects.isTruncated || !heraldObjects.nextMarker) {
+          break;
+        }
+        marker = heraldObjects.nextMarker;
+      }
+
+      // 2. Delete the bucket
       const response = yield* client.execute(
         HttpClientRequest.del(url).pipe(
           HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
