@@ -68,7 +68,7 @@ jobs:
 
           echo "Waiting for SAIO..."
           for i in {1..60}; do
-            if curl -sf http://localhost:8080/auth/v1.0; then
+            if curl -sf http://localhost:8080/healthcheck; then
               echo "SAIO is ready"
               exit 0
             fi
