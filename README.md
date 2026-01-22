@@ -97,11 +97,14 @@ cors:
 
 ### CORS Configuration
 
-Herald supports fine-grained CORS control at three levels with the following precedence: **Bucket > Backend > Global**.
+Herald supports fine-grained CORS control at three levels with the following
+precedence: **Bucket > Backend > Global**.
 
 - **Global**: Defined at the root of the config file under `cors`.
-- **Backend**: Defined within a backend block under `cors`. Overrides global settings.
-- **Bucket**: Defined within a bucket definition under `cors`. Overrides both backend and global settings.
+- **Backend**: Defined within a backend block under `cors`. Overrides global
+  settings.
+- **Bucket**: Defined within a bucket definition under `cors`. Overrides both
+  backend and global settings.
 
 Example with overrides:
 
