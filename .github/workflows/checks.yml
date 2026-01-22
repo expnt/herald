@@ -8,6 +8,10 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   DOCKER_CMD: docker
   UV_CACHE_DIR: /tmp/.uv-cache
@@ -19,9 +23,6 @@ jobs:
       HERALD_SWIFTTEST_OS_USERNAME: ${{ secrets.OPENSTACK_USERNAME }}
       HERALD_SWIFTTEST_OS_PASSWORD: ${{ secrets.OPENSTACK_PASSWORD }}
       HERALD_SWIFTTEST_OS_PROJECT_NAME: ${{ secrets.OPENSTACK_PROJECT }}
-    strategy:
-      matrix:
-        backend: [minio, swift]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -76,16 +77,42 @@ jobs:
       - name: Benchmarks
         run: nix develop --command deno bench --allow-all benchmarks/
 
-      - name: S3 Compatibility (MinIO)
-        if: matrix.backend == 'minio'
-        run: nix develop --command deno run --allow-all x/s3-tests.ts --backend minio
-
-      - name: S3 Compatibility (Swift)
-        if: matrix.backend == 'swift' && env.HERALD_SWIFTTEST_OS_USERNAME != ''
+      - name: S3 Compatibility
         env:
           HERALD_SWIFTTEST_OS_REGION_NAME: dc3-a
           HERALD_SWIFTTEST_AUTH_URL: https://api.pub1.infomaniak.cloud/identity/v3
-        run: nix develop --command deno run --allow-all x/s3-tests.ts --backend swift
+        run: |
+          # Run MinIO tests in background
+          nix develop --command deno run --allow-all x/s3-tests.ts --backend minio &
+          MINIO_PID=$!
+
+          # Run Swift tests in background if credentials exist
+          SWIFT_PID=""
+          if [ -n "$HERALD_SWIFTTEST_OS_USERNAME" ]; then
+            nix develop --command deno run --allow-all x/s3-tests.ts --backend swift &
+            SWIFT_PID=$!
+          else
+            echo "Swift credentials missing, skipping Swift compatibility tests."
+          fi
+
+          # Wait for both and capture exit codes
+          MINIO_EXIT=0
+          if ! wait $MINIO_PID; then
+            MINIO_EXIT=$?
+          fi
+
+          SWIFT_EXIT=0
+          if [ -n "$SWIFT_PID" ]; then
+            if ! wait $SWIFT_PID; then
+              SWIFT_EXIT=$?
+            fi
+          fi
+
+          # Exit with error if either failed
+          if [ $MINIO_EXIT -ne 0 ] || [ $SWIFT_EXIT -ne 0 ]; then
+            echo "One or more compatibility tests failed (MinIO: $MINIO_EXIT, Swift: $SWIFT_EXIT)"
+            exit 1
+          fi
 
       - name: Minimize uv cache
         run: nix develop --command uv cache prune --ci
@@ -93,8 +120,10 @@ jobs:
       - name: Dump logs on failure
         if: failure()
         run: |
-          echo "--- s3-tests/s3-tests.log ---"
+          echo "--- s3-tests/s3-tests.log (MinIO) ---"
           cat s3-tests/s3-tests.log || true
+          echo "--- s3-tests/s3-tests-swift.log (Swift) ---"
+          cat s3-tests/s3-tests-swift.log || true
           echo "--- s3-tests/herald-proxy.log ---"
           cat s3-tests/herald-proxy.log || true
           echo "--- s3-tests/herald-proxy-swift.log ---"

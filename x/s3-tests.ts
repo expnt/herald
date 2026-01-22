@@ -267,7 +267,8 @@ email = iam_alt_root@example.com
     );
     yield* Effect.promise(() => Deno.writeTextFile(confPath, confContent));
 
-    const logPath = path.join(s3TestsDir, "s3-tests.log");
+    const logName = backend === "swift" ? "s3-tests-swift.log" : "s3-tests.log";
+    const logPath = path.join(s3TestsDir, logName);
 
     console.log(`s3-tests directory: ${colors.gray(s3TestsDir)}`);
     console.log(`Log file: ${colors.gray(logPath)}`);
