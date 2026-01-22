@@ -250,6 +250,44 @@ const cases: TestCase[] = [
       },
     },
   },
+  {
+    id: "priority_full_hierarchy",
+    name: "full priority hierarchy (direct > map-glob > string-glob)",
+    input: {
+      backends: {
+        string_glob: {
+          protocol: "s3",
+          endpoint: "http://string-glob.com",
+          buckets: "logs-*",
+        },
+        map_glob: {
+          protocol: "s3",
+          endpoint: "http://map-glob.com",
+          buckets: {
+            "logs-2025-*": {},
+          },
+        },
+        direct: {
+          protocol: "s3",
+          endpoint: "http://direct.com",
+          buckets: {
+            "logs-2025-01": {},
+          },
+        },
+      },
+    },
+    expectedBuckets: {
+      "logs-2025-01": { backend_id: "direct", endpoint: "http://direct.com" },
+      "logs-2025-02": {
+        backend_id: "map_glob",
+        endpoint: "http://map-glob.com",
+      },
+      "logs-2024-12": {
+        backend_id: "string_glob",
+        endpoint: "http://string-glob.com",
+      },
+    },
+  },
 ];
 
 for (const tc of cases) {

@@ -15,10 +15,29 @@ export const SwiftCredentials = Schema.Struct({
 
 export const Credentials = Schema.Union(S3Credentials, SwiftCredentials);
 
+export const CorsConfig = Schema.Struct({
+  allowedOrigins: Schema.optional(Schema.Array(Schema.String)),
+  allowedMethods: Schema.optional(Schema.Array(Schema.String)),
+  allowedHeaders: Schema.optional(Schema.Array(Schema.String)),
+  exposedHeaders: Schema.optional(Schema.Array(Schema.String)),
+  maxAge: Schema.optional(Schema.Number),
+  credentials: Schema.optional(Schema.Boolean),
+}).pipe(
+  Schema.filter((c) => {
+    if (c.allowedOrigins?.includes("*") && c.credentials) {
+      return "CORS configuration cannot have allowedOrigins: ['*'] when credentials: true";
+    }
+    return true;
+  }),
+);
+
+export type CorsConfig = Schema.Schema.Type<typeof CorsConfig>;
+
 export const BucketOverride = Schema.Struct({
   endpoint: Schema.optional(Schema.String),
   bucket_name: Schema.optional(Schema.String),
   region: Schema.optional(Schema.String),
+  cors: Schema.optional(CorsConfig),
 });
 
 export type BucketOverride = Schema.Schema.Type<typeof BucketOverride>;
@@ -37,6 +56,7 @@ export const S3Config = Schema.Struct({
   region: Schema.optional(Schema.String),
   credentials: Schema.optional(S3Credentials),
   buckets: BucketsConfig,
+  cors: Schema.optional(CorsConfig),
 });
 
 export const SwiftConfig = Schema.Struct({
@@ -46,6 +66,7 @@ export const SwiftConfig = Schema.Struct({
   container: Schema.optional(Schema.String),
   credentials: Schema.optional(SwiftCredentials),
   buckets: BucketsConfig,
+  cors: Schema.optional(CorsConfig),
 });
 
 export const BackendConfig = Schema.Union(S3Config, SwiftConfig);
@@ -54,6 +75,7 @@ export type BackendConfig = Schema.Schema.Type<typeof BackendConfig>;
 
 export const GlobalConfig = Schema.Struct({
   backends: Schema.Record({ key: Schema.String, value: BackendConfig }),
+  cors: Schema.optional(CorsConfig),
 });
 
 export type GlobalConfig = Schema.Schema.Type<typeof GlobalConfig>;
@@ -164,4 +186,67 @@ export const lookupBucket = (
   }
 
   return Option.none();
+};
+
+export const resolveCorsConfig = (
+  config: GlobalConfig,
+  bucketName: string,
+): CorsConfig | undefined => {
+  // 1. Find the backend and bucket override
+  let bucketCors: CorsConfig | undefined;
+  let backendCors: CorsConfig | undefined;
+
+  for (const backend of Object.values(config.backends)) {
+    const buckets = backend.buckets;
+    if (buckets && typeof buckets !== "string" && buckets[bucketName]) {
+      bucketCors = buckets[bucketName].cors;
+      backendCors = backend.cors;
+      break;
+    }
+  }
+
+  // If not found by direct hit, try glob match (similar to lookupBucket)
+  if (!bucketCors && !backendCors) {
+    for (const backend of Object.values(config.backends)) {
+      const buckets = backend.buckets;
+      if (buckets && typeof buckets !== "string") {
+        let foundMatch = false;
+        for (const [key, override] of Object.entries(buckets)) {
+          if (globToRegex(key).test(bucketName)) {
+            bucketCors = (override as BucketOverride).cors;
+            backendCors = backend.cors;
+            foundMatch = true;
+            break;
+          }
+        }
+        if (foundMatch) break;
+      }
+    }
+  }
+
+  // If still not found, check if it's a general backend match
+  if (!bucketCors && !backendCors) {
+    for (const backend of Object.values(config.backends)) {
+      const buckets = backend.buckets;
+      if (
+        typeof buckets === "string" && globToRegex(buckets).test(bucketName)
+      ) {
+        backendCors = backend.cors;
+        break;
+      }
+    }
+  }
+
+  const globalCors = config.cors;
+
+  if (!bucketCors && !backendCors && !globalCors) {
+    return undefined;
+  }
+
+  // Merge with precedence: bucket > backend > global
+  return {
+    ...globalCors,
+    ...backendCors,
+    ...bucketCors,
+  };
 };

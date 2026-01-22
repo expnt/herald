@@ -31,8 +31,7 @@ export type BenchmarkCase = {
 
 export const getSwiftConfig = () =>
   Effect.gen(function* () {
-    const authUrl = yield* Config.string("HEARLD_SWIFTTEST_AUTH_URL").pipe(
-      Config.orElse(() => Config.string("HERALD_SWIFTTEST_AUTH_URL")),
+    const authUrl = yield* Config.string("HERALD_SWIFTTEST_AUTH_URL").pipe(
       Config.orElse(() => Config.string("OS_AUTH_URL")),
       Config.withDefault("http://localhost:8080/auth/v1.0"),
       Config.option,
@@ -56,8 +55,7 @@ export const getSwiftConfig = () =>
         Config.orElse(() => Config.string("OS_PROJECT_NAME")),
         Config.option,
       );
-    const region = yield* Config.string("HEARLD_SWIFTTEST_OS_REGION_NAME").pipe(
-      Config.orElse(() => Config.string("HERALD_SWIFTTEST_OS_REGION_NAME")),
+    const region = yield* Config.string("HERALD_SWIFTTEST_OS_REGION_NAME").pipe(
       Config.orElse(() => Config.string("TF_VAR_OS_REGION_NAME")),
       Config.orElse(() => Config.string("OS_REGION_NAME")),
       Config.withDefault("dc3-a"),

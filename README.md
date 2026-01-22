@@ -68,9 +68,78 @@ backends:
       # Glob pattern support within the map
       "test-*":
         region: us-east-1
-  minio2:
-    # simple config for matching glob buckets
-    buckets: "my-*"
+
+  # Example Swift backend
+  swift-storage:
+    protocol: swift
+    auth_url: http://keystone.example.com/v3
+    region: RegionOne
+    # Optional: override the Swift container name for all buckets in this backend
+    # container: my-fixed-container
+    credentials:
+      username: my-user
+      password: my-password
+      project_name: my-project
+      user_domain_name: Default
+      project_domain_name: Default
+    # Route all archive buckets to Swift
+    buckets: "archive-*"
+
+cors:
+  # Global CORS defaults
+  allowedOrigins: ["*"]
+  allowedMethods: ["GET", "PUT", "POST", "DELETE", "HEAD", "OPTIONS"]
+  allowedHeaders: ["*"]
+  exposedHeaders: ["*"]
+  maxAge: 3600
+  credentials: false
+```
+
+### CORS Configuration
+
+Herald supports fine-grained CORS control at three levels with the following
+precedence: **Bucket > Backend > Global**.
+
+- **Global**: Defined at the root of the config file under `cors`.
+- **Backend**: Defined within a backend block under `cors`. Overrides global
+  settings.
+- **Bucket**: Defined within a bucket definition under `cors`. Overrides both
+  backend and global settings.
+
+#### Default Behavior
+
+If no CORS configuration is provided at any level, **CORS is disabled** and
+Herald will not add any CORS-related headers to responses. Preflight `OPTIONS`
+requests will be passed through to the backend.
+
+If you enable CORS by providing configuration at any level, the following
+defaults are applied for any omitted fields:
+
+| Field            | Default Value                           | Description                                            |
+| ---------------- | --------------------------------------- | ------------------------------------------------------ |
+| `maxAge`         | `3600`                                  | Max age in seconds for preflight results               |
+| `allowedMethods` | `GET, PUT, POST, DELETE, HEAD, OPTIONS` | Allowed HTTP methods                                   |
+| `allowedHeaders` | (Mirrors request)                       | Defaults to mirroring `Access-Control-Request-Headers` |
+| `credentials`    | `false`                                 | Whether to allow credentials                           |
+| `allowedOrigins` | (None)                                  | Headers only added if `Origin` matches an entry        |
+
+Example with overrides:
+
+```yaml
+cors: # Global defaults
+  allowedOrigins: ["*"]
+  credentials: false
+
+backends:
+  prod:
+    protocol: s3
+    cors: # Backend-level override
+      allowedOrigins: ["https://app.example.com"]
+      credentials: true
+    buckets:
+      assets:
+        cors: # Bucket-level override
+          allowedOrigins: ["https://cdn.example.com"]
 ```
 
 ### Routing Logic
@@ -81,5 +150,5 @@ resolves the backend using the following priority:
 1. **Direct match**: Looks for `my-bucket` in all backends' `buckets` maps.
 2. **Glob match (map)**: Looks for glob patterns (like `test-*`) in all
    backends' `buckets` maps.
-3. **Glob match (string)**: If a backend has `buckets: "..."`, it checks if the
-   bucket name matches that pattern.
+3. **Glob match (string)**: If a backend has `buckets: "string-*"`, it checks if
+   the bucket name matches that pattern.

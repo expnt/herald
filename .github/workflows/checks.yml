@@ -19,10 +19,6 @@ env:
 jobs:
   checks:
     runs-on: ubuntu-latest
-    env:
-      HERALD_SWIFTTEST_OS_USERNAME: ${{ secrets.OPENSTACK_USERNAME }}
-      HERALD_SWIFTTEST_OS_PASSWORD: ${{ secrets.OPENSTACK_PASSWORD }}
-      HERALD_SWIFTTEST_OS_PROJECT_NAME: ${{ secrets.OPENSTACK_PROJECT }}
     steps:
       - uses: actions/checkout@v4
         with:
