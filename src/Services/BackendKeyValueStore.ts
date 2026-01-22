@@ -3,6 +3,21 @@ import { KeyValueStore } from "@effect/platform";
 import { SystemError } from "@effect/platform/Error";
 import type { BackendService } from "./Backend.ts";
 
+const collectChunks = (chunks: Chunk.Chunk<Uint8Array>) => {
+  const totalLength = Chunk.reduce(
+    chunks,
+    0,
+    (acc, chunk) => acc + chunk.length,
+  );
+  const all = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    all.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return all;
+};
+
 /**
  * A KeyValueStore that persists its data as objects in a BackendService.
  * This is used by backends like Swift that don't natively support S3 multipart metadata
@@ -21,17 +36,7 @@ export const makeBackendKeyValueStore = (
       return ops.getObject(`${prefix}${key}`, {}).pipe(
         Effect.flatMap((res) => Stream.runCollect(res.stream)),
         Effect.map((chunks) => {
-          const totalLength = Chunk.reduce(
-            chunks,
-            0,
-            (acc, chunk) => acc + chunk.length,
-          );
-          const all = new Uint8Array(totalLength);
-          let offset = 0;
-          for (const chunk of chunks) {
-            all.set(chunk, offset);
-            offset += chunk.length;
-          }
+          const all = collectChunks(chunks);
           return Option.some(new TextDecoder().decode(all));
         }),
         Effect.catchTag("NoSuchKey", () => Effect.succeed(Option.none())),
@@ -53,17 +58,7 @@ export const makeBackendKeyValueStore = (
       return ops.getObject(`${prefix}${key}`, {}).pipe(
         Effect.flatMap((res) => Stream.runCollect(res.stream)),
         Effect.map((chunks) => {
-          const totalLength = Chunk.reduce(
-            chunks,
-            0,
-            (acc, chunk) => acc + chunk.length,
-          );
-          const all = new Uint8Array(totalLength);
-          let offset = 0;
-          for (const chunk of chunks) {
-            all.set(chunk, offset);
-            offset += chunk.length;
-          }
+          const all = collectChunks(chunks);
           return Option.some(all);
         }),
         Effect.catchTag("NoSuchKey", () => Effect.succeed(Option.none())),
@@ -120,6 +115,20 @@ export const makeBackendKeyValueStore = (
           )
         ),
       ),
-    clear: Effect.die("Clear not supported in BackendKeyValueStore"),
-    size: Effect.die("Size not supported in BackendKeyValueStore"),
+    clear: Effect.fail(
+      new SystemError({
+        module: "KeyValueStore",
+        method: "clear",
+        reason: "Unknown",
+        description: "Clear not supported in BackendKeyValueStore",
+      }),
+    ),
+    size: Effect.fail(
+      new SystemError({
+        module: "KeyValueStore",
+        method: "size",
+        reason: "Unknown",
+        description: "Size not supported in BackendKeyValueStore",
+      }),
+    ),
   });

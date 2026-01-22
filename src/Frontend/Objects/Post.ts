@@ -1,6 +1,6 @@
 import { Effect, Option } from "effect";
 import { HttpServerResponse } from "@effect/platform";
-import { RequestContext } from "../Utils.ts";
+import { deriveBaseUrl, RequestContext } from "../Utils.ts";
 import { S3Xml } from "../../Services/S3Xml.ts";
 
 /**
@@ -131,8 +131,9 @@ export const postObject = () =>
           Effect.option,
         );
         if (Option.isSome(head) && head.value.etag) {
+          const baseUrl = deriveBaseUrl(request);
           return s3Xml.formatCompleteMultipartUpload({
-            location: `http://localhost/${bucket}/${key}`, // Approximate
+            location: `${baseUrl}/${bucket}/${key}`,
             bucket,
             key,
             etag: head.value.etag,
@@ -142,7 +143,13 @@ export const postObject = () =>
         // Backends like Swift will fail if the upload doesn't exist (no segments)
         // Backends like S3 will succeed if S3 says it's okay.
       } else {
-        metadata = JSON.parse(metadataOpt.value);
+        try {
+          metadata = JSON.parse(metadataOpt.value);
+        } catch (e) {
+          yield* Effect.logError(
+            `Failed to parse multipart metadata for ${key}/${params.uploadId}: ${e}`,
+          );
+        }
       }
 
       const result = yield* backend.completeMultipartUpload(

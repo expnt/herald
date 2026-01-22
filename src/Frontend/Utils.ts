@@ -46,6 +46,17 @@ export function fixHeaderEncoding(value: string): string {
 }
 
 /**
+ * Derives the base URL for the S3 response, using the Host header.
+ */
+export function deriveBaseUrl(
+  request: HttpServerRequest.HttpServerRequest,
+): string {
+  const host = request.headers["host"] || "localhost";
+  const protocol = request.url.startsWith("https") ? "https" : "http";
+  return `${protocol}://${host}`;
+}
+
+/**
  * Extracts the object key from the request URL, given the bucket name.
  */
 export function extractKey(requestUrl: string, bucket: string): string {

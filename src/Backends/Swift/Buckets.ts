@@ -104,13 +104,17 @@ export const makeBucketOps = (
             prefix,
             marker,
           });
+          if (objects.contents.length === 0) {
+            break;
+          }
           for (const obj of objects.contents) {
             yield* objectOps.deleteObject(obj.key).pipe(Effect.ignore);
           }
-          if (!objects.isTruncated || !objects.nextMarker) {
+          if (!objects.isTruncated) {
             break;
           }
-          marker = objects.nextMarker;
+          marker = objects.nextMarker ??
+            objects.contents[objects.contents.length - 1].key;
         }
       }
 
