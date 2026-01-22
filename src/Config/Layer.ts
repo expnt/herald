@@ -1,6 +1,7 @@
 import { Config, Context, Effect, Layer, type Option, Schema } from "effect";
 import { parse } from "@std/yaml";
 import {
+  type BackendConfig,
   GlobalConfig,
   lookupBucket,
   type MaterializedBucket,
@@ -55,6 +56,12 @@ export function parseConfig(
     "PROJECT_NAME",
     "USER_DOMAIN_NAME",
     "PROJECT_DOMAIN_NAME",
+    "CORS_ALLOWED_ORIGINS",
+    "CORS_ALLOWED_METHODS",
+    "CORS_ALLOWED_HEADERS",
+    "CORS_EXPOSED_HEADERS",
+    "CORS_MAX_AGE",
+    "CORS_CREDENTIALS",
   ];
 
   for (const [key, value] of Object.entries(env)) {
@@ -93,8 +100,61 @@ export function parseConfig(
         backend.credentials = {} as Record<string, unknown>;
       }
       (backend.credentials as Record<string, unknown>)[configKey] = value;
+    } else if (configKey.startsWith("cors_")) {
+      if (!backend.cors) {
+        backend.cors = {} as Record<string, unknown>;
+      }
+      const corsKey = configKey.substring(5);
+      const camelCorsKey = corsKey.replace(
+        /_([a-z])/g,
+        (_, g) => g.toUpperCase(),
+      );
+
+      if (
+        camelCorsKey === "allowedOrigins" ||
+        camelCorsKey === "allowedMethods" ||
+        camelCorsKey === "allowedHeaders" || camelCorsKey === "exposedHeaders"
+      ) {
+        (backend.cors as Record<string, unknown>)[camelCorsKey] = value.split(
+          ",",
+        ).map((s) => s.trim());
+      } else if (camelCorsKey === "maxAge") {
+        (backend.cors as Record<string, unknown>)[camelCorsKey] = parseInt(
+          value,
+          10,
+        );
+      } else if (camelCorsKey === "credentials") {
+        (backend.cors as Record<string, unknown>)[camelCorsKey] =
+          value.toLowerCase() === "true";
+      }
     } else {
       backend[configKey] = value;
+    }
+  }
+
+  // Handle global CORS from env
+  const globalCors: Record<string, unknown> = (yamlConfig &&
+      typeof yamlConfig === "object" && "cors" in yamlConfig)
+    ? { ...(yamlConfig as { cors: Record<string, unknown> }).cors }
+    : {};
+
+  for (const [key, value] of Object.entries(env)) {
+    if (!key.startsWith("HERALD_CORS_")) continue;
+    const corsKey = key.substring(12).toLowerCase();
+    const camelCorsKey = corsKey.replace(
+      /_([a-z])/g,
+      (_, g) => g.toUpperCase(),
+    );
+
+    if (
+      camelCorsKey === "allowedOrigins" || camelCorsKey === "allowedMethods" ||
+      camelCorsKey === "allowedHeaders" || camelCorsKey === "exposedHeaders"
+    ) {
+      globalCors[camelCorsKey] = value.split(",").map((s) => s.trim());
+    } else if (camelCorsKey === "maxAge") {
+      globalCors[camelCorsKey] = parseInt(value, 10);
+    } else if (camelCorsKey === "credentials") {
+      globalCors[camelCorsKey] = value.toLowerCase() === "true";
     }
   }
 
@@ -106,7 +166,17 @@ export function parseConfig(
     };
   }
 
-  return Schema.decodeUnknownSync(GlobalConfig)({ backends });
+  const validatedBackends: Record<string, BackendConfig> = {};
+  for (const [id, b] of Object.entries(backends)) {
+    if (b.protocol === "s3" || b.protocol === "swift") {
+      validatedBackends[id] = b as BackendConfig;
+    }
+  }
+
+  return Schema.decodeUnknownSync(GlobalConfig)({
+    backends: validatedBackends,
+    cors: Object.keys(globalCors).length > 0 ? globalCors : undefined,
+  });
 }
 
 export const HeraldConfigLive = Layer.effect(

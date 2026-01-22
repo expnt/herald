@@ -31,9 +31,15 @@ export const HttpServerHeraldLive = Layer.unwrapEffect(
     return HttpApiBuilder.serve(HttpMiddleware.logger).pipe(
       Layer.provide(HttpApiSwagger.layer()),
       Layer.provide(HttpApiBuilder.middlewareOpenApi()),
-      Layer.provide(HttpApiBuilder.middlewareCors()),
       Layer.provide(HttpHeraldLive),
       HttpServer.withLogAddress,
+      Layer.provide(HttpApiBuilder.middlewareCors({
+        allowedOrigins: ["*"],
+        allowedMethods: ["GET", "PUT", "POST", "DELETE", "HEAD", "OPTIONS"],
+        allowedHeaders: ["*"],
+        exposedHeaders: ["*"],
+        credentials: true,
+      })),
       Layer.provide(NodeHttpServer.layer(createServer, { port })),
       Layer.provide(HeraldConfigLive),
     );

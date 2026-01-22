@@ -68,9 +68,22 @@ backends:
       # Glob pattern support within the map
       "test-*":
         region: us-east-1
-  minio2:
-    # simple config for matching glob buckets
-    buckets: "my-*"
+
+  # Example Swift backend
+  swift-storage:
+    protocol: swift
+    auth_url: http://keystone.example.com/v3
+    region: RegionOne
+    # Optional: override the Swift container name for all buckets in this backend
+    # container: my-fixed-container
+    credentials:
+      username: my-user
+      password: my-password
+      project_name: my-project
+      user_domain_name: Default
+      project_domain_name: Default
+    # Route all archive buckets to Swift
+    buckets: "archive-*"
 ```
 
 ### Routing Logic
@@ -81,5 +94,5 @@ resolves the backend using the following priority:
 1. **Direct match**: Looks for `my-bucket` in all backends' `buckets` maps.
 2. **Glob match (map)**: Looks for glob patterns (like `test-*`) in all
    backends' `buckets` maps.
-3. **Glob match (string)**: If a backend has `buckets: "..."`, it checks if the
-   bucket name matches that pattern.
+3. **Glob match (string)**: If a backend has `buckets: "string-*"`, it checks if
+   the bucket name matches that pattern.
