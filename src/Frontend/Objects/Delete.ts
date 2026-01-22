@@ -12,6 +12,10 @@ export const deleteObject = () =>
     if (params.uploadId) {
       // Abort Multipart Upload
       yield* backend.abortMultipartUpload(key, params.uploadId);
+      yield* backend.multipartMetadataStore.remove(`${key}/${params.uploadId}`)
+        .pipe(
+          Effect.ignore,
+        );
       return HttpServerResponse.empty({ status: 204 });
     }
 

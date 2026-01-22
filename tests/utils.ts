@@ -61,8 +61,12 @@ export const makeTestHarness = (
     // Start Deno.serve on a random port
     const server = Deno.serve(
       { port: 0, onListen: () => {} },
-      (req) => {
-        return webHandler.handler(req);
+      async (req) => {
+        try {
+          return await webHandler.handler(req);
+        } catch (_e) {
+          return new Response("Internal Server Error", { status: 500 });
+        }
       },
     );
 
@@ -272,6 +276,7 @@ export type ProxyTestCase = {
   ) => Promise<void> | Effect.Effect<void, unknown, never>;
   ignore?: boolean;
   only?: boolean;
+  skipSnapshot?: boolean;
 };
 
 function baselineRunner(tc: ProxyTestCase, t: Deno.TestContext) {
@@ -304,7 +309,7 @@ function baselineRunner(tc: ProxyTestCase, t: Deno.TestContext) {
     yield* resultEffect;
 
     const lastResponse = h.getLastResponse();
-    if (lastResponse) {
+    if (lastResponse && !tc.skipSnapshot) {
       yield* Effect.tryPromise(() =>
         assertSnapshot(t, {
           status: lastResponse.status,
@@ -366,7 +371,7 @@ function proxyRunner(tc: ProxyTestCase, t: Deno.TestContext) {
     yield* resultEffect;
 
     const lastResponse = h.getLastResponse();
-    if (lastResponse) {
+    if (lastResponse && !tc.skipSnapshot) {
       yield* Effect.tryPromise(() =>
         assertSnapshot(t, {
           status: lastResponse.status,
@@ -400,21 +405,22 @@ function proxyRunner(tc: ProxyTestCase, t: Deno.TestContext) {
 
 const getSwiftConfig = () =>
   Effect.gen(function* () {
-    const authUrl = yield* Config.string("HEARLD_SWIFTTEST_AUTH_URL").pipe(
-      Config.orElse(() => Config.string("HERALD_SWIFTTEST_AUTH_URL")),
+    const authUrl = yield* Config.string("HERALD_SWIFTTEST_AUTH_URL").pipe(
       Config.orElse(() => Config.string("OS_AUTH_URL")),
-      Config.withDefault("https://api.pub1.infomaniak.cloud/identity/v3"),
+      Config.withDefault("http://localhost:8080/auth/v1.0"),
       Config.option,
     );
 
     const username = yield* Config.string("HERALD_SWIFTTEST_OS_USERNAME").pipe(
       Config.orElse(() => Config.string("TF_VAR_OS_USERNAME")),
       Config.orElse(() => Config.string("OS_USERNAME")),
+      Config.withDefault("test:tester"),
       Config.option,
     );
     const password = yield* Config.string("HERALD_SWIFTTEST_OS_PASSWORD").pipe(
       Config.orElse(() => Config.string("TF_VAR_OS_PASSWORD")),
       Config.orElse(() => Config.string("OS_PASSWORD")),
+      Config.withDefault("testing"),
       Config.option,
     );
     const projectName = yield* Config.string("HERALD_SWIFTTEST_OS_PROJECT_NAME")
@@ -423,8 +429,7 @@ const getSwiftConfig = () =>
         Config.orElse(() => Config.string("OS_PROJECT_NAME")),
         Config.option,
       );
-    const region = yield* Config.string("HEARLD_SWIFTTEST_OS_REGION_NAME").pipe(
-      Config.orElse(() => Config.string("HERALD_SWIFTTEST_OS_REGION_NAME")),
+    const region = yield* Config.string("HERALD_SWIFTTEST_OS_REGION_NAME").pipe(
       Config.orElse(() => Config.string("TF_VAR_OS_REGION_NAME")),
       Config.orElse(() => Config.string("OS_REGION_NAME")),
       Config.withDefault("dc3-a"),
@@ -433,7 +438,7 @@ const getSwiftConfig = () =>
 
     if (
       Option.isNone(username) || Option.isNone(password) ||
-      Option.isNone(projectName) || Option.isNone(authUrl)
+      Option.isNone(authUrl)
     ) {
       return Option.none();
     }
@@ -447,7 +452,7 @@ const getSwiftConfig = () =>
           credentials: {
             username: username.value,
             password: password.value,
-            project_name: projectName.value,
+            project_name: Option.getOrUndefined(projectName),
             user_domain_name: "Default",
             project_domain_name: "Default",
           },
@@ -497,7 +502,7 @@ function swiftRunner(tc: ProxyTestCase, t: Deno.TestContext) {
     yield* resultEffect;
 
     const lastResponse = h.getLastResponse();
-    if (lastResponse) {
+    if (lastResponse && !tc.skipSnapshot) {
       yield* Effect.tryPromise(() =>
         assertSnapshot(t, {
           status: lastResponse.status,

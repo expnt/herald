@@ -33,6 +33,12 @@ services:
     volumes:
       - miniodata:/data
 
+  saio:
+    profiles: ["swift"]
+    image: docker.io/openstackswift/saio:latest
+    ports:
+      - "8080:8080"
+
 volumes:
   redisdata:
   miniodata:

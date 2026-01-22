@@ -276,10 +276,12 @@ export const makeObjectOps = (target: S3Target) => ({
         return body as ReadableStream<Uint8Array>;
       };
 
-      const stream = Stream.fromReadableStream(
-        getWebStream,
-        (e) => new Error(String(e)),
-      );
+      const webStream = getWebStream();
+      const stream: Stream.Stream<Uint8Array, Error> = Stream
+        .fromReadableStream(
+          () => webStream,
+          (e) => new Error(String(e)),
+        );
 
       const metadata: Record<string, string> = {};
       if (result.Metadata) {
@@ -314,31 +316,16 @@ export const makeObjectOps = (target: S3Target) => ({
         s3Headers[`x-amz-meta-${k}`] = v;
       }
 
-      return yield* Stream.runCollect(stream).pipe(
-        Effect.mapError((e) => new InternalError({ message: String(e) })),
-        Effect.map((chunks) => {
-          const totalLength = Chunk.reduce(
-            chunks,
-            0,
-            (acc, chunk) => acc + chunk.length,
-          );
-          const all = new Uint8Array(totalLength);
-          let offset = 0;
-          for (const chunk of chunks) {
-            all.set(chunk, offset);
-            offset += chunk.length;
-          }
-          return {
-            stream: Stream.succeed(all),
-            contentType: result.ContentType,
-            contentLength: all.length,
-            etag: result.ETag,
-            lastModified: result.LastModified,
-            metadata,
-            headers: s3Headers,
-          } satisfies ObjectResponse;
-        }),
-      );
+      return {
+        stream,
+        nativeStream: webStream,
+        contentType: result.ContentType,
+        contentLength: result.ContentLength,
+        etag: result.ETag,
+        lastModified: result.LastModified,
+        metadata,
+        headers: s3Headers,
+      } satisfies ObjectResponse;
     }),
 
   headObject: (
@@ -551,6 +538,7 @@ export const makeObjectOps = (target: S3Target) => ({
     uploadId: string,
     partNumber: number,
     bodyStream: Stream.Stream<Uint8Array, Error>,
+    _headers: Record<string, string | string[] | undefined>,
   ) =>
     Effect.gen(function* () {
       const { client, bucketName } = target;
@@ -597,6 +585,7 @@ export const makeObjectOps = (target: S3Target) => ({
     key: string,
     uploadId: string,
     parts: readonly { etag: string; partNumber: number }[],
+    _metadata: Record<string, string>,
   ) =>
     Effect.gen(function* () {
       const { client, bucketName } = target;

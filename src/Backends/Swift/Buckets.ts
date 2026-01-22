@@ -1,11 +1,13 @@
 import { Effect } from "effect";
 import { type HttpClient, HttpClientRequest } from "@effect/platform";
 import {
+  type BackendService,
   BucketAlreadyOwnedByYou,
   type BucketInfo,
+  type ListObjectsResult,
   type OwnerInfo,
 } from "../../Services/Backend.ts";
-import { mapError, type SwiftTarget } from "./Utils.ts";
+import { INTERNAL_PREFIX, mapError, type SwiftTarget } from "./Utils.ts";
 
 export interface SwiftContainer {
   readonly name: string;
@@ -15,6 +17,10 @@ export interface SwiftContainer {
 export const makeBucketOps = (
   target: SwiftTarget,
   client: HttpClient.HttpClient,
+  objectOps: {
+    listObjects: BackendService["listObjects"];
+    deleteObject: BackendService["deleteObject"];
+  },
 ) => ({
   listBuckets: () =>
     Effect.gen(function* () {
@@ -89,6 +95,37 @@ export const makeBucketOps = (
   deleteBucket: () =>
     Effect.gen(function* () {
       const { url, token, container } = target;
+
+      // 1. Cleanup .herald/ and .hrld/ objects so bucket can be deleted
+      yield* Effect.all(
+        [".herald/", INTERNAL_PREFIX].map((prefix) =>
+          Effect.gen(function* () {
+            let marker: string | undefined = undefined;
+            while (true) {
+              const objects: ListObjectsResult = yield* objectOps.listObjects({
+                prefix,
+                marker,
+              });
+              if (objects.contents.length === 0) {
+                break;
+              }
+              yield* Effect.all(
+                objects.contents.map((obj) =>
+                  objectOps.deleteObject(obj.key).pipe(Effect.ignore)
+                ),
+                { concurrency: 10 },
+              );
+              if (!objects.isTruncated || !objects.nextMarker) {
+                break;
+              }
+              marker = objects.nextMarker;
+            }
+          })
+        ),
+        { concurrency: 2 },
+      );
+
+      // 2. Delete the bucket
       const response = yield* client.execute(
         HttpClientRequest.del(url).pipe(
           HttpClientRequest.setHeaders({ "X-Auth-Token": token }),

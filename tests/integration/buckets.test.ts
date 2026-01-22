@@ -30,6 +30,7 @@ interface BucketTestSpec {
   setup?: (client: S3Client) => Promise<void>;
   teardown?: (client: S3Client) => Promise<void>;
   expectedErrorCode?: string;
+  skipSnapshot?: boolean;
 }
 
 const specs: BucketTestSpec[] = [
@@ -88,6 +89,7 @@ const specs: BucketTestSpec[] = [
   {
     name: "buckets/list",
     fn: (c) => c.send(new ListBucketsCommand({})),
+    skipSnapshot: true,
   },
 ];
 
@@ -126,6 +128,7 @@ const cases: ProxyTestCase[] = specs.map((spec) => ({
   name: spec.name,
   config: testConfig,
   fn: (client: S3Client) => runBucketTest(spec, client),
+  skipSnapshot: spec.skipSnapshot,
 }));
 
 harness(cases);

@@ -48,10 +48,11 @@ implementation.
 
 - [ ] **Multi-Object Delete**: Implementation of `POST /?delete`. _(Focus tests:
       `test_multi_object_delete`, `test_multi_object_delete_key_limit`)_
-- [ ] **Multipart Upload**: Support for `InitiateMultipartUpload`, `UploadPart`,
+- [x] **Multipart Upload**: Support for `InitiateMultipartUpload`, `UploadPart`,
       `CompleteMultipartUpload`, `AbortMultipartUpload`, and `ListParts`.
       _(Focus tests: `test_multipart_upload`, `test_multipart_upload_empty`,
       `test_abort_multipart_upload`)_
+  - [x] **Swift Multipart Upload**: Implement S3 multipart mapping to Swift SLO.
 - [ ] **GetObject Attributes**: Implementation of `GET /bucket/key?attributes`.
       _(Focus tests: `test_get_object_attributes`)_
 - [ ] **HeadObject Consistency**: Fix `404 Not Found` errors on existing objects

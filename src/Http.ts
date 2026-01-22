@@ -5,7 +5,7 @@ import {
   HttpServer,
 } from "@effect/platform";
 import { NodeHttpServer } from "@effect/platform-node";
-import { Config, Effect, Layer } from "effect";
+import { Config, Effect, flow, Layer } from "effect";
 // deno-lint-ignore no-external-import
 import { createServer } from "node:http";
 
@@ -16,6 +16,7 @@ import { HeraldConfigLive } from "./Config/Layer.ts";
 import { HttpHealthLive } from "./Frontend/Health/Http.ts";
 import { HttpS3Live } from "./Frontend/Http.ts";
 import { HttpHeraldApi } from "./Api.ts";
+import { corsMiddleware } from "./Frontend/Cors.ts";
 
 export const HttpHeraldLive = HttpApiBuilder.api(HttpHeraldApi).pipe(
   Layer.provide(HttpHealthLive),
@@ -28,16 +29,11 @@ export const HttpServerHeraldLive = Layer.unwrapEffect(
       Config.integer("PORT"),
       3000,
     );
-    return HttpApiBuilder.serve(HttpMiddleware.logger).pipe(
-      // provides swagger ui for http api
+    const middleware = flow(corsMiddleware, HttpMiddleware.logger);
+    return HttpApiBuilder.serve(middleware).pipe(
       Layer.provide(HttpApiSwagger.layer()),
-      // provides openapi.json endpoint
       Layer.provide(HttpApiBuilder.middlewareOpenApi()),
-      // adds cors support
-      // FIXME: config support
-      Layer.provide(HttpApiBuilder.middlewareCors()),
       Layer.provide(HttpHeraldLive),
-      // log address at startup
       HttpServer.withLogAddress,
       Layer.provide(NodeHttpServer.layer(createServer, { port })),
       Layer.provide(HeraldConfigLive),

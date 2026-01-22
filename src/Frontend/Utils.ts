@@ -46,6 +46,17 @@ export function fixHeaderEncoding(value: string): string {
 }
 
 /**
+ * Derives the base URL for the S3 response, using the Host header.
+ */
+export function deriveBaseUrl(
+  request: HttpServerRequest.HttpServerRequest,
+): string {
+  const host = request.headers["host"] || "localhost";
+  const protocol = request.url.startsWith("https") ? "https" : "http";
+  return `${protocol}://${host}`;
+}
+
+/**
  * Extracts the object key from the request URL, given the bucket name.
  */
 export function extractKey(requestUrl: string, bucket: string): string {
@@ -231,34 +242,40 @@ export function resolveBucket<
 
     return yield* resolver.provideForBucket(bucketName, program).pipe(
       Effect.catchAll((e) => {
-        if (
-          e instanceof NoSuchBucket ||
-          e instanceof NoSuchKey ||
-          e instanceof BucketAlreadyExists ||
-          e instanceof BucketAlreadyOwnedByYou ||
-          e instanceof InternalError ||
-          e instanceof AccessDenied ||
-          e instanceof BucketNotEmpty ||
-          e instanceof NoSuchUpload ||
-          e instanceof InvalidPart ||
-          e instanceof InvalidPartOrder ||
-          e instanceof EntityTooSmall ||
-          e instanceof InvalidRequest ||
-          e instanceof MalformedXML ||
-          e instanceof DeleteObjectsError
-        ) {
-          return Effect.succeed(s3Xml.formatError(e, isHead));
-        }
-        return Effect.logError(
-          `resolveBucket caught unhandled error for bucket ${bucketName}: ${e}`,
+        return Effect.logInfo(
+          `resolveBucket caught error for bucket ${bucketName}: ${e}`,
         ).pipe(
-          Effect.zipRight(
-            Effect.fail(
-              new BadGateway({
-                message: e instanceof Error ? e.message : String(e),
-              }),
-            ),
-          ),
+          Effect.flatMap(() => {
+            if (
+              e instanceof NoSuchBucket ||
+              e instanceof NoSuchKey ||
+              e instanceof BucketAlreadyExists ||
+              e instanceof BucketAlreadyOwnedByYou ||
+              e instanceof InternalError ||
+              e instanceof AccessDenied ||
+              e instanceof BucketNotEmpty ||
+              e instanceof NoSuchUpload ||
+              e instanceof InvalidPart ||
+              e instanceof InvalidPartOrder ||
+              e instanceof EntityTooSmall ||
+              e instanceof InvalidRequest ||
+              e instanceof MalformedXML ||
+              e instanceof DeleteObjectsError
+            ) {
+              return Effect.succeed(s3Xml.formatError(e, isHead));
+            }
+            return Effect.logError(
+              `resolveBucket caught unhandled error for bucket ${bucketName}: ${e}`,
+            ).pipe(
+              Effect.zipRight(
+                Effect.fail(
+                  new BadGateway({
+                    message: e instanceof Error ? e.message : String(e),
+                  }),
+                ),
+              ),
+            );
+          }),
         );
       }),
     );

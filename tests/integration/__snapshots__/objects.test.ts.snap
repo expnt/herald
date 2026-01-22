@@ -202,6 +202,13 @@ snapshot[`Proxy/objects/multipart/basic metadata 1`] = `
 }
 `;
 
+snapshot[`Swift/objects/multipart/basic metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
 snapshot[`Baseline/objects/multipart/abort metadata 1`] = `
 {
   headers: {
@@ -234,6 +241,18 @@ snapshot[`Proxy/objects/multipart/abort metadata 1`] = `
 
 snapshot[`Proxy/objects/multipart/abort body 1`] = `'<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchUpload</Code><Message>The specified multipart upload does not exist. The upload ID may be invalid, or the upload may have been aborted or completed.</Message></Error>'`;
 
+snapshot[`Swift/objects/multipart/abort metadata 1`] = `
+{
+  headers: {
+    "content-type": "application/xml",
+    vary: "Accept-Encoding",
+  },
+  status: 404,
+}
+`;
+
+snapshot[`Swift/objects/multipart/abort body 1`] = `'<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchUpload</Code><Message>The specified upload does not exist. The upload ID may be invalid, or the upload may have been aborted or completed.</Message></Error>'`;
+
 snapshot[`Baseline/objects/multipart/list-parts metadata 1`] = `
 {
   headers: {
@@ -254,6 +273,13 @@ snapshot[`Proxy/objects/multipart/list-parts metadata 1`] = `
 }
 `;
 
+snapshot[`Swift/objects/multipart/list-parts metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
 snapshot[`Baseline/objects/multipart/empty metadata 1`] = `
 {
   headers: {
@@ -268,6 +294,13 @@ snapshot[`Baseline/objects/multipart/empty metadata 1`] = `
 `;
 
 snapshot[`Proxy/objects/multipart/empty metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Swift/objects/multipart/empty metadata 1`] = `
 {
   headers: {},
   status: 204,

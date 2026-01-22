@@ -6,6 +6,7 @@ import { makeObjectOps } from "./Objects.ts";
 import { getTarget } from "./Utils.ts";
 import type { S3Client } from "./Client.ts";
 import type { HeraldConfig } from "../../Config/Layer.ts";
+import { makeNoopKeyValueStore } from "../../Services/NoopKeyValueStore.ts";
 
 /**
  * Creates an S3-specific Backend implementation for a given configuration context.
@@ -20,5 +21,6 @@ export const makeS3Backend = (
     return {
       ...makeBucketOps(target),
       ...makeObjectOps(target),
+      multipartMetadataStore: makeNoopKeyValueStore(),
     } satisfies BackendService;
   });
