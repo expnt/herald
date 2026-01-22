@@ -50,6 +50,9 @@ jobs:
       - name: Integration tests
         run: nix develop --command deno task test
 
+      - name: Benchmarks
+        run: nix develop --command deno bench --allow-all benchmarks/
+
       - name: Minimize uv cache
         run: nix develop --command uv cache prune --ci
 
