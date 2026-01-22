@@ -84,6 +84,42 @@ backends:
       project_domain_name: Default
     # Route all archive buckets to Swift
     buckets: "archive-*"
+
+cors:
+  # Global CORS defaults
+  allowedOrigins: ["*"]
+  allowedMethods: ["GET", "PUT", "POST", "DELETE", "HEAD", "OPTIONS"]
+  allowedHeaders: ["*"]
+  exposedHeaders: ["*"]
+  maxAge: 3600
+  credentials: true
+```
+
+### CORS Configuration
+
+Herald supports fine-grained CORS control at three levels with the following precedence: **Bucket > Backend > Global**.
+
+- **Global**: Defined at the root of the config file under `cors`.
+- **Backend**: Defined within a backend block under `cors`. Overrides global settings.
+- **Bucket**: Defined within a bucket definition under `cors`. Overrides both backend and global settings.
+
+Example with overrides:
+
+```yaml
+cors: # Global defaults
+  allowedOrigins: ["*"]
+  credentials: false
+
+backends:
+  prod:
+    protocol: s3
+    cors: # Backend-level override
+      allowedOrigins: ["https://app.example.com"]
+      credentials: true
+    buckets:
+      assets:
+        cors: # Bucket-level override
+          allowedOrigins: ["https://cdn.example.com"]
 ```
 
 ### Routing Logic
