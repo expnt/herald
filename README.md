@@ -68,6 +68,9 @@ backends:
       # Glob pattern support within the map
       "test-*":
         region: us-east-1
+  minio2:
+    # simple config for matching glob buckets
+    buckets: "my-*"
 ```
 
 ### Routing Logic

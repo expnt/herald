@@ -408,18 +408,20 @@ const getSwiftConfig = () =>
     const authUrl = yield* Config.string("HEARLD_SWIFTTEST_AUTH_URL").pipe(
       Config.orElse(() => Config.string("HERALD_SWIFTTEST_AUTH_URL")),
       Config.orElse(() => Config.string("OS_AUTH_URL")),
-      Config.withDefault("https://api.pub1.infomaniak.cloud/identity/v3"),
+      Config.withDefault("http://localhost:8080/auth/v1.0"),
       Config.option,
     );
 
     const username = yield* Config.string("HERALD_SWIFTTEST_OS_USERNAME").pipe(
       Config.orElse(() => Config.string("TF_VAR_OS_USERNAME")),
       Config.orElse(() => Config.string("OS_USERNAME")),
+      Config.withDefault("test:tester"),
       Config.option,
     );
     const password = yield* Config.string("HERALD_SWIFTTEST_OS_PASSWORD").pipe(
       Config.orElse(() => Config.string("TF_VAR_OS_PASSWORD")),
       Config.orElse(() => Config.string("OS_PASSWORD")),
+      Config.withDefault("testing"),
       Config.option,
     );
     const projectName = yield* Config.string("HERALD_SWIFTTEST_OS_PROJECT_NAME")
@@ -438,7 +440,7 @@ const getSwiftConfig = () =>
 
     if (
       Option.isNone(username) || Option.isNone(password) ||
-      Option.isNone(projectName) || Option.isNone(authUrl)
+      Option.isNone(authUrl)
     ) {
       return Option.none();
     }
@@ -452,7 +454,7 @@ const getSwiftConfig = () =>
           credentials: {
             username: username.value,
             password: password.value,
-            project_name: projectName.value,
+            project_name: Option.getOrUndefined(projectName),
             user_domain_name: "Default",
             project_domain_name: "Default",
           },

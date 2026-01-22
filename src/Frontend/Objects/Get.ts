@@ -27,6 +27,15 @@ export const getObject = () =>
     const status = (request.headers["range"] || request.headers["Range"])
       ? 206
       : 200;
+
+    if (result.nativeStream) {
+      return HttpServerResponse.raw(result.nativeStream, {
+        status,
+        headers: result.headers,
+        contentType: result.contentType,
+      });
+    }
+
     return HttpServerResponse.stream(result.stream, {
       status,
       headers: result.headers,

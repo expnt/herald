@@ -34,18 +34,20 @@ export const getSwiftConfig = () =>
     const authUrl = yield* Config.string("HEARLD_SWIFTTEST_AUTH_URL").pipe(
       Config.orElse(() => Config.string("HERALD_SWIFTTEST_AUTH_URL")),
       Config.orElse(() => Config.string("OS_AUTH_URL")),
-      Config.withDefault("https://api.pub1.infomaniak.cloud/identity/v3"),
+      Config.withDefault("http://localhost:8080/auth/v1.0"),
       Config.option,
     );
 
     const username = yield* Config.string("HERALD_SWIFTTEST_OS_USERNAME").pipe(
       Config.orElse(() => Config.string("TF_VAR_OS_USERNAME")),
       Config.orElse(() => Config.string("OS_USERNAME")),
+      Config.withDefault("test:tester"),
       Config.option,
     );
     const password = yield* Config.string("HERALD_SWIFTTEST_OS_PASSWORD").pipe(
       Config.orElse(() => Config.string("TF_VAR_OS_PASSWORD")),
       Config.orElse(() => Config.string("OS_PASSWORD")),
+      Config.withDefault("testing"),
       Config.option,
     );
     const projectName = yield* Config.string("HERALD_SWIFTTEST_OS_PROJECT_NAME")
@@ -64,7 +66,7 @@ export const getSwiftConfig = () =>
 
     if (
       Option.isNone(username) || Option.isNone(password) ||
-      Option.isNone(projectName) || Option.isNone(authUrl)
+      Option.isNone(authUrl)
     ) {
       return Option.none();
     }
@@ -78,7 +80,7 @@ export const getSwiftConfig = () =>
           credentials: {
             username: username.value,
             password: password.value,
-            project_name: projectName.value,
+            project_name: Option.getOrUndefined(projectName),
             user_domain_name: "Default",
             project_domain_name: "Default",
           },
@@ -115,6 +117,10 @@ export const makeBenchHarness = (
       Layer.provide(S3XmlLive),
       Layer.provide(HeraldConfigLive),
       Layer.provide(FetchHttpClient.layer),
+      Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, {
+        // @ts-ignore: duplex is required for streaming body in fetch
+        duplex: "half",
+      })),
       Layer.provideMerge(HttpServer.layerContext),
       Layer.provideMerge(Logger.minimumLogLevel(LogLevel.None)),
     );
@@ -192,6 +198,10 @@ export const makeBenchHarness = (
     // We need to provide the requirements for SwiftClient and HttpClient
     Effect.provide(SwiftClientLive),
     Effect.provide(FetchHttpClient.layer),
+    Effect.provide(Layer.succeed(FetchHttpClient.RequestInit, {
+      // @ts-ignore: duplex is required for streaming body in fetch
+      duplex: "half",
+    })),
     Effect.provide(
       Layer.succeed(HeraldConfig, {
         raw: config,
@@ -231,12 +241,13 @@ async function ensureHarnesses(bc: BenchmarkCase) {
 export function benchmarkHarness(cases: BenchmarkCase[]) {
   for (const bc of cases) {
     const operationName = `${bc.group ? `${bc.group}/` : ""}${bc.name}`;
+    const s3Group = `${operationName} (S3)`;
+    const swiftGroup = `${operationName} (Swift)`;
 
     // 1. Baseline (Direct Minio)
     Deno.bench({
-      name: "Baseline",
-      group: operationName,
-      baseline: true,
+      name: `Minio-Direct`,
+      group: s3Group,
       ignore: bc.ignore,
       only: bc.only,
       fn: async (b) => {
@@ -259,8 +270,9 @@ export function benchmarkHarness(cases: BenchmarkCase[]) {
 
     // 2. Proxy (Herald + Minio)
     Deno.bench({
-      name: "Proxy",
-      group: operationName,
+      name: `Herald-Proxy`,
+      baseline: true,
+      group: s3Group,
       ignore: bc.ignore,
       only: bc.only,
       fn: async (b) => {
@@ -283,8 +295,9 @@ export function benchmarkHarness(cases: BenchmarkCase[]) {
 
     // 3. Swift Proxy (Herald + Swift)
     Deno.bench({
-      name: "Swift-Proxy",
-      group: operationName,
+      name: `Swift-Proxy`,
+      group: swiftGroup,
+      baseline: true,
       ignore: bc.ignore || Option.isNone(swiftConfigOpt),
       only: bc.only,
       fn: async (b) => {
@@ -311,8 +324,8 @@ export function benchmarkHarness(cases: BenchmarkCase[]) {
     // 4. Swift Direct (Raw Swift API)
     if (bc.directSwiftFn) {
       Deno.bench({
-        name: "Swift-Direct",
-        group: operationName,
+        name: `Swift-Direct`,
+        group: swiftGroup,
         ignore: bc.ignore || Option.isNone(swiftConfigOpt),
         only: bc.only,
         fn: async (b) => {

@@ -16,6 +16,7 @@ export const putObject = () =>
         params.uploadId,
         params.partNumber,
         request.stream,
+        request.headers,
       );
       return HttpServerResponse.empty({
         status: 200,

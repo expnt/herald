@@ -51,6 +51,7 @@ export interface ListObjectsResult {
 
 export interface ObjectResponse {
   readonly stream: Stream.Stream<Uint8Array, Error>;
+  readonly nativeStream?: ReadableStream<Uint8Array>;
   readonly contentType?: string;
   readonly contentLength?: number;
   readonly etag?: string;
@@ -302,6 +303,7 @@ export interface BackendService {
     uploadId: string,
     partNumber: number,
     body: Stream.Stream<Uint8Array, Error>,
+    headers: Record<string, string | string[] | undefined>,
   ) => Effect.Effect<UploadPartResult, BackendError>;
   readonly completeMultipartUpload: (
     key: string,

@@ -97,26 +97,33 @@ export const makeBucketOps = (
       const { url, token, container } = target;
 
       // 1. Cleanup .herald/ and .hrld/ objects so bucket can be deleted
-      for (const prefix of [".herald/", INTERNAL_PREFIX]) {
-        let marker: string | undefined = undefined;
-        while (true) {
-          const objects: ListObjectsResult = yield* objectOps.listObjects({
-            prefix,
-            marker,
-          });
-          if (objects.contents.length === 0) {
-            break;
-          }
-          for (const obj of objects.contents) {
-            yield* objectOps.deleteObject(obj.key).pipe(Effect.ignore);
-          }
-          if (!objects.isTruncated) {
-            break;
-          }
-          marker = objects.nextMarker ??
-            objects.contents[objects.contents.length - 1].key;
-        }
-      }
+      yield* Effect.all(
+        [".herald/", INTERNAL_PREFIX].map((prefix) =>
+          Effect.gen(function* () {
+            let marker: string | undefined = undefined;
+            while (true) {
+              const objects: ListObjectsResult = yield* objectOps.listObjects({
+                prefix,
+                marker,
+              });
+              if (objects.contents.length === 0) {
+                break;
+              }
+              yield* Effect.all(
+                objects.contents.map((obj) =>
+                  objectOps.deleteObject(obj.key).pipe(Effect.ignore)
+                ),
+                { concurrency: 10 },
+              );
+              if (!objects.isTruncated || !objects.nextMarker) {
+                break;
+              }
+              marker = objects.nextMarker;
+            }
+          })
+        ),
+        { concurrency: 2 },
+      );
 
       // 2. Delete the bucket
       const response = yield* client.execute(

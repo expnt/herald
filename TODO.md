@@ -52,7 +52,7 @@ implementation.
       `CompleteMultipartUpload`, `AbortMultipartUpload`, and `ListParts`.
       _(Focus tests: `test_multipart_upload`, `test_multipart_upload_empty`,
       `test_abort_multipart_upload`)_
-  - [ ] **Swift Multipart Upload**: Implement S3 multipart mapping to Swift SLO.
+  - [x] **Swift Multipart Upload**: Implement S3 multipart mapping to Swift SLO.
 - [ ] **GetObject Attributes**: Implementation of `GET /bucket/key?attributes`.
       _(Focus tests: `test_get_object_attributes`)_
 - [ ] **HeadObject Consistency**: Fix `404 Not Found` errors on existing objects

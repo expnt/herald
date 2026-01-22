@@ -1,4 +1,4 @@
-import { Effect, Option, type Stream } from "effect";
+import { Effect, Option, Schedule, type Stream } from "effect";
 import { type HttpClient, HttpClientRequest } from "@effect/platform";
 import {
   type BackendError,
@@ -270,8 +270,16 @@ export const makeObjectOps = (
           ? lastModifiedHeader[0]
           : lastModifiedHeader;
 
+        // Try to get the native stream to avoid Effect <-> WebStream conversion overhead
+        const nativeStream =
+          (response as unknown as { source?: unknown }).source instanceof
+              Response
+            ? (response as unknown as { source: Response }).source.body
+            : undefined;
+
         return {
           stream: response.stream,
+          nativeStream: nativeStream || undefined,
           contentType: (Array.isArray(response.headers["content-type"])
             ? response.headers["content-type"][0]
             : response.headers["content-type"]) || undefined,
@@ -497,52 +505,69 @@ export const makeObjectOps = (
     deleteObjects: (objects: readonly { key: string; versionId?: string }[]) =>
       Effect.gen(function* () {
         const { url, token, container } = target;
+
+        const results = yield* Effect.all(
+          objects.map((obj) =>
+            Effect.gen(function* () {
+              const encodedKey = obj.key.split("/").map(encodeURIComponent)
+                .join(
+                  "/",
+                );
+              let response = yield* client.execute(
+                HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
+                  HttpClientRequest.setHeaders({
+                    "X-Auth-Token": token,
+                    "X-Static-Large-Object": "true",
+                  }),
+                  HttpClientRequest.setUrlParams({
+                    "multipart-manifest": "delete",
+                  }),
+                ),
+              ).pipe(
+                Effect.mapError((e) => mapError(500, String(e), container)),
+              );
+
+              if (response.status === 400) {
+                // Not an SLO, try regular delete
+                response = yield* client.execute(
+                  HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
+                    HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+                  ),
+                ).pipe(
+                  Effect.mapError((e) => mapError(500, String(e), container)),
+                );
+              }
+
+              if (
+                (response.status >= 200 && response.status < 300) ||
+                response.status === 204 || response.status === 404
+              ) {
+                return { key: obj.key, error: null };
+              } else {
+                const errorBody = yield* response.text.pipe(
+                  Effect.orElseSucceed(() => "Unknown error"),
+                );
+                return {
+                  key: obj.key,
+                  error: {
+                    code: String(response.status),
+                    message: errorBody,
+                  },
+                };
+              }
+            })
+          ),
+          { concurrency: 10 },
+        );
+
         const deleted: string[] = [];
         const errors: { key: string; code: string; message: string }[] = [];
 
-        for (const obj of objects) {
-          const encodedKey = obj.key.split("/").map(encodeURIComponent).join(
-            "/",
-          );
-          let response = yield* client.execute(
-            HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
-              HttpClientRequest.setHeaders({
-                "X-Auth-Token": token,
-                "X-Static-Large-Object": "true",
-              }),
-              HttpClientRequest.setUrlParams({
-                "multipart-manifest": "delete",
-              }),
-            ),
-          ).pipe(
-            Effect.mapError((e) => mapError(500, String(e), container)),
-          );
-
-          if (response.status === 400) {
-            // Not an SLO, try regular delete
-            response = yield* client.execute(
-              HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
-                HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-              ),
-            ).pipe(
-              Effect.mapError((e) => mapError(500, String(e), container)),
-            );
-          }
-
-          if (
-            (response.status >= 200 && response.status < 300) ||
-            response.status === 204 || response.status === 404
-          ) {
-            deleted.push(obj.key);
+        for (const res of results) {
+          if (res.error) {
+            errors.push({ key: res.key, ...res.error });
           } else {
-            const errorBody = yield* response.text.pipe(
-              Effect.orElseSucceed(() => "Unknown error"),
-            );
-            errors.push({
-              key: obj.key,
-              code: String(response.status),
-              message: errorBody,
-            });
+            deleted.push(res.key);
           }
         }
 
@@ -566,6 +591,7 @@ export const makeObjectOps = (
       uploadId: string,
       partNumber: number,
       body: Stream.Stream<Uint8Array, Error>,
+      _headers: Record<string, string | string[] | undefined>,
     ): Effect.Effect<UploadPartResult, BackendError> =>
       Effect.gen(function* () {
         const { url, token, container } = target;
@@ -626,35 +652,53 @@ export const makeObjectOps = (
 
         // Fetch segment info to get sizes
         const segmentMap = new Map<string, ObjectInfo>();
-        let segmentMarker: string | undefined = undefined;
-        while (true) {
-          const segmentsResult: ListObjectsResult = yield* listObjects({
-            prefix: `${MP_SEGMENTS_PREFIX}${uploadId}/`,
-            marker: segmentMarker,
-          });
-          for (const c of segmentsResult.contents) {
-            segmentMap.set(c.key, c);
+        const buildSegmentMap = Effect.gen(function* () {
+          segmentMap.clear();
+          let segmentMarker: string | undefined = undefined;
+          while (true) {
+            const segmentsResult: ListObjectsResult = yield* listObjects({
+              prefix: `${MP_SEGMENTS_PREFIX}${uploadId}/`,
+              marker: segmentMarker,
+            });
+            for (const c of segmentsResult.contents) {
+              segmentMap.set(c.key, c);
+            }
+            if (!segmentsResult.isTruncated || !segmentsResult.nextMarker) {
+              break;
+            }
+            segmentMarker = segmentsResult.nextMarker;
           }
-          if (!segmentsResult.isTruncated || !segmentsResult.nextMarker) {
-            break;
+
+          // Verify all parts are present
+          for (const p of parts) {
+            const segmentKey =
+              `${MP_SEGMENTS_PREFIX}${uploadId}/${p.partNumber}`;
+            if (!segmentMap.has(segmentKey)) {
+              return yield* Effect.fail(
+                new NoSuchUpload({
+                  uploadId,
+                  message: `Part ${p.partNumber} not found in segment listing`,
+                }),
+              );
+            }
           }
-          segmentMarker = segmentsResult.nextMarker;
-        }
+        });
+
+        // Retry with exponential backoff for eventual consistency
+        yield* buildSegmentMap.pipe(
+          Effect.retry({
+            while: (e) => e instanceof NoSuchUpload,
+            schedule: Schedule.exponential("100 millis").pipe(
+              Schedule.compose(Schedule.recurs(4)),
+            ),
+          }),
+        );
 
         // 1. Build SLO manifest
         const manifest = [];
         for (const p of parts) {
           const segmentKey = `${MP_SEGMENTS_PREFIX}${uploadId}/${p.partNumber}`;
-          const info = segmentMap.get(segmentKey);
-          if (!info) {
-            return yield* Effect.fail(
-              new NoSuchUpload({
-                uploadId,
-                message:
-                  `Part ${p.partNumber} not found. The upload might have already been completed or aborted.`,
-              }),
-            );
-          }
+          const info = segmentMap.get(segmentKey)!;
           manifest.push({
             path: `/${container}/${segmentKey}`,
             etag: p.etag.replace(/"/g, ""),
@@ -751,15 +795,18 @@ export const makeObjectOps = (
             marker,
           });
 
-          for (const content of segmentsResult.contents) {
-            const encodedKey = content.key.split("/").map(encodeURIComponent)
-              .join("/");
-            yield* client.execute(
-              HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
-                HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-              ),
-            ).pipe(Effect.ignore);
-          }
+          yield* Effect.all(
+            segmentsResult.contents.map((content) => {
+              const encodedKey = content.key.split("/").map(encodeURIComponent)
+                .join("/");
+              return client.execute(
+                HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
+                  HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+                ),
+              ).pipe(Effect.ignore);
+            }),
+            { concurrency: 10 },
+          );
 
           if (!segmentsResult.isTruncated || !segmentsResult.nextMarker) {
             break;

@@ -13,7 +13,7 @@
  *   ./x/s3-tests.ts [pytest-args] [--backend <minio|swift>] [--no-abort]
  *
  * Environment Variables:
- *   S3TEST_TAGS: Custom pytest marks (default: not fails_on_s3proxy and ...)
+ *   S3TEST_TAGS: Custom pytest marks (default: not buckets and ...)
  *   S3TEST_PYTEST_ARGS: Additional pytest arguments
  *   S3TEST_NO_ABORT: Set to "true" to disable abort-on-error
  *   HERALD_LOG_LEVEL: Set to "DEBUG" for verbose proxy logging
@@ -33,7 +33,7 @@ import { makeTestHarness } from "../tests/utils.ts";
 import { GlobalConfig } from "../src/Domain/Config.ts";
 
 const DEFAULT_TAGS =
-  "not fails_on_s3proxy and not appendobject and not bucket_policy and not copy and not cors and not encryption and not fails_strict_rfc2616 and not iam_tenant and not lifecycle and not object_lock and not policy and not policy_status and not s3select and not s3website and not sse_s3 and not tagging and not test_of_sts and not user_policy and not versioning and not webidentity_test";
+  "not appendobject and not bucket_policy and not copy and not cors and not encryption and not fails_strict_rfc2616 and not iam_tenant and not lifecycle and not object_lock and not policy and not policy_status and not s3select and not s3website and not sse_s3 and not tagging and not test_of_sts and not user_policy and not versioning and not webidentity_test";
 
 function getMinioConfig(): GlobalConfig {
   return {
@@ -57,18 +57,20 @@ const getSwiftConfig = () =>
     const authUrl = yield* Config.string("HEARLD_SWIFTTEST_AUTH_URL").pipe(
       Config.orElse(() => Config.string("HERALD_SWIFTTEST_AUTH_URL")),
       Config.orElse(() => Config.string("OS_AUTH_URL")),
-      Config.withDefault("https://api.pub1.infomaniak.cloud/identity/v3"),
+      Config.withDefault("http://localhost:8080/auth/v1.0"),
       Config.option,
     );
 
     const username = yield* Config.string("HERALD_SWIFTTEST_OS_USERNAME").pipe(
       Config.orElse(() => Config.string("TF_VAR_OS_USERNAME")),
       Config.orElse(() => Config.string("OS_USERNAME")),
+      Config.withDefault("test:tester"),
       Config.option,
     );
     const password = yield* Config.string("HERALD_SWIFTTEST_OS_PASSWORD").pipe(
       Config.orElse(() => Config.string("TF_VAR_OS_PASSWORD")),
       Config.orElse(() => Config.string("OS_PASSWORD")),
+      Config.withDefault("testing"),
       Config.option,
     );
     const projectName = yield* Config.string("HERALD_SWIFTTEST_OS_PROJECT_NAME")
@@ -87,7 +89,7 @@ const getSwiftConfig = () =>
 
     if (
       Option.isNone(username) || Option.isNone(password) ||
-      Option.isNone(projectName) || Option.isNone(authUrl)
+      Option.isNone(authUrl)
     ) {
       return Option.none();
     }
@@ -101,7 +103,7 @@ const getSwiftConfig = () =>
           credentials: {
             username: username.value,
             password: password.value,
-            project_name: projectName.value,
+            project_name: Option.getOrUndefined(projectName),
             user_domain_name: "Default",
             project_domain_name: "Default",
           },

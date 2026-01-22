@@ -11,6 +11,10 @@ HttpServerHeraldLive.pipe(
   // provider an HttpClient impl based on `fetch`
   // used to talk the the swift impl
   Layer.provide(FetchHttpClient.layer),
+  Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, {
+    // @ts-ignore: duplex is required for streaming body in fetch
+    duplex: "half",
+  })),
   // run layer until interrupted
   Layer.launch,
   // add support for Cli goodies like

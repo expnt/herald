@@ -61,6 +61,54 @@ export const SwiftClientLive = Layer.effect(
         project_domain_name = "Default",
       } = credentials;
 
+      const isV1 = auth_url.endsWith("/v1.0") || !project_name;
+
+      if (isV1) {
+        return Effect.gen(function* () {
+          const request = HttpClientRequest.get(auth_url).pipe(
+            HttpClientRequest.setHeaders({
+              "X-Auth-User": username || "",
+              "X-Auth-Key": password || "",
+            }),
+          );
+          const response = yield* client.execute(request).pipe(
+            Effect.mapError((e) => new Error(String(e))),
+          );
+
+          if (response.status < 200 || response.status >= 300) {
+            const msg = yield* response.text.pipe(
+              Effect.orElseSucceed(() => "Unknown error"),
+            );
+            return yield* Effect.fail(
+              new Error(`Failed to authenticate with Swift v1.0: ${msg}`),
+            );
+          }
+
+          const token = response.headers["x-auth-token"];
+          const storageUrl = response.headers["x-storage-url"];
+
+          const tokenStr = Array.isArray(token) ? token[0] : (token || "");
+          const storageUrlStr = Array.isArray(storageUrl)
+            ? storageUrl[0]
+            : (storageUrl || "");
+
+          if (!tokenStr || !storageUrlStr) {
+            return yield* Effect.fail(
+              new Error(
+                "X-Auth-Token or X-Storage-Url header missing from Swift v1.0 response",
+              ),
+            );
+          }
+
+          return {
+            token: tokenStr,
+            storageUrl: storageUrlStr,
+          };
+        }).pipe(
+          Effect.mapError((e) => e instanceof Error ? e : new Error(String(e))),
+        );
+      }
+
       const requestBody = {
         auth: {
           identity: {

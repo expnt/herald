@@ -33,6 +33,9 @@ const DATA_1KB = new Uint8Array(1024).fill(97);
 const DATA_1MB = new Uint8Array(1024 * 1024).fill(97);
 const DATA_10MB = new Uint8Array(10 * 1024 * 1024).fill(97);
 
+const getLargeData = (sizeMb: number) =>
+  new Uint8Array(sizeMb * 1024 * 1024).fill(97);
+
 const cases: BenchmarkCase[] = [
   // --- PutObject ---
   {
@@ -55,10 +58,15 @@ const cases: BenchmarkCase[] = [
       );
       b.end();
     },
+    teardown: async (client) => {
+      await client.send(
+        new DeleteObjectCommand({ Bucket: BUCKET, Key: "1kb.txt" }),
+      ).catch(() => {});
+    },
     directSwiftFn: async (target, client, b) => {
       const { url, token } = target;
       b.start();
-      const request = HttpClientRequest.put(`${url}/1kb.txt`).pipe(
+      const request = HttpClientRequest.put(`${url}/${BUCKET}/1kb.txt`).pipe(
         HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
         HttpClientRequest.bodyUint8Array(DATA_1KB),
       );
@@ -87,10 +95,15 @@ const cases: BenchmarkCase[] = [
       );
       b.end();
     },
+    teardown: async (client) => {
+      await client.send(
+        new DeleteObjectCommand({ Bucket: BUCKET, Key: "1mb.txt" }),
+      ).catch(() => {});
+    },
     directSwiftFn: async (target, client, b) => {
       const { url, token } = target;
       b.start();
-      const request = HttpClientRequest.put(`${url}/1mb.txt`).pipe(
+      const request = HttpClientRequest.put(`${url}/${BUCKET}/1mb.txt`).pipe(
         HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
         HttpClientRequest.bodyUint8Array(DATA_1MB),
       );
@@ -119,10 +132,15 @@ const cases: BenchmarkCase[] = [
       );
       b.end();
     },
+    teardown: async (client) => {
+      await client.send(
+        new DeleteObjectCommand({ Bucket: BUCKET, Key: "10mb.txt" }),
+      ).catch(() => {});
+    },
     directSwiftFn: async (target, client, b) => {
       const { url, token } = target;
       b.start();
-      const request = HttpClientRequest.put(`${url}/10mb.txt`).pipe(
+      const request = HttpClientRequest.put(`${url}/${BUCKET}/10mb.txt`).pipe(
         HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
         HttpClientRequest.bodyUint8Array(DATA_10MB),
       );
@@ -131,8 +149,46 @@ const cases: BenchmarkCase[] = [
       b.end();
     },
   },
-
-  // --- GetObject ---
+  {
+    name: "put/100mb",
+    group: "objects",
+    config: benchConfig,
+    setup: async (client) => {
+      await client.send(new CreateBucketCommand({ Bucket: BUCKET })).catch(
+        () => {},
+      );
+    },
+    fn: async (client, b) => {
+      const data = getLargeData(100);
+      b.start();
+      await client.send(
+        new PutObjectCommand({
+          Bucket: BUCKET,
+          Key: "100mb.txt",
+          Body: data,
+        }),
+      );
+      b.end();
+    },
+    teardown: async (client) => {
+      await client.send(
+        new DeleteObjectCommand({ Bucket: BUCKET, Key: "100mb.txt" }),
+      ).catch(() => {});
+    },
+    directSwiftFn: async (target, client, b) => {
+      const { url, token } = target;
+      const data = getLargeData(100);
+      b.start();
+      const request = HttpClientRequest.put(`${url}/${BUCKET}/100mb.txt`).pipe(
+        HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+        HttpClientRequest.bodyUint8Array(data),
+      );
+      const response = await Effect.runPromise(client.execute(request));
+      await response.text;
+      b.end();
+    },
+  },
+  // --- HeadObject ---
   {
     name: "get/1kb",
     group: "objects",
@@ -157,14 +213,20 @@ const cases: BenchmarkCase[] = [
       await res.Body?.transformToByteArray();
       b.end();
     },
+    teardown: async (client) => {
+      await client.send(
+        new DeleteObjectCommand({ Bucket: BUCKET, Key: "get-1kb.txt" }),
+      ).catch(() => {});
+    },
     directSwiftFn: async (target, client, b) => {
       const { url, token } = target;
       b.start();
-      const request = HttpClientRequest.get(`${url}/get-1kb.txt`).pipe(
-        HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-      );
+      const request = HttpClientRequest.get(`${url}/${BUCKET}/get-1kb.txt`)
+        .pipe(
+          HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+        );
       const response = await Effect.runPromise(client.execute(request));
-      await Stream.runDrain(response.stream);
+      await Effect.runPromise(Stream.runDrain(response.stream));
       b.end();
     },
   },
@@ -192,14 +254,20 @@ const cases: BenchmarkCase[] = [
       await res.Body?.transformToByteArray();
       b.end();
     },
+    teardown: async (client) => {
+      await client.send(
+        new DeleteObjectCommand({ Bucket: BUCKET, Key: "get-1mb.txt" }),
+      ).catch(() => {});
+    },
     directSwiftFn: async (target, client, b) => {
       const { url, token } = target;
       b.start();
-      const request = HttpClientRequest.get(`${url}/get-1mb.txt`).pipe(
-        HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-      );
+      const request = HttpClientRequest.get(`${url}/${BUCKET}/get-1mb.txt`)
+        .pipe(
+          HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+        );
       const response = await Effect.runPromise(client.execute(request));
-      await Stream.runDrain(response.stream);
+      await Effect.runPromise(Stream.runDrain(response.stream));
       b.end();
     },
   },
@@ -227,14 +295,61 @@ const cases: BenchmarkCase[] = [
       await res.Body?.transformToByteArray();
       b.end();
     },
+    teardown: async (client) => {
+      await client.send(
+        new DeleteObjectCommand({ Bucket: BUCKET, Key: "get-10mb.txt" }),
+      ).catch(() => {});
+    },
     directSwiftFn: async (target, client, b) => {
       const { url, token } = target;
       b.start();
-      const request = HttpClientRequest.get(`${url}/get-10mb.txt`).pipe(
-        HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-      );
+      const request = HttpClientRequest.get(`${url}/${BUCKET}/get-10mb.txt`)
+        .pipe(
+          HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+        );
       const response = await Effect.runPromise(client.execute(request));
-      await Stream.runDrain(response.stream);
+      await Effect.runPromise(Stream.runDrain(response.stream));
+      b.end();
+    },
+  },
+  {
+    name: "get/100mb",
+    group: "objects",
+    config: benchConfig,
+    setup: async (client) => {
+      await client.send(new CreateBucketCommand({ Bucket: BUCKET })).catch(
+        () => {},
+      );
+      await client.send(
+        new PutObjectCommand({
+          Bucket: BUCKET,
+          Key: "get-100mb.txt",
+          Body: getLargeData(100),
+        }),
+      );
+    },
+    fn: async (client, b) => {
+      b.start();
+      const res = await client.send(
+        new GetObjectCommand({ Bucket: BUCKET, Key: "get-100mb.txt" }),
+      );
+      await res.Body?.transformToByteArray();
+      b.end();
+    },
+    teardown: async (client) => {
+      await client.send(
+        new DeleteObjectCommand({ Bucket: BUCKET, Key: "get-100mb.txt" }),
+      ).catch(() => {});
+    },
+    directSwiftFn: async (target, client, b) => {
+      const { url, token } = target;
+      b.start();
+      const request = HttpClientRequest.get(`${url}/${BUCKET}/get-100mb.txt`)
+        .pipe(
+          HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+        );
+      const response = await Effect.runPromise(client.execute(request));
+      await Effect.runPromise(Stream.runDrain(response.stream));
       b.end();
     },
   },
@@ -266,7 +381,7 @@ const cases: BenchmarkCase[] = [
     directSwiftFn: async (target, client, b) => {
       const { url, token } = target;
       b.start();
-      const request = HttpClientRequest.head(`${url}/head.txt`).pipe(
+      const request = HttpClientRequest.head(`${url}/${BUCKET}/head.txt`).pipe(
         HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
       );
       await Effect.runPromise(client.execute(request));
@@ -302,14 +417,18 @@ const cases: BenchmarkCase[] = [
     directSwiftFn: async (target, client, b) => {
       const { url, token } = target;
       // Pre-upload for delete
-      const putReq = HttpClientRequest.put(`${url}/delete-direct.txt`).pipe(
+      const putReq = HttpClientRequest.put(
+        `${url}/${BUCKET}/delete-direct.txt`,
+      ).pipe(
         HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
         HttpClientRequest.bodyUint8Array(DATA_1KB),
       );
       await Effect.runPromise(client.execute(putReq));
 
       b.start();
-      const request = HttpClientRequest.del(`${url}/delete-direct.txt`).pipe(
+      const request = HttpClientRequest.del(
+        `${url}/${BUCKET}/delete-direct.txt`,
+      ).pipe(
         HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
       );
       await Effect.runPromise(client.execute(request));
@@ -319,7 +438,7 @@ const cases: BenchmarkCase[] = [
 
   // --- Multipart Upload ---
   {
-    name: "multipart/upload",
+    name: "multipart/10mb",
     group: "objects",
     config: benchConfig,
     setup: async (client) => {
@@ -328,10 +447,9 @@ const cases: BenchmarkCase[] = [
       );
     },
     fn: async (client, b) => {
-      const key = "multipart.txt";
-      const partSize = 5 * 1024 * 1024 + 1;
-      const body1 = new Uint8Array(partSize).fill(97);
-      const body2 = new Uint8Array(10).fill(98);
+      const key = "multipart-10mb.txt";
+      const partSize = 5 * 1024 * 1024;
+      const body = new Uint8Array(partSize).fill(97);
 
       b.start();
       const { UploadId } = await client.send(
@@ -343,7 +461,7 @@ const cases: BenchmarkCase[] = [
           Key: key,
           UploadId,
           PartNumber: 1,
-          Body: body1,
+          Body: body,
         }),
       );
       const { ETag: etag2 } = await client.send(
@@ -352,7 +470,7 @@ const cases: BenchmarkCase[] = [
           Key: key,
           UploadId,
           PartNumber: 2,
-          Body: body2,
+          Body: body,
         }),
       );
       await client.send(
@@ -361,10 +479,10 @@ const cases: BenchmarkCase[] = [
           Key: key,
           UploadId,
           MultipartUpload: {
-            Parts: [{ ETag: etag1, PartNumber: 1 }, {
-              ETag: etag2,
-              PartNumber: 2,
-            }],
+            Parts: [
+              { ETag: etag1, PartNumber: 1 },
+              { ETag: etag2, PartNumber: 2 },
+            ],
           },
         }),
       );
@@ -372,7 +490,59 @@ const cases: BenchmarkCase[] = [
     },
     teardown: async (client) => {
       await client.send(
-        new DeleteObjectCommand({ Bucket: BUCKET, Key: "multipart.txt" }),
+        new DeleteObjectCommand({ Bucket: BUCKET, Key: "multipart-10mb.txt" }),
+      ).catch(() => {});
+    },
+  },
+  {
+    name: "multipart/100mb",
+    group: "objects",
+    config: benchConfig,
+    setup: async (client) => {
+      await client.send(new CreateBucketCommand({ Bucket: BUCKET })).catch(
+        () => {},
+      );
+    },
+    fn: async (client, b) => {
+      const key = "multipart-100mb.txt";
+      const partSize = 10 * 1024 * 1024;
+      const body = new Uint8Array(partSize).fill(97);
+
+      b.start();
+      const { UploadId } = await client.send(
+        new CreateMultipartUploadCommand({ Bucket: BUCKET, Key: key }),
+      );
+
+      const parts = await Promise.all(
+        Array.from({ length: 10 }, (_, i) => i + 1).map(async (i) => {
+          const { ETag } = await client.send(
+            new UploadPartCommand({
+              Bucket: BUCKET,
+              Key: key,
+              UploadId,
+              PartNumber: i,
+              Body: body,
+            }),
+          );
+          return { ETag, PartNumber: i };
+        }),
+      );
+
+      await client.send(
+        new CompleteMultipartUploadCommand({
+          Bucket: BUCKET,
+          Key: key,
+          UploadId,
+          MultipartUpload: {
+            Parts: parts,
+          },
+        }),
+      );
+      b.end();
+    },
+    teardown: async (client) => {
+      await client.send(
+        new DeleteObjectCommand({ Bucket: BUCKET, Key: "multipart-100mb.txt" }),
       ).catch(() => {});
     },
   },
