@@ -22,7 +22,14 @@ export const CorsConfig = Schema.Struct({
   exposedHeaders: Schema.optional(Schema.Array(Schema.String)),
   maxAge: Schema.optional(Schema.Number),
   credentials: Schema.optional(Schema.Boolean),
-});
+}).pipe(
+  Schema.filter((c) => {
+    if (c.allowedOrigins?.includes("*") && c.credentials) {
+      return "CORS configuration cannot have allowedOrigins: ['*'] when credentials: true";
+    }
+    return true;
+  }),
+);
 
 export type CorsConfig = Schema.Schema.Type<typeof CorsConfig>;
 
@@ -199,19 +206,21 @@ export const resolveCorsConfig = (
   }
 
   // If not found by direct hit, try glob match (similar to lookupBucket)
-  if (!bucketCors) {
+  if (!bucketCors && !backendCors) {
     for (const backend of Object.values(config.backends)) {
       const buckets = backend.buckets;
       if (buckets && typeof buckets !== "string") {
+        let foundMatch = false;
         for (const [key, override] of Object.entries(buckets)) {
           if (globToRegex(key).test(bucketName)) {
             bucketCors = (override as BucketOverride).cors;
             backendCors = backend.cors;
+            foundMatch = true;
             break;
           }
         }
+        if (foundMatch) break;
       }
-      if (bucketCors) break;
     }
   }
 

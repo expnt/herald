@@ -119,10 +119,10 @@ export function parseConfig(
           ",",
         ).map((s) => s.trim());
       } else if (camelCorsKey === "maxAge") {
-        (backend.cors as Record<string, unknown>)[camelCorsKey] = parseInt(
-          value,
-          10,
-        );
+        const parsed = parseInt(value, 10);
+        if (Number.isInteger(parsed) && Number.isFinite(parsed)) {
+          (backend.cors as Record<string, unknown>)[camelCorsKey] = parsed;
+        }
       } else if (camelCorsKey === "credentials") {
         (backend.cors as Record<string, unknown>)[camelCorsKey] =
           value.toLowerCase() === "true";
@@ -152,7 +152,10 @@ export function parseConfig(
     ) {
       globalCors[camelCorsKey] = value.split(",").map((s) => s.trim());
     } else if (camelCorsKey === "maxAge") {
-      globalCors[camelCorsKey] = parseInt(value, 10);
+      const parsed = parseInt(value, 10);
+      if (Number.isInteger(parsed) && Number.isFinite(parsed)) {
+        globalCors[camelCorsKey] = parsed;
+      }
     } else if (camelCorsKey === "credentials") {
       globalCors[camelCorsKey] = value.toLowerCase() === "true";
     }

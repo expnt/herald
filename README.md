@@ -92,7 +92,7 @@ cors:
   allowedHeaders: ["*"]
   exposedHeaders: ["*"]
   maxAge: 3600
-  credentials: true
+  credentials: false
 ```
 
 ### CORS Configuration
@@ -105,6 +105,23 @@ precedence: **Bucket > Backend > Global**.
   settings.
 - **Bucket**: Defined within a bucket definition under `cors`. Overrides both
   backend and global settings.
+
+#### Default Behavior
+
+If no CORS configuration is provided at any level, **CORS is disabled** and
+Herald will not add any CORS-related headers to responses. Preflight `OPTIONS`
+requests will be passed through to the backend.
+
+If you enable CORS by providing configuration at any level, the following
+defaults are applied for any omitted fields:
+
+| Field            | Default Value                           | Description                                            |
+| ---------------- | --------------------------------------- | ------------------------------------------------------ |
+| `maxAge`         | `3600`                                  | Max age in seconds for preflight results               |
+| `allowedMethods` | `GET, PUT, POST, DELETE, HEAD, OPTIONS` | Allowed HTTP methods                                   |
+| `allowedHeaders` | (Mirrors request)                       | Defaults to mirroring `Access-Control-Request-Headers` |
+| `credentials`    | `false`                                 | Whether to allow credentials                           |
+| `allowedOrigins` | (None)                                  | Headers only added if `Origin` matches an entry        |
 
 Example with overrides:
 
