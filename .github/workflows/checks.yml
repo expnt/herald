@@ -79,51 +79,21 @@ jobs:
       - name: benchmarks
         run: nix develop --command deno bench --allow-all benchmarks/
 
-      - name: s3-tests
+      - name: s3-tests (MinIO)
         run: |
-          # Run MinIO tests in background, redirecting stderr to avoid interference
-          nix develop --command deno run --allow-all x/s3-tests.ts --backend minio --no-abort 2>/tmp/minio-stderr.log &
-          MINIO_PID=$!
-
-          # Run Swift tests in background against SAIO
-          nix develop --command deno run --allow-all x/s3-tests.ts --backend swift --no-abort 2>/tmp/swift-stderr.log &
-          SWIFT_PID=$!
-
-          # Wait for both processes and capture exit codes
-          # wait returns the exit code of the process, or 127 if the process doesn't exist
-          MINIO_EXIT=0
-          wait $MINIO_PID || MINIO_EXIT=$?
-
-          SWIFT_EXIT=0
-          if [ -n "$SWIFT_PID" ]; then
-            wait $SWIFT_PID || SWIFT_EXIT=$?
-          fi
-
-          # Always show logs, even if processes failed
+          nix develop --command deno run --allow-all x/s3-tests.ts --backend minio --no-abort
           echo "--- s3-tests/s3-tests.log (MinIO) ---"
           cat s3-tests/s3-tests.log || true
-          echo "--- s3-tests/s3-tests-swift.log (Swift) ---"
-          cat s3-tests/s3-tests-swift.log || true
           echo "--- s3-tests/herald-proxy.log ---"
           cat s3-tests/herald-proxy.log || true
+
+      - name: s3-tests (Swift)
+        run: |
+          nix develop --command deno run --allow-all x/s3-tests.ts --backend swift --no-abort
+          echo "--- s3-tests/s3-tests-swift.log (Swift) ---"
+          cat s3-tests/s3-tests-swift.log || true
           echo "--- s3-tests/herald-proxy-swift.log ---"
           cat s3-tests/herald-proxy-swift.log || true
-
-          # Show stderr logs if they exist (for debugging)
-          if [ -f /tmp/minio-stderr.log ] && [ -s /tmp/minio-stderr.log ]; then
-            echo "--- MinIO stderr ---"
-            cat /tmp/minio-stderr.log || true
-          fi
-          if [ -f /tmp/swift-stderr.log ] && [ -s /tmp/swift-stderr.log ]; then
-            echo "--- Swift stderr ---"
-            cat /tmp/swift-stderr.log || true
-          fi
-
-          # Exit with error if either failed
-          if [ $MINIO_EXIT -ne 0 ] || [ $SWIFT_EXIT -ne 0 ]; then
-            echo "One or more compatibility tests failed (MinIO: $MINIO_EXIT, Swift: $SWIFT_EXIT)"
-            exit 1
-          fi
 
       - name: prune uv cache
         run: nix develop --command uv cache prune --ci
