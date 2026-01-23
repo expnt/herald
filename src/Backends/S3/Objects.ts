@@ -631,6 +631,7 @@ export const makeObjectOps = (target: S3Target) => ({
             checksumCRC64NVME: result.Checksum.ChecksumCRC64NVME,
             checksumSHA1: result.Checksum.ChecksumSHA1,
             checksumSHA256: result.Checksum.ChecksumSHA256,
+            checksumType: (result as S3ChecksumFields).ChecksumAlgorithm,
           }
           : undefined,
         objectParts: result.ObjectParts
@@ -640,7 +641,7 @@ export const makeObjectOps = (target: S3Target) => ({
               partNumber: p.PartNumber ?? 0,
               etag: "", // GetObjectAttributes doesn't return ETag for parts
               size: p.Size ?? 0,
-              lastModified: new Date(), // S3 doesn't return lastModified for parts in attributes
+              lastModified: undefined,
               checksumCRC32: p.ChecksumCRC32,
               checksumCRC32C: p.ChecksumCRC32C,
               checksumCRC64NVME: p.ChecksumCRC64NVME,
@@ -651,7 +652,6 @@ export const makeObjectOps = (target: S3Target) => ({
           : undefined,
         objectSize: result.ObjectSize,
         storageClass: result.StorageClass,
-        ...mapS3ChecksumsToResult(result as S3ChecksumFields),
       };
     }),
 

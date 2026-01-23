@@ -235,19 +235,11 @@ export function resolveBucket<
         ? materializedBucketOpt.value.region ?? "us-east-1"
         : "us-east-1";
 
-      const verifyResult = yield* verifyIncomingSigV4(
+      const isValid = yield* verifyIncomingSigV4(
         request.value,
         authCreds.value,
         region,
-      ).pipe(Effect.either);
-
-      if (Either.isLeft(verifyResult)) {
-        return s3Xml.formatError(
-          new InternalError({ message: String(verifyResult.left) }),
-          isHead,
-        );
-      }
-      const isValid = verifyResult.right;
+      );
 
       if (!isValid) {
         return s3Xml.formatError(
@@ -355,19 +347,11 @@ export function resolveBackend<
       const backend = heraldConfig.raw.backends[backendId];
       const region = backend?.region ?? "us-east-1";
 
-      const verifyResult = yield* verifyIncomingSigV4(
+      const isValid = yield* verifyIncomingSigV4(
         request.value,
         authCreds.value,
         region,
-      ).pipe(Effect.either);
-
-      if (Either.isLeft(verifyResult)) {
-        return s3Xml.formatError(
-          new InternalError({ message: String(verifyResult.left) }),
-          isHead,
-        );
-      }
-      const isValid = verifyResult.right;
+      );
 
       if (!isValid) {
         return s3Xml.formatError(

@@ -42,7 +42,7 @@ export function verifyIncomingSigV4(
   request: HttpServerRequest.HttpServerRequest,
   credentials: AuthCredentials[],
   region: string,
-): Effect.Effect<boolean, AuthError> {
+): Effect.Effect<boolean, never> {
   return Effect.gen(function* () {
     if (credentials.length === 0) {
       return false;

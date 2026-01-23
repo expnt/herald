@@ -418,7 +418,9 @@ export const S3XmlLive = Layer.succeed(
           ? `<ChecksumSHA256>${p.checksumSHA256}</ChecksumSHA256>`
           : "";
 
-        return `<Part><PartNumber>${p.partNumber}</PartNumber><LastModified>${p.lastModified.toISOString()}</LastModified><ETag>${p.etag}</ETag><Size>${p.size}</Size>${checksumCRC32Xml}${checksumCRC32CXml}${checksumCRC64NVMEXml}${checksumSHA1Xml}${checksumSHA256Xml}</Part>`;
+        return `<Part><PartNumber>${p.partNumber}</PartNumber><LastModified>${
+          p.lastModified?.toISOString() ?? ""
+        }</LastModified><ETag>${p.etag}</ETag><Size>${p.size}</Size>${checksumCRC32Xml}${checksumCRC32CXml}${checksumCRC64NVMEXml}${checksumSHA1Xml}${checksumSHA256Xml}</Part>`;
       }).join("");
 
       const xml =
@@ -439,9 +441,6 @@ export const S3XmlLive = Layer.succeed(
       const objectSizeXml = result.objectSize !== undefined
         ? `<ObjectSize>${result.objectSize}</ObjectSize>`
         : "";
-      const checksumAlgorithmXml = result.checksumAlgorithm
-        ? `<ChecksumAlgorithm>${result.checksumAlgorithm}</ChecksumAlgorithm>`
-        : "";
 
       let checksumXml = "";
       if (result.checksum) {
@@ -451,6 +450,7 @@ export const S3XmlLive = Layer.succeed(
           checksumCRC64NVME,
           checksumSHA1,
           checksumSHA256,
+          checksumType,
         } = result.checksum;
         checksumXml = `<Checksum>${
           checksumCRC32 ? `<ChecksumCRC32>${checksumCRC32}</ChecksumCRC32>` : ""
@@ -465,6 +465,10 @@ export const S3XmlLive = Layer.succeed(
         }${checksumSHA1 ? `<ChecksumSHA1>${checksumSHA1}</ChecksumSHA1>` : ""}${
           checksumSHA256
             ? `<ChecksumSHA256>${checksumSHA256}</ChecksumSHA256>`
+            : ""
+        }${
+          checksumType
+            ? `<ChecksumAlgorithm>${checksumType}</ChecksumAlgorithm>`
             : ""
         }</Checksum>`;
       }
@@ -488,7 +492,7 @@ export const S3XmlLive = Layer.succeed(
             ? `<ChecksumSHA256>${p.checksumSHA256}</ChecksumSHA256>`
             : "";
 
-          return `<Part><PartNumber>${p.partNumber}</PartNumber><Size>${p.size}</Size><ETag>${p.etag}</ETag>${checksumCRC32Xml}${checksumCRC32CXml}${checksumCRC64NVMEXml}${checksumSHA1Xml}${checksumSHA256Xml}</Part>`;
+          return `<Part><PartNumber>${p.partNumber}</PartNumber><Size>${p.size}</Size>${checksumCRC32Xml}${checksumCRC32CXml}${checksumCRC64NVMEXml}${checksumSHA1Xml}${checksumSHA256Xml}</Part>`;
         }).join("");
 
         objectPartsXml = `<ObjectParts><PartsCount>${
@@ -497,7 +501,7 @@ export const S3XmlLive = Layer.succeed(
       }
 
       const xml =
-        `<?xml version="1.0" encoding="UTF-8"?><GetObjectAttributesResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">${checksumXml}${checksumAlgorithmXml}${etagXml}${objectPartsXml}${objectSizeXml}${storageClassXml}</GetObjectAttributesResult>`;
+        `<?xml version="1.0" encoding="UTF-8"?><GetObjectAttributesResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">${checksumXml}${etagXml}${objectPartsXml}${objectSizeXml}${storageClassXml}</GetObjectAttributesResult>`;
 
       return HttpServerResponse.text(xml, {
         headers: {

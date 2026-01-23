@@ -129,6 +129,7 @@ export interface ObjectAttributes {
     readonly checksumCRC64NVME?: string;
     readonly checksumSHA1?: string;
     readonly checksumSHA256?: string;
+    readonly checksumType?: string;
   };
   readonly objectParts?: {
     readonly partsCount?: number;
@@ -136,12 +137,11 @@ export interface ObjectAttributes {
   };
   readonly objectSize?: number;
   readonly storageClass?: string;
-  readonly checksumAlgorithm?: string;
 }
 
 export interface PartInfo {
   readonly partNumber: number;
-  readonly lastModified: Date;
+  readonly lastModified?: Date;
   readonly etag: string;
   readonly size: number;
   readonly checksumCRC32?: string;

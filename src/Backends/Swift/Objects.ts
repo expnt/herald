@@ -696,7 +696,7 @@ export const makeObjectOps = (
       Effect.gen(function* () {
         const head = yield* makeObjectOps(target, client).headObject(
           key,
-          headers,
+          { "x-amz-checksum-mode": "ENABLED", ...headers },
         );
 
         const lowerAttrs = attributes.map((a) => a.toLowerCase());
@@ -710,8 +710,8 @@ export const makeObjectOps = (
                 checksumCRC64NVME: head.checksumCRC64NVME,
                 checksumSHA1: head.checksumSHA1,
                 checksumSHA256: head.checksumSHA256,
+                checksumType: head.checksumAlgorithm,
               },
-              checksumAlgorithm: head.checksumAlgorithm,
             }
             : {}),
           ...(lowerAttrs.includes("objectsize")

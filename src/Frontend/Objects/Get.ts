@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import { HttpServerResponse } from "@effect/platform";
 import { RequestContext } from "../Utils.ts";
 import { S3Xml } from "../../Services/S3Xml.ts";
+import { InvalidRequest } from "../../Services/Backend.ts";
 
 /**
  * Handler for GetObjectAttributes (GET /:bucket/*?attributes)
@@ -16,8 +17,18 @@ export const getObjectAttributes = () =>
     const attributes = attributesHeader
       ? (Array.isArray(attributesHeader)
         ? attributesHeader[0]
-        : attributesHeader).split(",").map((a: string) => a.trim())
+        : attributesHeader).split(",").map((a: string) => a.trim()).filter((
+          a: string,
+        ) => a !== "")
       : [];
+
+    if (attributes.length === 0) {
+      return s3Xml.formatError(
+        new InvalidRequest({
+          message: "At least one attribute must be specified.",
+        }),
+      );
+    }
 
     const result = yield* backend.getObjectAttributes(
       key,
