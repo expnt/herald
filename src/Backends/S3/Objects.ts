@@ -34,9 +34,59 @@ import {
   stripMinioMetadata,
 } from "./Utils.ts";
 
-interface HasChecksumAlgorithm {
+interface S3ChecksumFields {
+  readonly ChecksumCRC32?: string;
+  readonly ChecksumCRC32C?: string;
+  readonly ChecksumCRC64NVME?: string;
+  readonly ChecksumSHA1?: string;
+  readonly ChecksumSHA256?: string;
   readonly ChecksumAlgorithm?: string;
 }
+
+const mapS3ChecksumsToHeaders = (
+  result: S3ChecksumFields,
+  headers: Record<string, string>,
+) => {
+  if (result.ChecksumCRC32) {
+    headers["x-amz-checksum-crc32"] = result.ChecksumCRC32;
+  }
+  if (result.ChecksumCRC32C) {
+    headers["x-amz-checksum-crc32c"] = result.ChecksumCRC32C;
+  }
+  if (result.ChecksumCRC64NVME) {
+    headers["x-amz-checksum-crc64nvme"] = result.ChecksumCRC64NVME;
+  }
+  if (result.ChecksumSHA1) {
+    headers["x-amz-checksum-sha1"] = result.ChecksumSHA1;
+  }
+  if (result.ChecksumSHA256) {
+    headers["x-amz-checksum-sha256"] = result.ChecksumSHA256;
+  }
+  if (result.ChecksumAlgorithm) {
+    headers["x-amz-checksum-algorithm"] = result.ChecksumAlgorithm;
+  }
+};
+
+const mapS3ChecksumsToResult = (result: S3ChecksumFields) => ({
+  checksumAlgorithm: result.ChecksumAlgorithm,
+  checksumCRC32: result.ChecksumCRC32,
+  checksumCRC32C: result.ChecksumCRC32C,
+  checksumCRC64NVME: result.ChecksumCRC64NVME,
+  checksumSHA1: result.ChecksumSHA1,
+  checksumSHA256: result.ChecksumSHA256,
+});
+
+const extractChecksumsFromS3Headers = (
+  headers: Record<string, string | string[] | undefined>,
+) => ({
+  checksumAlgorithm: extractHeader(headers, "x-amz-sdk-checksum-algorithm") ||
+    extractHeader(headers, "x-amz-checksum-algorithm"),
+  checksumCRC32: extractHeader(headers, "x-amz-checksum-crc32"),
+  checksumCRC32C: extractHeader(headers, "x-amz-checksum-crc32c"),
+  checksumCRC64NVME: extractHeader(headers, "x-amz-checksum-crc64nvme"),
+  checksumSHA1: extractHeader(headers, "x-amz-checksum-sha1"),
+  checksumSHA256: extractHeader(headers, "x-amz-checksum-sha256"),
+});
 
 export const makeObjectOps = (target: S3Target) => ({
   listObjects: (args: {
@@ -322,25 +372,7 @@ export const makeObjectOps = (target: S3Target) => ({
       if (result.VersionId) {
         s3Headers["x-amz-version-id"] = result.VersionId;
       }
-      if (result.ChecksumCRC32) {
-        s3Headers["x-amz-checksum-crc32"] = result.ChecksumCRC32;
-      }
-      if (result.ChecksumCRC32C) {
-        s3Headers["x-amz-checksum-crc32c"] = result.ChecksumCRC32C;
-      }
-      if (result.ChecksumCRC64NVME) {
-        s3Headers["x-amz-checksum-crc64nvme"] = result.ChecksumCRC64NVME;
-      }
-      if (result.ChecksumSHA1) {
-        s3Headers["x-amz-checksum-sha1"] = result.ChecksumSHA1;
-      }
-      if (result.ChecksumSHA256) {
-        s3Headers["x-amz-checksum-sha256"] = result.ChecksumSHA256;
-      }
-      if ((result as HasChecksumAlgorithm).ChecksumAlgorithm) {
-        s3Headers["x-amz-checksum-algorithm"] = (result as HasChecksumAlgorithm)
-          .ChecksumAlgorithm!;
-      }
+      mapS3ChecksumsToHeaders(result as S3ChecksumFields, s3Headers);
       if (result.LastModified) {
         s3Headers["last-modified"] = result.LastModified.toUTCString();
       }
@@ -358,12 +390,7 @@ export const makeObjectOps = (target: S3Target) => ({
         lastModified: result.LastModified,
         metadata,
         headers: s3Headers,
-        checksumAlgorithm: (result as HasChecksumAlgorithm).ChecksumAlgorithm,
-        checksumCRC32: result.ChecksumCRC32,
-        checksumCRC32C: result.ChecksumCRC32C,
-        checksumCRC64NVME: result.ChecksumCRC64NVME,
-        checksumSHA1: result.ChecksumSHA1,
-        checksumSHA256: result.ChecksumSHA256,
+        ...mapS3ChecksumsToResult(result as S3ChecksumFields),
       } satisfies ObjectResponse;
     }),
 
@@ -418,25 +445,7 @@ export const makeObjectOps = (target: S3Target) => ({
       if (result.VersionId) {
         s3Headers["x-amz-version-id"] = result.VersionId;
       }
-      if (result.ChecksumCRC32) {
-        s3Headers["x-amz-checksum-crc32"] = result.ChecksumCRC32;
-      }
-      if (result.ChecksumCRC32C) {
-        s3Headers["x-amz-checksum-crc32c"] = result.ChecksumCRC32C;
-      }
-      if (result.ChecksumCRC64NVME) {
-        s3Headers["x-amz-checksum-crc64nvme"] = result.ChecksumCRC64NVME;
-      }
-      if (result.ChecksumSHA1) {
-        s3Headers["x-amz-checksum-sha1"] = result.ChecksumSHA1;
-      }
-      if (result.ChecksumSHA256) {
-        s3Headers["x-amz-checksum-sha256"] = result.ChecksumSHA256;
-      }
-      if ((result as HasChecksumAlgorithm).ChecksumAlgorithm) {
-        s3Headers["x-amz-checksum-algorithm"] = (result as HasChecksumAlgorithm)
-          .ChecksumAlgorithm!;
-      }
+      mapS3ChecksumsToHeaders(result as S3ChecksumFields, s3Headers);
       if (result.LastModified) {
         s3Headers["last-modified"] = result
           .LastModified.toUTCString();
@@ -453,12 +462,7 @@ export const makeObjectOps = (target: S3Target) => ({
         lastModified: result.LastModified,
         metadata,
         headers: s3Headers,
-        checksumAlgorithm: (result as HasChecksumAlgorithm).ChecksumAlgorithm,
-        checksumCRC32: result.ChecksumCRC32,
-        checksumCRC32C: result.ChecksumCRC32C,
-        checksumCRC64NVME: result.ChecksumCRC64NVME,
-        checksumSHA1: result.ChecksumSHA1,
-        checksumSHA256: result.ChecksumSHA256,
+        ...mapS3ChecksumsToResult(result as S3ChecksumFields),
       };
     }),
 
@@ -496,20 +500,10 @@ export const makeObjectOps = (target: S3Target) => ({
       }
 
       const contentType = extractHeader(headers, "content-type");
-      const checksumAlgorithm =
-        extractHeader(headers, "x-amz-sdk-checksum-algorithm") ||
-        extractHeader(headers, "x-amz-checksum-algorithm");
-      const checksumCRC32 = extractHeader(headers, "x-amz-checksum-crc32");
-      const checksumCRC32C = extractHeader(headers, "x-amz-checksum-crc32c");
-      const checksumCRC64NVME = extractHeader(
-        headers,
-        "x-amz-checksum-crc64nvme",
-      );
-      const checksumSHA1 = extractHeader(headers, "x-amz-checksum-sha1");
-      const checksumSHA256 = extractHeader(headers, "x-amz-checksum-sha256");
+      const checksums = extractChecksumsFromS3Headers(headers);
 
       yield* Effect.logDebug(
-        `PutObject key=[${key}] checksums: algo=[${checksumAlgorithm}] sha256=[${checksumSHA256}] crc32=[${checksumCRC32}] crc32c=[${checksumCRC32C}]`,
+        `PutObject key=[${key}] checksums: algo=[${checksums.checksumAlgorithm}] sha256=[${checksums.checksumSHA256}] crc32=[${checksums.checksumCRC32}] crc32c=[${checksums.checksumCRC32C}]`,
       );
 
       const result = yield* Effect.tryPromise({
@@ -521,12 +515,13 @@ export const makeObjectOps = (target: S3Target) => ({
               Body: body,
               ContentType: contentType ? String(contentType) : undefined,
               Metadata: metadata,
-              ChecksumAlgorithm: checksumAlgorithm as ChecksumAlgorithm,
-              ChecksumCRC32: checksumCRC32,
-              ChecksumCRC32C: checksumCRC32C,
-              ChecksumCRC64NVME: checksumCRC64NVME,
-              ChecksumSHA1: checksumSHA1,
-              ChecksumSHA256: checksumSHA256,
+              ChecksumAlgorithm: checksums
+                .checksumAlgorithm as ChecksumAlgorithm,
+              ChecksumCRC32: checksums.checksumCRC32,
+              ChecksumCRC32C: checksums.checksumCRC32C,
+              ChecksumCRC64NVME: checksums.checksumCRC64NVME,
+              ChecksumSHA1: checksums.checksumSHA1,
+              ChecksumSHA256: checksums.checksumSHA256,
             }),
           ),
         catch: (e) => mapS3Error(e, bucketName),
@@ -535,12 +530,7 @@ export const makeObjectOps = (target: S3Target) => ({
       return {
         etag: result.ETag,
         versionId: result.VersionId,
-        checksumAlgorithm: (result as HasChecksumAlgorithm).ChecksumAlgorithm,
-        checksumCRC32: result.ChecksumCRC32,
-        checksumCRC32C: result.ChecksumCRC32C,
-        checksumCRC64NVME: result.ChecksumCRC64NVME,
-        checksumSHA1: result.ChecksumSHA1,
-        checksumSHA256: result.ChecksumSHA256,
+        ...mapS3ChecksumsToResult(result as S3ChecksumFields),
       };
     }),
 
@@ -661,7 +651,7 @@ export const makeObjectOps = (target: S3Target) => ({
           : undefined,
         objectSize: result.ObjectSize,
         storageClass: result.StorageClass,
-        checksumAlgorithm: (result as HasChecksumAlgorithm).ChecksumAlgorithm,
+        ...mapS3ChecksumsToResult(result as S3ChecksumFields),
       };
     }),
 
@@ -733,17 +723,7 @@ export const makeObjectOps = (target: S3Target) => ({
         offset += chunk.length;
       }
 
-      const checksumAlgorithm =
-        extractHeader(headers, "x-amz-sdk-checksum-algorithm") ||
-        extractHeader(headers, "x-amz-checksum-algorithm");
-      const checksumCRC32 = extractHeader(headers, "x-amz-checksum-crc32");
-      const checksumCRC32C = extractHeader(headers, "x-amz-checksum-crc32c");
-      const checksumCRC64NVME = extractHeader(
-        headers,
-        "x-amz-checksum-crc64nvme",
-      );
-      const checksumSHA1 = extractHeader(headers, "x-amz-checksum-sha1");
-      const checksumSHA256 = extractHeader(headers, "x-amz-checksum-sha256");
+      const checksums = extractChecksumsFromS3Headers(headers);
 
       const result = yield* Effect.tryPromise({
         try: () =>
@@ -754,12 +734,13 @@ export const makeObjectOps = (target: S3Target) => ({
               UploadId: uploadId,
               PartNumber: partNumber,
               Body: body,
-              ChecksumAlgorithm: checksumAlgorithm as ChecksumAlgorithm,
-              ChecksumCRC32: checksumCRC32,
-              ChecksumCRC32C: checksumCRC32C,
-              ChecksumCRC64NVME: checksumCRC64NVME,
-              ChecksumSHA1: checksumSHA1,
-              ChecksumSHA256: checksumSHA256,
+              ChecksumAlgorithm: checksums
+                .checksumAlgorithm as ChecksumAlgorithm,
+              ChecksumCRC32: checksums.checksumCRC32,
+              ChecksumCRC32C: checksums.checksumCRC32C,
+              ChecksumCRC64NVME: checksums.checksumCRC64NVME,
+              ChecksumSHA1: checksums.checksumSHA1,
+              ChecksumSHA256: checksums.checksumSHA256,
             }),
           ),
         catch: (e) => mapS3Error(e, bucketName),
@@ -774,12 +755,7 @@ export const makeObjectOps = (target: S3Target) => ({
       }
       return {
         etag: result.ETag,
-        checksumAlgorithm: (result as HasChecksumAlgorithm).ChecksumAlgorithm,
-        checksumCRC32: result.ChecksumCRC32,
-        checksumCRC32C: result.ChecksumCRC32C,
-        checksumCRC64NVME: result.ChecksumCRC64NVME,
-        checksumSHA1: result.ChecksumSHA1,
-        checksumSHA256: result.ChecksumSHA256,
+        ...mapS3ChecksumsToResult(result as S3ChecksumFields),
       };
     }),
 
@@ -801,14 +777,7 @@ export const makeObjectOps = (target: S3Target) => ({
     Effect.gen(function* () {
       const { client, bucketName } = target;
 
-      const checksumCRC32 = extractHeader(headers, "x-amz-checksum-crc32");
-      const checksumCRC32C = extractHeader(headers, "x-amz-checksum-crc32c");
-      const checksumCRC64NVME = extractHeader(
-        headers,
-        "x-amz-checksum-crc64nvme",
-      );
-      const checksumSHA1 = extractHeader(headers, "x-amz-checksum-sha1");
-      const checksumSHA256 = extractHeader(headers, "x-amz-checksum-sha256");
+      const checksums = extractChecksumsFromS3Headers(headers);
 
       const result = yield* Effect.tryPromise({
         try: () =>
@@ -828,11 +797,11 @@ export const makeObjectOps = (target: S3Target) => ({
                   ChecksumSHA256: p.checksumSHA256,
                 })),
               },
-              ChecksumCRC32: checksumCRC32,
-              ChecksumCRC32C: checksumCRC32C,
-              ChecksumCRC64NVME: checksumCRC64NVME,
-              ChecksumSHA1: checksumSHA1,
-              ChecksumSHA256: checksumSHA256,
+              ChecksumCRC32: checksums.checksumCRC32,
+              ChecksumCRC32C: checksums.checksumCRC32C,
+              ChecksumCRC64NVME: checksums.checksumCRC64NVME,
+              ChecksumSHA1: checksums.checksumSHA1,
+              ChecksumSHA256: checksums.checksumSHA256,
             }),
           ),
         catch: (e) => mapS3Error(e, bucketName),
@@ -854,12 +823,7 @@ export const makeObjectOps = (target: S3Target) => ({
         key: result.Key,
         etag: result.ETag,
         versionId: result.VersionId,
-        checksumAlgorithm: (result as HasChecksumAlgorithm).ChecksumAlgorithm,
-        checksumCRC32: result.ChecksumCRC32,
-        checksumCRC32C: result.ChecksumCRC32C,
-        checksumCRC64NVME: result.ChecksumCRC64NVME,
-        checksumSHA1: result.ChecksumSHA1,
-        checksumSHA256: result.ChecksumSHA256,
+        ...mapS3ChecksumsToResult(result as S3ChecksumFields),
       };
     }),
 
