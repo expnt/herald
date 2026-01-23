@@ -5,6 +5,7 @@ import {
   type CommonPrefix,
   type CompleteMultipartUploadResult,
   type DeleteObjectsResult,
+  type HeadObjectResult,
   InternalError,
   InvalidPart,
   type ListMultipartUploadsResult,
@@ -13,6 +14,7 @@ import {
   type MultipartUploadInfo,
   type MultipartUploadResult,
   NoSuchUpload,
+  type ObjectAttributes,
   type ObjectInfo,
   type ObjectResponse,
   type PartInfo,
@@ -270,6 +272,56 @@ export const makeObjectOps = (
           ? lastModifiedHeader[0]
           : lastModifiedHeader;
 
+        const checksumMode = (headers["x-amz-checksum-mode"] ||
+          headers["X-Amz-Checksum-Mode"]) === "ENABLED";
+
+        const checksumCRC32 =
+          response.headers["x-object-meta-s3-checksum-crc32"];
+        const checksumCRC32C =
+          response.headers["x-object-meta-s3-checksum-crc32c"];
+        const checksumCRC64NVME =
+          response.headers["x-object-meta-s3-checksum-crc64nvme"];
+        const checksumSHA1 = response.headers["x-object-meta-s3-checksum-sha1"];
+        const checksumSHA256 =
+          response.headers["x-object-meta-s3-checksum-sha256"];
+        const checksumAlgorithm =
+          response.headers["x-object-meta-s3-checksum-algorithm"];
+
+        if (checksumMode) {
+          if (checksumCRC32) {
+            s3Headers["x-amz-checksum-crc32"] = Array.isArray(checksumCRC32)
+              ? checksumCRC32[0]
+              : checksumCRC32;
+          }
+          if (checksumCRC32C) {
+            s3Headers["x-amz-checksum-crc32c"] = Array.isArray(checksumCRC32C)
+              ? checksumCRC32C[0]
+              : checksumCRC32C;
+          }
+          if (checksumCRC64NVME) {
+            s3Headers["x-amz-checksum-crc64nvme"] =
+              Array.isArray(checksumCRC64NVME)
+                ? checksumCRC64NVME[0]
+                : checksumCRC64NVME;
+          }
+          if (checksumSHA1) {
+            s3Headers["x-amz-checksum-sha1"] = Array.isArray(checksumSHA1)
+              ? checksumSHA1[0]
+              : checksumSHA1;
+          }
+          if (checksumSHA256) {
+            s3Headers["x-amz-checksum-sha256"] = Array.isArray(checksumSHA256)
+              ? checksumSHA256[0]
+              : checksumSHA256;
+          }
+          if (checksumAlgorithm) {
+            s3Headers["x-amz-checksum-algorithm"] =
+              Array.isArray(checksumAlgorithm)
+                ? checksumAlgorithm[0]
+                : checksumAlgorithm;
+          }
+        }
+
         // Try to get the native stream to avoid Effect <-> WebStream conversion overhead
         const nativeStream =
           (response as unknown as { source?: unknown }).source instanceof
@@ -288,6 +340,24 @@ export const makeObjectOps = (
           lastModified: lastModified ? new Date(lastModified) : undefined,
           metadata,
           headers: s3Headers,
+          checksumAlgorithm: checksumMode && Array.isArray(checksumAlgorithm)
+            ? checksumAlgorithm[0]
+            : (checksumMode ? checksumAlgorithm as string : undefined),
+          checksumCRC32: checksumMode && Array.isArray(checksumCRC32)
+            ? checksumCRC32[0]
+            : (checksumMode ? checksumCRC32 as string : undefined),
+          checksumCRC32C: checksumMode && Array.isArray(checksumCRC32C)
+            ? checksumCRC32C[0]
+            : (checksumMode ? checksumCRC32C as string : undefined),
+          checksumCRC64NVME: checksumMode && Array.isArray(checksumCRC64NVME)
+            ? checksumCRC64NVME[0]
+            : (checksumMode ? checksumCRC64NVME as string : undefined),
+          checksumSHA1: checksumMode && Array.isArray(checksumSHA1)
+            ? checksumSHA1[0]
+            : (checksumMode ? checksumSHA1 as string : undefined),
+          checksumSHA256: checksumMode && Array.isArray(checksumSHA256)
+            ? checksumSHA256[0]
+            : (checksumMode ? checksumSHA256 as string : undefined),
         } satisfies ObjectResponse;
       }),
 
@@ -363,6 +433,56 @@ export const makeObjectOps = (
           ? lastModifiedHeader[0]
           : lastModifiedHeader;
 
+        const checksumMode = (_headers["x-amz-checksum-mode"] ||
+          _headers["X-Amz-Checksum-Mode"]) === "ENABLED";
+
+        const checksumCRC32 =
+          response.headers["x-object-meta-s3-checksum-crc32"];
+        const checksumCRC32C =
+          response.headers["x-object-meta-s3-checksum-crc32c"];
+        const checksumCRC64NVME =
+          response.headers["x-object-meta-s3-checksum-crc64nvme"];
+        const checksumSHA1 = response.headers["x-object-meta-s3-checksum-sha1"];
+        const checksumSHA256 =
+          response.headers["x-object-meta-s3-checksum-sha256"];
+        const checksumAlgorithm =
+          response.headers["x-object-meta-s3-checksum-algorithm"];
+
+        if (checksumMode) {
+          if (checksumCRC32) {
+            s3Headers["x-amz-checksum-crc32"] = Array.isArray(checksumCRC32)
+              ? checksumCRC32[0]
+              : checksumCRC32;
+          }
+          if (checksumCRC32C) {
+            s3Headers["x-amz-checksum-crc32c"] = Array.isArray(checksumCRC32C)
+              ? checksumCRC32C[0]
+              : checksumCRC32C;
+          }
+          if (checksumCRC64NVME) {
+            s3Headers["x-amz-checksum-crc64nvme"] =
+              Array.isArray(checksumCRC64NVME)
+                ? checksumCRC64NVME[0]
+                : checksumCRC64NVME;
+          }
+          if (checksumSHA1) {
+            s3Headers["x-amz-checksum-sha1"] = Array.isArray(checksumSHA1)
+              ? checksumSHA1[0]
+              : checksumSHA1;
+          }
+          if (checksumSHA256) {
+            s3Headers["x-amz-checksum-sha256"] = Array.isArray(checksumSHA256)
+              ? checksumSHA256[0]
+              : checksumSHA256;
+          }
+          if (checksumAlgorithm) {
+            s3Headers["x-amz-checksum-algorithm"] =
+              Array.isArray(checksumAlgorithm)
+                ? checksumAlgorithm[0]
+                : checksumAlgorithm;
+          }
+        }
+
         return {
           contentType: (Array.isArray(response.headers["content-type"])
             ? response.headers["content-type"][0]
@@ -372,7 +492,25 @@ export const makeObjectOps = (
           lastModified: lastModified ? new Date(lastModified) : undefined,
           metadata,
           headers: s3Headers,
-        };
+          checksumAlgorithm: checksumMode && Array.isArray(checksumAlgorithm)
+            ? checksumAlgorithm[0]
+            : (checksumMode ? checksumAlgorithm as string : undefined),
+          checksumCRC32: checksumMode && Array.isArray(checksumCRC32)
+            ? checksumCRC32[0]
+            : (checksumMode ? checksumCRC32 as string : undefined),
+          checksumCRC32C: checksumMode && Array.isArray(checksumCRC32C)
+            ? checksumCRC32C[0]
+            : (checksumMode ? checksumCRC32C as string : undefined),
+          checksumCRC64NVME: checksumMode && Array.isArray(checksumCRC64NVME)
+            ? checksumCRC64NVME[0]
+            : (checksumMode ? checksumCRC64NVME as string : undefined),
+          checksumSHA1: checksumMode && Array.isArray(checksumSHA1)
+            ? checksumSHA1[0]
+            : (checksumMode ? checksumSHA1 as string : undefined),
+          checksumSHA256: checksumMode && Array.isArray(checksumSHA256)
+            ? checksumSHA256[0]
+            : (checksumMode ? checksumSHA256 as string : undefined),
+        } satisfies HeadObjectResult;
       }),
 
     putObject: (
@@ -403,6 +541,21 @@ export const makeObjectOps = (
             const value = fixHeaderEncoding(String(v));
             swiftHeaders[`X-Object-Meta-${metaKey}`] =
               /[^\x20-\x7E]/.test(value) ? encodeURIComponent(value) : value;
+          } else if (
+            lowK === "x-amz-checksum-algorithm" ||
+            lowK === "x-amz-sdk-checksum-algorithm"
+          ) {
+            swiftHeaders["X-Object-Meta-S3-Checksum-Algorithm"] = String(v);
+          } else if (lowK === "x-amz-checksum-sha256") {
+            swiftHeaders["X-Object-Meta-S3-Checksum-SHA256"] = String(v);
+          } else if (lowK === "x-amz-checksum-sha1") {
+            swiftHeaders["X-Object-Meta-S3-Checksum-SHA1"] = String(v);
+          } else if (lowK === "x-amz-checksum-crc32") {
+            swiftHeaders["X-Object-Meta-S3-Checksum-CRC32"] = String(v);
+          } else if (lowK === "x-amz-checksum-crc32c") {
+            swiftHeaders["X-Object-Meta-S3-Checksum-CRC32C"] = String(v);
+          } else if (lowK === "x-amz-checksum-crc64nvme") {
+            swiftHeaders["X-Object-Meta-S3-Checksum-CRC64NVME"] = String(v);
           }
         }
 
@@ -437,8 +590,23 @@ export const makeObjectOps = (
           ? etagHeader[0]
           : etagHeader;
 
+        const checksumCRC32 = headers["x-amz-checksum-crc32"] as string;
+        const checksumCRC32C = headers["x-amz-checksum-crc32c"] as string;
+        const checksumCRC64NVME = headers["x-amz-checksum-crc64nvme"] as string;
+        const checksumSHA1 = headers["x-amz-checksum-sha1"] as string;
+        const checksumSHA256 = headers["x-amz-checksum-sha256"] as string;
+
+        const checksumAlgorithm = (headers["x-amz-checksum-algorithm"] ||
+          headers["x-amz-sdk-checksum-algorithm"]) as string;
+
         return {
           etag: etagValue || undefined,
+          checksumAlgorithm,
+          checksumCRC32,
+          checksumCRC32C,
+          checksumCRC64NVME,
+          checksumSHA1,
+          checksumSHA256,
         } satisfies PutObjectResult;
       });
     },
@@ -574,16 +742,61 @@ export const makeObjectOps = (
         return { deleted, errors } satisfies DeleteObjectsResult;
       }),
 
+    getObjectAttributes: (
+      key: string,
+      attributes: readonly string[],
+      headers: Record<string, string | string[] | undefined>,
+    ) =>
+      Effect.gen(function* () {
+        const head = yield* makeObjectOps(target, client).headObject(
+          key,
+          headers,
+        );
+
+        const lowerAttrs = attributes.map((a) => a.toLowerCase());
+        const result: ObjectAttributes = {
+          ...(lowerAttrs.includes("etag") ? { etag: head.etag } : {}),
+          ...(lowerAttrs.includes("checksum")
+            ? {
+              checksum: {
+                checksumCRC32: head.checksumCRC32,
+                checksumCRC32C: head.checksumCRC32C,
+                checksumCRC64NVME: head.checksumCRC64NVME,
+                checksumSHA1: head.checksumSHA1,
+                checksumSHA256: head.checksumSHA256,
+              },
+              checksumAlgorithm: head.checksumAlgorithm,
+            }
+            : {}),
+          ...(lowerAttrs.includes("objectsize")
+            ? { objectSize: head.contentLength }
+            : {}),
+          ...(lowerAttrs.includes("storageclass")
+            ? { storageClass: "STANDARD" }
+            : {}),
+        };
+
+        // ObjectParts is harder to implement for finished SLOs without fetching the manifest
+        // For now we omit it or return empty if not easily available
+
+        return result;
+      }),
+
     createMultipartUpload: (
       _key: string,
-      _headers: Record<string, string | string[] | undefined>,
+      headers: Record<string, string | string[] | undefined>,
     ): Effect.Effect<MultipartUploadResult, BackendError> =>
       Effect.gen(function* () {
         const uploadId = yield* Effect.try({
           try: () => crypto.randomUUID(),
           catch: (e) => new InternalError({ message: String(e) }),
         });
-        return { uploadId } satisfies MultipartUploadResult;
+        const checksumAlgorithm = (headers["x-amz-sdk-checksum-algorithm"] ||
+          headers["x-amz-checksum-algorithm"]) as string;
+        return {
+          uploadId,
+          checksumAlgorithm,
+        } satisfies MultipartUploadResult;
       }),
 
     uploadPart: (
@@ -591,7 +804,7 @@ export const makeObjectOps = (
       uploadId: string,
       partNumber: number,
       body: Stream.Stream<Uint8Array, Error>,
-      _headers: Record<string, string | string[] | undefined>,
+      headers: Record<string, string | string[] | undefined>,
     ): Effect.Effect<UploadPartResult, BackendError> =>
       Effect.gen(function* () {
         const { url, token, container } = target;
@@ -599,9 +812,36 @@ export const makeObjectOps = (
         const encodedSegmentKey = segmentKey.split("/").map(encodeURIComponent)
           .join("/");
 
+        const swiftHeaders: Record<string, string> = {
+          "X-Auth-Token": token,
+        };
+
+        const checksumCRC32 = headers["x-amz-checksum-crc32"] as string;
+        const checksumCRC32C = headers["x-amz-checksum-crc32c"] as string;
+        const checksumCRC64NVME = headers["x-amz-checksum-crc64nvme"] as string;
+        const checksumSHA1 = headers["x-amz-checksum-sha1"] as string;
+        const checksumSHA256 = headers["x-amz-checksum-sha256"] as string;
+
+        if (checksumCRC32) {
+          swiftHeaders["X-Object-Meta-S3-Checksum-CRC32"] = checksumCRC32;
+        }
+        if (checksumCRC32C) {
+          swiftHeaders["X-Object-Meta-S3-Checksum-CRC32C"] = checksumCRC32C;
+        }
+        if (checksumCRC64NVME) {
+          swiftHeaders["X-Object-Meta-S3-Checksum-CRC64NVME"] =
+            checksumCRC64NVME;
+        }
+        if (checksumSHA1) {
+          swiftHeaders["X-Object-Meta-S3-Checksum-SHA1"] = checksumSHA1;
+        }
+        if (checksumSHA256) {
+          swiftHeaders["X-Object-Meta-S3-Checksum-SHA256"] = checksumSHA256;
+        }
+
         const response = yield* client.execute(
           HttpClientRequest.put(`${url}/${encodedSegmentKey}`).pipe(
-            HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+            HttpClientRequest.setHeaders(swiftHeaders),
             HttpClientRequest.bodyStream(body),
           ),
         ).pipe(
@@ -628,16 +868,34 @@ export const makeObjectOps = (
           ? etagHeader[0]
           : etagHeader;
 
+        const checksumAlgorithm = (headers["x-amz-checksum-algorithm"] ||
+          headers["x-amz-sdk-checksum-algorithm"]) as string;
+
         return {
           etag: etagValue || "",
+          checksumAlgorithm,
+          checksumCRC32,
+          checksumCRC32C,
+          checksumCRC64NVME,
+          checksumSHA1,
+          checksumSHA256,
         } satisfies UploadPartResult;
       }),
 
     completeMultipartUpload: (
       key: string,
       uploadId: string,
-      parts: readonly { etag: string; partNumber: number }[],
+      parts: readonly {
+        etag: string;
+        partNumber: number;
+        checksumCRC32?: string;
+        checksumCRC32C?: string;
+        checksumCRC64NVME?: string;
+        checksumSHA1?: string;
+        checksumSHA256?: string;
+      }[],
       metadata: Record<string, string>,
+      headers: Record<string, string | string[] | undefined>,
     ): Effect.Effect<CompleteMultipartUploadResult, BackendError> =>
       Effect.gen(function* () {
         if (parts.length === 0) {
@@ -723,6 +981,29 @@ export const makeObjectOps = (
           }
         }
 
+        const checksumCRC32 = headers["x-amz-checksum-crc32"] as string;
+        const checksumCRC32C = headers["x-amz-checksum-crc32c"] as string;
+        const checksumCRC64NVME = headers["x-amz-checksum-crc64nvme"] as string;
+        const checksumSHA1 = headers["x-amz-checksum-sha1"] as string;
+        const checksumSHA256 = headers["x-amz-checksum-sha256"] as string;
+
+        if (checksumCRC32) {
+          swiftHeaders["X-Object-Meta-S3-Checksum-CRC32"] = checksumCRC32;
+        }
+        if (checksumCRC32C) {
+          swiftHeaders["X-Object-Meta-S3-Checksum-CRC32C"] = checksumCRC32C;
+        }
+        if (checksumCRC64NVME) {
+          swiftHeaders["X-Object-Meta-S3-Checksum-CRC64NVME"] =
+            checksumCRC64NVME;
+        }
+        if (checksumSHA1) {
+          swiftHeaders["X-Object-Meta-S3-Checksum-SHA1"] = checksumSHA1;
+        }
+        if (checksumSHA256) {
+          swiftHeaders["X-Object-Meta-S3-Checksum-SHA256"] = checksumSHA256;
+        }
+
         const body = new TextEncoder().encode(JSON.stringify(manifest));
 
         const request = HttpClientRequest.put(`${url}/${encodedKey}`).pipe(
@@ -772,11 +1053,20 @@ export const makeObjectOps = (
           ),
         ).pipe(Effect.ignore);
 
+        const checksumAlgorithm = (headers["x-amz-checksum-algorithm"] ||
+          headers["x-amz-sdk-checksum-algorithm"]) as string;
+
         return {
           location: `${url}/${encodedKey}`,
           bucket: container,
           key,
           etag: etagValue || "",
+          checksumAlgorithm,
+          checksumCRC32,
+          checksumCRC32C,
+          checksumCRC64NVME,
+          checksumSHA1,
+          checksumSHA256,
         } satisfies CompleteMultipartUploadResult;
       }),
 

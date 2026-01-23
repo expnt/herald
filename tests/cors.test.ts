@@ -147,6 +147,8 @@ testEffect("cors/middleware/preflight", () =>
     const heraldConfig = {
       raw: config,
       lookupBucket: () => Option.none(),
+      resolveAuth: () => Option.none(),
+      resolveAuthForBackendId: () => Option.none(),
     };
 
     const request = makeMockRequest("http://localhost/s3/obj", {
@@ -194,6 +196,8 @@ testEffect("cors/middleware/headers", () =>
     const heraldConfig = {
       raw: config,
       lookupBucket: () => Option.none(),
+      resolveAuth: () => Option.none(),
+      resolveAuthForBackendId: () => Option.none(),
     };
 
     const request = makeMockRequest("http://localhost/s3/obj", {

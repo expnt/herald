@@ -26,6 +26,8 @@
     "xml2js": "npm:xml2js@0.6.2",
     "node:http": "node:http",
     "node:assert": "node:assert",
+    "node:crypto": "node:crypto",
+    "node:buffer": "node:buffer",
     "jest-diff": "npm:jest-diff@^29.7.0",
     "cliffy/ansi/": "https://deno.land/x/cliffy@v1.0.0-rc.3/ansi/"
   },

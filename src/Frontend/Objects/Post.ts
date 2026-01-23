@@ -93,6 +93,7 @@ export const postObject = () =>
         bucket,
         key,
         result.uploadId,
+        result.checksumAlgorithm,
       );
     }
 
@@ -100,7 +101,15 @@ export const postObject = () =>
       // Complete Multipart Upload
       const bodyText = yield* request.text;
 
-      const parts: { etag: string; partNumber: number }[] = [];
+      const parts: {
+        etag: string;
+        partNumber: number;
+        checksumCRC32?: string;
+        checksumCRC32C?: string;
+        checksumCRC64NVME?: string;
+        checksumSHA1?: string;
+        checksumSHA256?: string;
+      }[] = [];
       const partMatches = Array.from(
         bodyText.matchAll(/<Part>(.*?)<\/Part>/gs),
       );
@@ -110,10 +119,29 @@ export const postObject = () =>
           /<PartNumber>(.*?)<\/PartNumber>/,
         );
         const etagMatch = content.match(/<ETag>(.*?)<\/ETag>/);
+        const crc32Match = content.match(
+          /<ChecksumCRC32>(.*?)<\/ChecksumCRC32>/,
+        );
+        const crc32cMatch = content.match(
+          /<ChecksumCRC32C>(.*?)<\/ChecksumCRC32C>/,
+        );
+        const crc64nvmeMatch = content.match(
+          /<ChecksumCRC64NVME>(.*?)<\/ChecksumCRC64NVME>/,
+        );
+        const sha1Match = content.match(/<ChecksumSHA1>(.*?)<\/ChecksumSHA1>/);
+        const sha256Match = content.match(
+          /<ChecksumSHA256>(.*?)<\/ChecksumSHA256>/,
+        );
+
         if (partNumberMatch && etagMatch) {
           parts.push({
             partNumber: parseInt(partNumberMatch[1]),
             etag: etagMatch[1].replace(/&quot;/g, '"'),
+            checksumCRC32: crc32Match ? crc32Match[1] : undefined,
+            checksumCRC32C: crc32cMatch ? crc32cMatch[1] : undefined,
+            checksumCRC64NVME: crc64nvmeMatch ? crc64nvmeMatch[1] : undefined,
+            checksumSHA1: sha1Match ? sha1Match[1] : undefined,
+            checksumSHA256: sha256Match ? sha256Match[1] : undefined,
           });
         }
       }
@@ -157,6 +185,7 @@ export const postObject = () =>
         params.uploadId,
         parts,
         metadata,
+        request.headers,
       ).pipe(
         Effect.tap(() =>
           backend.multipartMetadataStore.remove(`${key}/${params.uploadId!}`)

@@ -75,6 +75,8 @@ export const S3ClientLive = Layer.effect(
               }
               : undefined,
             forcePathStyle: true,
+            // requestChecksumCalculation: "WHEN_REQUIRED",
+            // responseChecksumValidation: "WHEN_REQUIRED",
           });
         }),
     });

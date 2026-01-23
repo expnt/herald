@@ -58,6 +58,12 @@ export interface ObjectResponse {
   readonly lastModified?: Date;
   readonly metadata: Record<string, string>;
   readonly headers: Record<string, string>;
+  readonly checksumAlgorithm?: string;
+  readonly checksumCRC32?: string;
+  readonly checksumCRC32C?: string;
+  readonly checksumCRC64NVME?: string;
+  readonly checksumSHA1?: string;
+  readonly checksumSHA256?: string;
 }
 
 export interface HeadObjectResult {
@@ -67,19 +73,38 @@ export interface HeadObjectResult {
   readonly lastModified?: Date;
   readonly metadata: Record<string, string>;
   readonly headers: Record<string, string>;
+  readonly checksumAlgorithm?: string;
+  readonly checksumCRC32?: string;
+  readonly checksumCRC32C?: string;
+  readonly checksumCRC64NVME?: string;
+  readonly checksumSHA1?: string;
+  readonly checksumSHA256?: string;
 }
 
 export interface PutObjectResult {
   readonly etag?: string;
   readonly versionId?: string;
+  readonly checksumAlgorithm?: string;
+  readonly checksumCRC32?: string;
+  readonly checksumCRC32C?: string;
+  readonly checksumCRC64NVME?: string;
+  readonly checksumSHA1?: string;
+  readonly checksumSHA256?: string;
 }
 
 export interface MultipartUploadResult {
   readonly uploadId: string;
+  readonly checksumAlgorithm?: string;
 }
 
 export interface UploadPartResult {
   readonly etag: string;
+  readonly checksumAlgorithm?: string;
+  readonly checksumCRC32?: string;
+  readonly checksumCRC32C?: string;
+  readonly checksumCRC64NVME?: string;
+  readonly checksumSHA1?: string;
+  readonly checksumSHA256?: string;
 }
 
 export interface CompleteMultipartUploadResult {
@@ -88,6 +113,30 @@ export interface CompleteMultipartUploadResult {
   readonly key: string;
   readonly etag: string;
   readonly versionId?: string;
+  readonly checksumAlgorithm?: string;
+  readonly checksumCRC32?: string;
+  readonly checksumCRC32C?: string;
+  readonly checksumCRC64NVME?: string;
+  readonly checksumSHA1?: string;
+  readonly checksumSHA256?: string;
+}
+
+export interface ObjectAttributes {
+  readonly etag?: string;
+  readonly checksum?: {
+    readonly checksumCRC32?: string;
+    readonly checksumCRC32C?: string;
+    readonly checksumCRC64NVME?: string;
+    readonly checksumSHA1?: string;
+    readonly checksumSHA256?: string;
+  };
+  readonly objectParts?: {
+    readonly partsCount?: number;
+    readonly parts?: readonly PartInfo[];
+  };
+  readonly objectSize?: number;
+  readonly storageClass?: string;
+  readonly checksumAlgorithm?: string;
 }
 
 export interface PartInfo {
@@ -95,6 +144,11 @@ export interface PartInfo {
   readonly lastModified: Date;
   readonly etag: string;
   readonly size: number;
+  readonly checksumCRC32?: string;
+  readonly checksumCRC32C?: string;
+  readonly checksumCRC64NVME?: string;
+  readonly checksumSHA1?: string;
+  readonly checksumSHA256?: string;
 }
 
 export interface ListPartsResult {
@@ -290,6 +344,11 @@ export interface BackendService {
   readonly deleteObjects: (
     objects: readonly { key: string; versionId?: string }[],
   ) => Effect.Effect<DeleteObjectsResult, BackendError>;
+  readonly getObjectAttributes: (
+    key: string,
+    attributes: readonly string[],
+    headers: Record<string, string | string[] | undefined>,
+  ) => Effect.Effect<ObjectAttributes, BackendError>;
 
   readonly multipartMetadataStore: KeyValueStore.KeyValueStore;
 
@@ -308,8 +367,17 @@ export interface BackendService {
   readonly completeMultipartUpload: (
     key: string,
     uploadId: string,
-    parts: readonly { etag: string; partNumber: number }[],
+    parts: readonly {
+      etag: string;
+      partNumber: number;
+      checksumCRC32?: string;
+      checksumCRC32C?: string;
+      checksumCRC64NVME?: string;
+      checksumSHA1?: string;
+      checksumSHA256?: string;
+    }[],
     metadata: Record<string, string>,
+    headers: Record<string, string | string[] | undefined>,
   ) => Effect.Effect<CompleteMultipartUploadResult, BackendError>;
   readonly abortMultipartUpload: (
     key: string,

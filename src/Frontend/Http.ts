@@ -22,14 +22,9 @@ export const HttpS3Live = HttpApiBuilder.group(
   "s3",
   (handlers) =>
     handlers
-      // handleRaw is preferred througout since
-      // we want to return XML directly
-      // after setting our own
       .handleRaw("postRoot", (_handlers) =>
         Effect.gen(function* () {
           yield* Effect.logDebug("POST / received");
-          // FIXME: what's the purose of this handler?
-          // 200 diverges from 502 as defiend in the openapi
           return HttpServerResponse.text("", { status: 200 });
         }))
       .handleRaw("listBuckets", listBuckets)

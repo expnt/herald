@@ -23,10 +23,11 @@ import {
   type HttpServerResponse,
   Url,
 } from "@effect/platform";
-import type { HeraldConfig } from "../Config/Layer.ts";
+import { HeraldConfig } from "../Config/Layer.ts";
 import type { S3Client } from "../Backends/S3/Client.ts";
 import type { SwiftClient } from "../Backends/Swift/Client.ts";
 import { BadGateway } from "./Api.ts";
+import { verifyIncomingSigV4 } from "../Services/Auth.ts";
 
 /**
  * Fixes header values that might have been incorrectly decoded as Latin-1
@@ -163,6 +164,7 @@ export const S3QueryParams = Schema.Struct({
   uploads: Schema.optional(Schema.String),
   delete: Schema.optional(Schema.String),
   acl: Schema.optional(Schema.String),
+  attributes: Schema.optional(Schema.String),
 });
 
 export type S3QueryParams = Schema.Schema.Type<typeof S3QueryParams>;
@@ -216,16 +218,38 @@ export function resolveBucket<
       : false;
 
     if (Option.isSome(request)) {
-      const auth = request.value.headers["authorization"];
-      yield* Effect.logDebug(
-        `${request.value.method} ${request.value.url} auth: [${auth}]`,
-      );
-      if (
-        !auth || auth.trim() === "" ||
-        (auth.startsWith("AWS ") && auth.split(":").length < 2 &&
-          !auth.includes("Signature=")) ||
-        (auth.startsWith("AWS4-") && !auth.includes("Signature="))
-      ) {
+      const heraldConfig = yield* HeraldConfig;
+      const authCreds = heraldConfig.resolveAuth(bucketName);
+
+      if (Option.isNone(authCreds)) {
+        return s3Xml.formatError(
+          new AccessDenied({
+            message: "No authentication configured for this bucket",
+          }),
+          isHead,
+        );
+      }
+
+      const materializedBucketOpt = heraldConfig.lookupBucket(bucketName);
+      const region = Option.isSome(materializedBucketOpt)
+        ? materializedBucketOpt.value.region ?? "us-east-1"
+        : "us-east-1";
+
+      const verifyResult = yield* verifyIncomingSigV4(
+        request.value,
+        authCreds.value,
+        region,
+      ).pipe(Effect.either);
+
+      if (Either.isLeft(verifyResult)) {
+        return s3Xml.formatError(
+          new InternalError({ message: String(verifyResult.left) }),
+          isHead,
+        );
+      }
+      const isValid = verifyResult.right;
+
+      if (!isValid) {
         return s3Xml.formatError(
           new AccessDenied({
             message: "Access Denied",
@@ -313,6 +337,47 @@ export function resolveBackend<
     const isHead = Option.isSome(request)
       ? request.value.method === "HEAD"
       : false;
+
+    if (Option.isSome(request)) {
+      const heraldConfig = yield* HeraldConfig;
+      const authCreds = heraldConfig.resolveAuthForBackendId(backendId);
+
+      if (Option.isNone(authCreds)) {
+        return s3Xml.formatError(
+          new AccessDenied({
+            message: "No authentication configured for this backend",
+          }),
+          isHead,
+        );
+      }
+
+      // Find region from config
+      const backend = heraldConfig.raw.backends[backendId];
+      const region = backend?.region ?? "us-east-1";
+
+      const verifyResult = yield* verifyIncomingSigV4(
+        request.value,
+        authCreds.value,
+        region,
+      ).pipe(Effect.either);
+
+      if (Either.isLeft(verifyResult)) {
+        return s3Xml.formatError(
+          new InternalError({ message: String(verifyResult.left) }),
+          isHead,
+        );
+      }
+      const isValid = verifyResult.right;
+
+      if (!isValid) {
+        return s3Xml.formatError(
+          new AccessDenied({
+            message: "Access Denied",
+          }),
+          isHead,
+        );
+      }
+    }
 
     const program = Effect.gen(function* () {
       const backend = yield* Backend;

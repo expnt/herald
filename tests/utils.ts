@@ -2,7 +2,7 @@ import { S3Client } from "@aws-sdk/client-s3";
 import { Config, Effect, Layer, Logger, LogLevel, Option } from "effect";
 import { HttpHeraldLive } from "../src/Http.ts";
 import { HeraldConfig } from "../src/Config/Layer.ts";
-import { lookupBucket } from "../src/Domain/Config.ts";
+import { lookupBucket, resolveAuthConfig } from "../src/Domain/Config.ts";
 import { BackendResolverLive } from "../src/Services/BackendResolver.ts";
 import { S3ClientLive } from "../src/Backends/S3/Client.ts";
 import { SwiftClientLive } from "../src/Backends/Swift/Client.ts";
@@ -35,13 +35,48 @@ export type Snapshot = {
 export const makeTestHarness = (
   config: GlobalConfig,
   loggingLayer: Layer.Layer<never, never, never> = Logger.minimumLogLevel(
-    LogLevel.Info,
+    Deno.env.get("HERALD_LOG_LEVEL") === "debug"
+      ? LogLevel.Debug
+      : LogLevel.Info,
   ),
 ) =>
   Effect.gen(function* () {
+    const testCredentials = {
+      accessKeyId: "minioadmin",
+      secretAccessKey: "minioadmin",
+    };
+
+    // Ensure auth is configured so tests don't fail due to "Deny by default" policy
+    const configWithAuth: GlobalConfig = {
+      ...config,
+      auth: config.auth ?? { accessKeysRefs: ["test"] },
+    };
+
     const HeraldConfigLive = Layer.succeed(HeraldConfig, {
-      raw: config,
-      lookupBucket: (name: string) => lookupBucket(config, name),
+      raw: configWithAuth,
+      lookupBucket: (name: string) => lookupBucket(configWithAuth, name),
+      resolveAuth: (bucketName: string) => {
+        const auth = resolveAuthConfig(configWithAuth, bucketName);
+        if (!auth) return Option.none();
+        // Mock resolution for test ref
+        return Option.some(auth.accessKeysRefs.map((ref) =>
+          ref === "test"
+            ? testCredentials
+            : { accessKeyId: ref, secretAccessKey: ref }
+        ));
+      },
+      resolveAuthForBackendId: (backendId: string) => {
+        const backend = configWithAuth.backends[backendId];
+        const auth = backend?.auth ?? configWithAuth.auth;
+        if (!auth) {
+          return Option.none();
+        }
+        return Option.some(auth.accessKeysRefs.map((ref) =>
+          ref === "test"
+            ? testCredentials
+            : { accessKeyId: ref, secretAccessKey: ref }
+        ));
+      },
     });
 
     const ApiWithRequirements = HttpHeraldLive.pipe(
@@ -60,11 +95,30 @@ export const makeTestHarness = (
 
     // Start Deno.serve on a random port
     const server = Deno.serve(
-      { port: 0, onListen: () => {} },
+      {
+        port: 0,
+        onListen: () => {},
+        onError: (e) => {
+          // Suppress Interrupted errors - these happen when requests are aborted
+          if (e instanceof Deno.errors.Interrupted) {
+            return new Response("Request Interrupted", { status: 499 });
+          }
+          // Using console.error here is necessary for debugging test failures
+          // deno-lint-ignore no-console
+          console.error("Server error:", e);
+          return new Response("Internal Server Error", { status: 500 });
+        },
+      },
       async (req) => {
         try {
           return await webHandler.handler(req);
-        } catch (_e) {
+        } catch (e) {
+          // Suppress Interrupted errors
+          if (e instanceof Deno.errors.Interrupted) {
+            return new Response("Request Interrupted", { status: 499 });
+          }
+          // deno-lint-ignore no-console
+          console.error("Handler error:", e);
           return new Response("Internal Server Error", { status: 500 });
         }
       },
@@ -73,13 +127,16 @@ export const makeTestHarness = (
     // Ensure cleanup
     yield* Effect.addFinalizer(() =>
       Effect.tryPromise({
-        try: () => server.shutdown(),
-        catch: (e) => new Error(`Server shutdown failed: ${e}`),
+        try: () =>
+          server.shutdown(),
+        catch: (e) =>
+          new Error(`Server shutdown failed: ${e}`),
       }).pipe(Effect.orDie)
     );
     yield* Effect.addFinalizer(() =>
       Effect.tryPromise({
-        try: () => webHandler.dispose(),
+        try: () =>
+          webHandler.dispose(),
         catch: (e) => new Error(`Web handler disposal failed: ${e}`),
       }).pipe(Effect.orDie)
     );
@@ -99,8 +156,20 @@ export const makeTestHarness = (
       url: string | URL | Request,
       init?: RequestInit,
     ) => {
+      if (Deno.env.get("DEBUG_FETCH")) {
+        // deno-lint-ignore no-console
+        console.log(`FETCH: ${init?.method || "GET"} ${url}`);
+        if (init?.headers) {
+          // deno-lint-ignore no-console
+          console.log(`HEADERS: ${JSON.stringify(init.headers)}`);
+        }
+      }
       try {
         const res = await fetch(url, init);
+        if (Deno.env.get("DEBUG_FETCH")) {
+          // deno-lint-ignore no-console
+          console.log(`RESPONSE: ${res.status}`);
+        }
         const hasBody = res.status !== 204 && res.status !== 205 &&
           res.status !== 304;
         let body = "";
@@ -180,7 +249,9 @@ export const makeTestHarness = (
         const queryStr =
           (request.query && Object.keys(request.query).length > 0)
             ? "?" +
-              Object.entries(request.query).map(([k, v]) => `${k}=${v}`).join(
+              Object.entries(request.query).map(([k, v]) =>
+                v === "" ? k : `${k}=${v}`
+              ).join(
                 "&",
               )
             : "";
@@ -219,6 +290,8 @@ export const makeTestHarness = (
       credentials,
       forcePathStyle: true,
       requestHandler: createRequestHandler(),
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      responseChecksumValidation: "WHEN_REQUIRED",
     });
 
     const proxyClient = new S3Client({
@@ -227,6 +300,8 @@ export const makeTestHarness = (
       credentials,
       forcePathStyle: true,
       requestHandler: createRequestHandler(),
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      responseChecksumValidation: "WHEN_REQUIRED",
     });
 
     return {

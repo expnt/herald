@@ -18,6 +18,8 @@ testEffect("health/getStatus", () =>
     const HeraldConfigLive = Layer.succeed(HeraldConfig, {
       raw: { backends: {} },
       lookupBucket: () => Option.none(),
+      resolveAuth: () => Option.none(),
+      resolveAuthForBackendId: () => Option.none(),
     });
 
     const ApiWithRequirements = HttpApiBuilder.api(HeraldHttpApi).pipe(

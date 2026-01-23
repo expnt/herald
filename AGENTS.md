@@ -31,3 +31,5 @@
 
 - Always fix deno lint and deno check issues before running tests, the type
   system is there to help.
+- Never use `--no-check`. Treat the codebase like a Rust codebase. Live and die
+  by the type system.

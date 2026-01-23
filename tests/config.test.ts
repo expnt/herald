@@ -1,5 +1,9 @@
 import { type Context, Either, Layer, Option, Schema } from "effect";
-import { GlobalConfig, lookupBucket } from "../src/Domain/Config.ts";
+import {
+  GlobalConfig,
+  lookupBucket,
+  resolveAuthConfig,
+} from "../src/Domain/Config.ts";
 import { Effect } from "effect";
 import { assertEquals, EffectAssert, testEffect } from "./utils.ts";
 import {
@@ -288,6 +292,33 @@ const cases: TestCase[] = [
       },
     },
   },
+  {
+    id: "auth_basic",
+    name: "auth config basic",
+    input: {
+      backends: {
+        s3: {
+          protocol: "s3",
+          buckets: "*",
+          auth: { accessKeysRefs: ["admin"] },
+        },
+      },
+    },
+  },
+  {
+    id: "auth_invalid_refs",
+    name: "auth config invalid refs fails",
+    input: {
+      backends: {
+        s3: {
+          protocol: "s3",
+          buckets: "*",
+          auth: { accessKeysRefs: "admin" }, // Should be array
+        },
+      },
+    },
+    expectError: true,
+  },
 ];
 
 for (const tc of cases) {
@@ -327,6 +358,41 @@ for (const tc of cases) {
     }));
 }
 
+testEffect("config/resolveAuthConfig/hierarchy", () =>
+  Effect.gen(function* () {
+    const config: GlobalConfig = {
+      auth: { accessKeysRefs: ["global"] },
+      backends: {
+        s3: {
+          protocol: "s3",
+          buckets: {
+            "bucket-override": {
+              auth: { accessKeysRefs: ["bucket"] },
+            },
+            "bucket-no-override": {},
+          },
+          auth: { accessKeysRefs: ["backend"] },
+        },
+        other: {
+          protocol: "s3",
+          buckets: "*",
+        },
+      },
+    };
+
+    // Bucket override wins
+    const auth1 = resolveAuthConfig(config, "bucket-override");
+    yield* EffectAssert.deepStrictEqual(auth1?.accessKeysRefs, ["bucket"]);
+
+    // Backend wins if no bucket override
+    const auth2 = resolveAuthConfig(config, "bucket-no-override");
+    yield* EffectAssert.deepStrictEqual(auth2?.accessKeysRefs, ["backend"]);
+
+    // Global wins if no backend or bucket override
+    const auth3 = resolveAuthConfig(config, "some-other-bucket");
+    yield* EffectAssert.deepStrictEqual(auth3?.accessKeysRefs, ["global"]);
+  }));
+
 testEffect("config/parseConfig/env_vars", () =>
   Effect.gen(function* () {
     const env = {
@@ -354,6 +420,27 @@ testEffect("config/parseConfig/env_vars", () =>
         "http://swift.com",
       );
     }
+  }));
+
+testEffect("config/parseConfig/auth_env_vars", () =>
+  Effect.gen(function* () {
+    const env = {
+      HERALD_AUTH_ACCESS_KEYS_REFS: "global1,global2",
+      HERALD_S3_PROTOCOL: "s3",
+      HERALD_S3_AUTH_ACCESS_KEYS_REFS: "backend1",
+    };
+    const config = parseConfig({ backends: {} }, env);
+
+    yield* EffectAssert.deepStrictEqual(config.auth?.accessKeysRefs, [
+      "global1",
+      "global2",
+    ]);
+    yield* EffectAssert.deepStrictEqual(
+      config.backends.s3.auth?.accessKeysRefs,
+      [
+        "backend1",
+      ],
+    );
   }));
 
 testEffect(
@@ -446,6 +533,8 @@ for (const tc of resolverCases) {
       const HeraldConfigLive = Layer.succeed(HeraldConfig, {
         raw: tc.config,
         lookupBucket: (name: string) => lookupBucket(tc.config, name),
+        resolveAuth: () => Option.none(),
+        resolveAuthForBackendId: () => Option.none(),
       });
 
       // Mock S3Client

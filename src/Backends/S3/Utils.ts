@@ -20,10 +20,16 @@ import {
 } from "../../Services/Backend.ts";
 import { S3Client } from "./Client.ts";
 
-export interface S3Target {
+import type { KeyValueStore } from "@effect/platform";
+
+export interface S3BaseTarget {
   readonly client: S3ClientSDK;
   readonly bucketName: string;
   readonly name: string;
+}
+
+export interface S3Target extends S3BaseTarget {
+  readonly multipartMetadataStore: KeyValueStore.KeyValueStore;
 }
 
 /**
@@ -31,6 +37,17 @@ export interface S3Target {
  */
 export function stripMinioMetadata(s: string): string {
   return s.replace(/\[minio_cache:[^\]]+\]/g, "");
+}
+
+/**
+ * Safely extracts a header value from a record that might contain arrays.
+ */
+export function extractHeader(
+  headers: Record<string, string | string[] | undefined>,
+  key: string,
+): string | undefined {
+  const val = headers[key] || headers[key.toLowerCase()];
+  return Array.isArray(val) ? val[0] : val;
 }
 
 /**
@@ -111,7 +128,7 @@ export function mapS3Error(e: unknown, bucketName?: string): BackendError {
  */
 export const getTarget = (
   bucket: MaterializedBucket | { backend_id: string },
-): Effect.Effect<S3Target, BackendError, S3Client | HeraldConfig> =>
+): Effect.Effect<S3BaseTarget, BackendError, S3Client | HeraldConfig> =>
   Effect.gen(function* () {
     const s3Service = yield* S3Client;
     const config = yield* HeraldConfig;

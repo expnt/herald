@@ -18,9 +18,11 @@ export const makeS3Backend = (
 ): Effect.Effect<BackendService, BackendError, S3Client | HeraldConfig> =>
   Effect.gen(function* () {
     const target = yield* getTarget(bucket);
+    const multipartMetadataStore = makeNoopKeyValueStore();
+    const fullTarget = { ...target, multipartMetadataStore };
     return {
-      ...makeBucketOps(target),
-      ...makeObjectOps(target),
-      multipartMetadataStore: makeNoopKeyValueStore(),
+      ...makeBucketOps(fullTarget),
+      ...makeObjectOps(fullTarget),
+      multipartMetadataStore,
     } satisfies BackendService;
   });

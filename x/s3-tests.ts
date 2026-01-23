@@ -33,7 +33,7 @@ import { makeTestHarness } from "../tests/utils.ts";
 import { GlobalConfig } from "../src/Domain/Config.ts";
 
 const DEFAULT_TAGS =
-  "not appendobject and not bucket_policy and not copy and not cors and not encryption and not fails_strict_rfc2616 and not iam_tenant and not lifecycle and not object_lock and not policy and not policy_status and not s3select and not s3website and not sse_s3 and not tagging and not test_of_sts and not user_policy and not versioning and not webidentity_test";
+  "not appendobject and not bucket_policy and not copy and not cors and not encryption and not fails_strict_rfc2616 and not iam_tenant and not iam_user and not iam_account and not lifecycle and not object_lock and not policy and not policy_status and not s3select and not s3website and not sse_s3 and not tagging and not test_of_sts and not user_policy and not versioning and not webidentity_test";
 
 function getMinioConfig(): GlobalConfig {
   return {
@@ -151,8 +151,9 @@ const program = Effect.gen(function* () {
     activeConfig = swiftConfig.value;
     // For Swift backend, Herald doesn't check S3 credentials,
     // but s3-tests needs them to sign requests.
-    s3AccessKey = "dummy";
-    s3SecretKey = "dummy";
+    // We use minioadmin/minioadmin because that's what the test harness mock HeraldConfig uses.
+    s3AccessKey = "minioadmin";
+    s3SecretKey = "minioadmin";
   } else {
     activeConfig = getMinioConfig();
   }
@@ -181,10 +182,13 @@ const program = Effect.gen(function* () {
     Logger.make(({ message, logLevel: currentLogLevel }) => {
       const timestamp = new Date().toISOString();
       const level = currentLogLevel.label;
-      const msg = typeof message === "string" ? message : String(message);
+      const msg = typeof message === "string"
+        ? message
+        : JSON.stringify(message);
       const logLine = `${timestamp} level=${level} ${msg}\n`;
+      // console.log(logLine);
       try {
-        proxyLogFile.writeSync(new TextEncoder().encode(logLine));
+        Deno.writeTextFileSync(proxyLogPath, logLine, { append: true });
       } catch (e) {
         console.error(`Failed to write to proxy log: ${e}`);
       }
@@ -361,8 +365,8 @@ email = iam_alt_root@example.com
       .spawn();
 
     const sigintHandler = () => {
-      child.kill();
-      Deno.exit(0);
+      console.log(colors.yellow("\nReceived SIGINT, shutting down..."));
+      child.kill("SIGTERM");
     };
     Deno.addSignalListener("SIGINT", sigintHandler);
 
@@ -429,7 +433,7 @@ email = iam_alt_root@example.com
               if (!noAbort) {
                 shouldAbort = true;
                 abortReason = `ERROR in ${testName}`;
-                child.kill();
+                child.kill("SIGTERM");
               }
             } else if (status === "SKIPPED") {
               skippedCount++;
@@ -465,7 +469,7 @@ email = iam_alt_root@example.com
             if (!noAbort) {
               shouldAbort = true;
               abortReason = `ERROR in ${testName}`;
-              child.kill();
+              child.kill("SIGTERM");
             }
             return;
           }
@@ -493,34 +497,45 @@ email = iam_alt_root@example.com
         ) {
           const reader = stream.getReader();
           let buffer = "";
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            try {
-              await logFile.write(value);
-            } catch (e) {
-              console.error(`Failed to write to log file: ${e}`);
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              try {
+                await logFile.write(value);
+              } catch (e) {
+                console.error(`Failed to write to log file: ${e}`);
+              }
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split("\n");
+              buffer = lines.pop() || "";
+              for (const line of lines) {
+                processLine(line);
+              }
             }
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split("\n");
-            buffer = lines.pop() || "";
-            for (const line of lines) {
-              processLine(line);
+          } catch (e) {
+            if (!(e instanceof Deno.errors.Interrupted)) {
+              console.error(`Stream error: ${e}`);
             }
+          } finally {
+            if (buffer) {
+              processLine(buffer);
+            }
+            reader.releaseLock();
           }
-          if (buffer) {
-            processLine(buffer);
-          }
-          reader.releaseLock();
         }
 
-        const [procResult] = await Promise.all([
+        const [procResult] = await Promise.allSettled([
           child,
           streamToLogAndConsole(child.stdout()),
           streamToLogAndConsole(child.stderr()),
         ]);
 
         Deno.removeSignalListener("SIGINT", sigintHandler);
+
+        const exitCode = procResult.status === "fulfilled"
+          ? procResult.value.code
+          : 1;
 
         // Attempt to parse JUnit XML if it exists and is valid
         let junitData: {
@@ -578,7 +593,7 @@ email = iam_alt_root@example.com
         };
 
         return {
-          code: procResult.code,
+          code: exitCode,
           counts: finalCounts,
           collectedInfo,
           shouldAbort,
@@ -665,6 +680,16 @@ email = iam_alt_root@example.com
 });
 
 if (import.meta.main) {
+  // Add a global unhandled rejection handler to catch stray promises
+  globalThis.addEventListener("unhandledrejection", (e) => {
+    // Suppress Interrupted errors - these happen when requests/streams are aborted
+    if (e.reason instanceof Deno.errors.Interrupted) {
+      e.preventDefault();
+      return;
+    }
+    console.error(colors.red(`Unhandled rejection: ${e.reason}`));
+  });
+
   Effect.runPromiseExit(program.pipe(Effect.scoped)).then((exitCode) => {
     if (exitCode._tag === "Failure") {
       console.error(

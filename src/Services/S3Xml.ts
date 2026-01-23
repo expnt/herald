@@ -18,6 +18,7 @@ import {
   NoSuchBucket,
   NoSuchKey,
   NoSuchUpload,
+  type ObjectAttributes,
   type OwnerInfo,
 } from "./Backend.ts";
 
@@ -48,6 +49,7 @@ export class S3Xml extends Context.Tag("S3Xml")<
       bucket: string,
       key: string,
       uploadId: string,
+      checksumAlgorithm?: string,
     ) => HttpServerResponse.HttpServerResponse;
     readonly formatCompleteMultipartUpload: (
       result: {
@@ -55,10 +57,19 @@ export class S3Xml extends Context.Tag("S3Xml")<
         bucket: string;
         key: string;
         etag: string;
+        checksumAlgorithm?: string;
+        checksumCRC32?: string;
+        checksumCRC32C?: string;
+        checksumCRC64NVME?: string;
+        checksumSHA1?: string;
+        checksumSHA256?: string;
       },
     ) => HttpServerResponse.HttpServerResponse;
     readonly formatListParts: (
       result: ListPartsResult,
+    ) => HttpServerResponse.HttpServerResponse;
+    readonly formatObjectAttributes: (
+      result: ObjectAttributes,
     ) => HttpServerResponse.HttpServerResponse;
   }
 >() {}
@@ -340,9 +351,17 @@ export const S3XmlLive = Layer.succeed(
       });
     },
 
-    formatInitiateMultipartUpload: (bucket, key, uploadId) => {
+    formatInitiateMultipartUpload: (
+      bucket,
+      key,
+      uploadId,
+      checksumAlgorithm,
+    ) => {
+      const checksumAlgorithmXml = checksumAlgorithm
+        ? `<ChecksumAlgorithm>${checksumAlgorithm}</ChecksumAlgorithm>`
+        : "";
       const xml =
-        `<?xml version="1.0" encoding="UTF-8"?><InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Bucket>${bucket}</Bucket><Key>${key}</Key><UploadId>${uploadId}</UploadId></InitiateMultipartUploadResult>`;
+        `<?xml version="1.0" encoding="UTF-8"?><InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Bucket>${bucket}</Bucket><Key>${key}</Key><UploadId>${uploadId}</UploadId>${checksumAlgorithmXml}</InitiateMultipartUploadResult>`;
 
       return HttpServerResponse.text(xml, {
         headers: {
@@ -352,8 +371,27 @@ export const S3XmlLive = Layer.succeed(
     },
 
     formatCompleteMultipartUpload: (result) => {
+      const checksumAlgorithmXml = result.checksumAlgorithm
+        ? `<ChecksumAlgorithm>${result.checksumAlgorithm}</ChecksumAlgorithm>`
+        : "";
+      const checksumCRC32Xml = result.checksumCRC32
+        ? `<ChecksumCRC32>${result.checksumCRC32}</ChecksumCRC32>`
+        : "";
+      const checksumCRC32CXml = result.checksumCRC32C
+        ? `<ChecksumCRC32C>${result.checksumCRC32C}</ChecksumCRC32C>`
+        : "";
+      const checksumCRC64NVMEXml = result.checksumCRC64NVME
+        ? `<ChecksumCRC64NVME>${result.checksumCRC64NVME}</ChecksumCRC64NVME>`
+        : "";
+      const checksumSHA1Xml = result.checksumSHA1
+        ? `<ChecksumSHA1>${result.checksumSHA1}</ChecksumSHA1>`
+        : "";
+      const checksumSHA256Xml = result.checksumSHA256
+        ? `<ChecksumSHA256>${result.checksumSHA256}</ChecksumSHA256>`
+        : "";
+
       const xml =
-        `<?xml version="1.0" encoding="UTF-8"?><CompleteMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Location>${result.location}</Location><Bucket>${result.bucket}</Bucket><Key>${result.key}</Key><ETag>${result.etag}</ETag></CompleteMultipartUploadResult>`;
+        `<?xml version="1.0" encoding="UTF-8"?><CompleteMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Location>${result.location}</Location><Bucket>${result.bucket}</Bucket><Key>${result.key}</Key><ETag>${result.etag}</ETag>${checksumAlgorithmXml}${checksumCRC32Xml}${checksumCRC32CXml}${checksumCRC64NVMEXml}${checksumSHA1Xml}${checksumSHA256Xml}</CompleteMultipartUploadResult>`;
 
       return HttpServerResponse.text(xml, {
         headers: {
@@ -363,12 +401,103 @@ export const S3XmlLive = Layer.succeed(
     },
 
     formatListParts: (result) => {
-      const partsXml = result.parts.map((p) =>
-        `<Part><PartNumber>${p.partNumber}</PartNumber><LastModified>${p.lastModified.toISOString()}</LastModified><ETag>${p.etag}</ETag><Size>${p.size}</Size></Part>`
-      ).join("");
+      const partsXml = result.parts.map((p) => {
+        const checksumCRC32Xml = p.checksumCRC32
+          ? `<ChecksumCRC32>${p.checksumCRC32}</ChecksumCRC32>`
+          : "";
+        const checksumCRC32CXml = p.checksumCRC32C
+          ? `<ChecksumCRC32C>${p.checksumCRC32C}</ChecksumCRC32C>`
+          : "";
+        const checksumCRC64NVMEXml = p.checksumCRC64NVME
+          ? `<ChecksumCRC64NVME>${p.checksumCRC64NVME}</ChecksumCRC64NVME>`
+          : "";
+        const checksumSHA1Xml = p.checksumSHA1
+          ? `<ChecksumSHA1>${p.checksumSHA1}</ChecksumSHA1>`
+          : "";
+        const checksumSHA256Xml = p.checksumSHA256
+          ? `<ChecksumSHA256>${p.checksumSHA256}</ChecksumSHA256>`
+          : "";
+
+        return `<Part><PartNumber>${p.partNumber}</PartNumber><LastModified>${p.lastModified.toISOString()}</LastModified><ETag>${p.etag}</ETag><Size>${p.size}</Size>${checksumCRC32Xml}${checksumCRC32CXml}${checksumCRC64NVMEXml}${checksumSHA1Xml}${checksumSHA256Xml}</Part>`;
+      }).join("");
 
       const xml =
         `<?xml version="1.0" encoding="UTF-8"?><ListPartsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Bucket>${result.bucket}</Bucket><Key>${result.key}</Key><UploadId>${result.uploadId}</UploadId><Initiator><ID>${result.initiator.id}</ID><DisplayName>${result.initiator.displayName}</DisplayName></Initiator><Owner><ID>${result.owner.id}</ID><DisplayName>${result.owner.displayName}</DisplayName></Owner><StorageClass>${result.storageClass}</StorageClass><PartNumberMarker>${result.partNumberMarker}</PartNumberMarker><NextPartNumberMarker>${result.nextPartNumberMarker}</NextPartNumberMarker><MaxParts>${result.maxParts}</MaxParts><IsTruncated>${result.isTruncated}</IsTruncated>${partsXml}</ListPartsResult>`;
+
+      return HttpServerResponse.text(xml, {
+        headers: {
+          "Content-Type": "application/xml",
+        },
+      });
+    },
+
+    formatObjectAttributes: (result) => {
+      const etagXml = result.etag ? `<ETag>${result.etag}</ETag>` : "";
+      const storageClassXml = result.storageClass
+        ? `<StorageClass>${result.storageClass}</StorageClass>`
+        : "";
+      const objectSizeXml = result.objectSize !== undefined
+        ? `<ObjectSize>${result.objectSize}</ObjectSize>`
+        : "";
+      const checksumAlgorithmXml = result.checksumAlgorithm
+        ? `<ChecksumAlgorithm>${result.checksumAlgorithm}</ChecksumAlgorithm>`
+        : "";
+
+      let checksumXml = "";
+      if (result.checksum) {
+        const {
+          checksumCRC32,
+          checksumCRC32C,
+          checksumCRC64NVME,
+          checksumSHA1,
+          checksumSHA256,
+        } = result.checksum;
+        checksumXml = `<Checksum>${
+          checksumCRC32 ? `<ChecksumCRC32>${checksumCRC32}</ChecksumCRC32>` : ""
+        }${
+          checksumCRC32C
+            ? `<ChecksumCRC32C>${checksumCRC32C}</ChecksumCRC32C>`
+            : ""
+        }${
+          checksumCRC64NVME
+            ? `<ChecksumCRC64NVME>${checksumCRC64NVME}</ChecksumCRC64NVME>`
+            : ""
+        }${checksumSHA1 ? `<ChecksumSHA1>${checksumSHA1}</ChecksumSHA1>` : ""}${
+          checksumSHA256
+            ? `<ChecksumSHA256>${checksumSHA256}</ChecksumSHA256>`
+            : ""
+        }</Checksum>`;
+      }
+
+      let objectPartsXml = "";
+      if (result.objectParts) {
+        const partsXml = (result.objectParts.parts ?? []).map((p) => {
+          const checksumCRC32Xml = p.checksumCRC32
+            ? `<ChecksumCRC32>${p.checksumCRC32}</ChecksumCRC32>`
+            : "";
+          const checksumCRC32CXml = p.checksumCRC32C
+            ? `<ChecksumCRC32C>${p.checksumCRC32C}</ChecksumCRC32C>`
+            : "";
+          const checksumCRC64NVMEXml = p.checksumCRC64NVME
+            ? `<ChecksumCRC64NVME>${p.checksumCRC64NVME}</ChecksumCRC64NVME>`
+            : "";
+          const checksumSHA1Xml = p.checksumSHA1
+            ? `<ChecksumSHA1>${p.checksumSHA1}</ChecksumSHA1>`
+            : "";
+          const checksumSHA256Xml = p.checksumSHA256
+            ? `<ChecksumSHA256>${p.checksumSHA256}</ChecksumSHA256>`
+            : "";
+
+          return `<Part><PartNumber>${p.partNumber}</PartNumber><Size>${p.size}</Size><ETag>${p.etag}</ETag>${checksumCRC32Xml}${checksumCRC32CXml}${checksumCRC64NVMEXml}${checksumSHA1Xml}${checksumSHA256Xml}</Part>`;
+        }).join("");
+
+        objectPartsXml = `<ObjectParts><PartsCount>${
+          result.objectParts.partsCount ?? 0
+        }</PartsCount>${partsXml}</ObjectParts>`;
+      }
+
+      const xml =
+        `<?xml version="1.0" encoding="UTF-8"?><GetObjectAttributesResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">${checksumXml}${checksumAlgorithmXml}${etagXml}${objectPartsXml}${objectSizeXml}${storageClassXml}</GetObjectAttributesResult>`;
 
       return HttpServerResponse.text(xml, {
         headers: {

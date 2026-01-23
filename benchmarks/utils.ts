@@ -103,9 +103,16 @@ export const makeBenchHarness = (
   config: GlobalConfig,
 ): Effect.Effect<BenchHarness, unknown, Scope.Scope> =>
   Effect.gen(function* () {
+    const benchCredentials = {
+      accessKeyId: "minioadmin",
+      secretAccessKey: "minioadmin",
+    };
+
     const HeraldConfigLive = Layer.succeed(HeraldConfig, {
       raw: config,
       lookupBucket: (name: string) => lookupBucket(config, name),
+      resolveAuth: () => Option.some([benchCredentials]),
+      resolveAuthForBackendId: () => Option.some([benchCredentials]),
     });
 
     const ApiWithRequirements = HttpHeraldLive.pipe(
@@ -155,6 +162,8 @@ export const makeBenchHarness = (
       region: "us-east-1",
       credentials,
       forcePathStyle: true,
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      responseChecksumValidation: "WHEN_REQUIRED",
     });
 
     const proxyClient = new S3Client({
@@ -162,6 +171,8 @@ export const makeBenchHarness = (
       region: "us-east-1",
       credentials,
       forcePathStyle: true,
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      responseChecksumValidation: "WHEN_REQUIRED",
     });
 
     let swiftTarget: BenchHarness["swiftTarget"] = undefined;
@@ -204,6 +215,16 @@ export const makeBenchHarness = (
       Layer.succeed(HeraldConfig, {
         raw: config,
         lookupBucket: (name: string) => lookupBucket(config, name),
+        resolveAuth: () =>
+          Option.some([{
+            accessKeyId: "minioadmin",
+            secretAccessKey: "minioadmin",
+          }]),
+        resolveAuthForBackendId: () =>
+          Option.some([{
+            accessKeyId: "minioadmin",
+            secretAccessKey: "minioadmin",
+          }]),
       }),
     ),
   );

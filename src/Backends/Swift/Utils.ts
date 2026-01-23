@@ -11,11 +11,17 @@ import {
 import type { MaterializedBucket } from "../../Domain/Config.ts";
 import { SwiftClient } from "./Client.ts";
 
-export interface SwiftTarget {
+import type { KeyValueStore } from "@effect/platform";
+
+export interface SwiftBaseTarget {
   readonly storageUrl: string;
   readonly token: string;
   readonly container: string;
   readonly url: string;
+}
+
+export interface SwiftTarget extends SwiftBaseTarget {
+  readonly multipartMetadataStore: KeyValueStore.KeyValueStore;
 }
 
 export const INTERNAL_PREFIX = ".hrld/";
@@ -64,7 +70,7 @@ export const mapError = (
  */
 export const getTarget = (
   bucket: MaterializedBucket | { backend_id: string },
-): Effect.Effect<SwiftTarget, BackendError, SwiftClient> =>
+): Effect.Effect<SwiftBaseTarget, BackendError, SwiftClient> =>
   Effect.gen(function* () {
     const swiftClient = yield* SwiftClient;
     const auth = yield* swiftClient.getAuthMeta(bucket).pipe(

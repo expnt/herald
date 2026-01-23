@@ -82,11 +82,11 @@ jobs:
       - name: s3-tests
         run: |
           # Run MinIO tests in background
-          nix develop --command deno run --allow-all x/s3-tests.ts --backend minio &
+          nix develop --command deno run --allow-all x/s3-tests.ts --backend minio --no-abort &
           MINIO_PID=$!
 
           # Run Swift tests in background against SAIO
-          nix develop --command deno run --allow-all x/s3-tests.ts --backend swift &
+          nix develop --command deno run --allow-all x/s3-tests.ts --backend swift --no-abort &
           SWIFT_PID=$!
 
           # Wait for both and capture exit codes
@@ -102,18 +102,6 @@ jobs:
             fi
           fi
 
-          # Exit with error if either failed
-          if [ $MINIO_EXIT -ne 0 ] || [ $SWIFT_EXIT -ne 0 ]; then
-            echo "One or more compatibility tests failed (MinIO: $MINIO_EXIT, Swift: $SWIFT_EXIT)"
-            exit 1
-          fi
-
-      - name: prune uv cache
-        run: nix develop --command uv cache prune --ci
-
-      - name: failure logs
-        if: failure()
-        run: |
           echo "--- s3-tests/s3-tests.log (MinIO) ---"
           cat s3-tests/s3-tests.log || true
           echo "--- s3-tests/s3-tests-swift.log (Swift) ---"
@@ -122,3 +110,11 @@ jobs:
           cat s3-tests/herald-proxy.log || true
           echo "--- s3-tests/herald-proxy-swift.log ---"
           cat s3-tests/herald-proxy-swift.log || true
+          # Exit with error if either failed
+          if [ $MINIO_EXIT -ne 0 ] || [ $SWIFT_EXIT -ne 0 ]; then
+            echo "One or more compatibility tests failed (MinIO: $MINIO_EXIT, Swift: $SWIFT_EXIT)"
+            exit 1
+          fi
+
+      - name: prune uv cache
+        run: nix develop --command uv cache prune --ci

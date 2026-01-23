@@ -4,6 +4,30 @@ import { RequestContext } from "../Utils.ts";
 import { S3Xml } from "../../Services/S3Xml.ts";
 
 /**
+ * Handler for GetObjectAttributes (GET /:bucket/*?attributes)
+ */
+export const getObjectAttributes = () =>
+  Effect.gen(function* () {
+    const { backend, key, request } = yield* RequestContext;
+    const s3Xml = yield* S3Xml;
+
+    const attributesHeader = request.headers["x-amz-object-attributes"] ||
+      request.headers["X-Amz-Object-Attributes"];
+    const attributes = attributesHeader
+      ? (Array.isArray(attributesHeader)
+        ? attributesHeader[0]
+        : attributesHeader).split(",").map((a: string) => a.trim())
+      : [];
+
+    const result = yield* backend.getObjectAttributes(
+      key,
+      attributes,
+      request.headers,
+    );
+    return s3Xml.formatObjectAttributes(result);
+  });
+
+/**
  * Handler for GetObject (GET /:bucket/*)
  * Also handles ListParts (?uploadId=...).
  */
@@ -11,6 +35,10 @@ export const getObject = () =>
   Effect.gen(function* () {
     const { backend, key, params, request } = yield* RequestContext;
     const s3Xml = yield* S3Xml;
+
+    if (params.attributes !== undefined) {
+      return yield* getObjectAttributes();
+    }
 
     if (params.uploadId) {
       // List Parts
