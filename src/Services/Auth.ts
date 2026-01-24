@@ -134,6 +134,7 @@ export function verifyIncomingSigV4(
         region: effectiveRegion,
         service: "s3",
         sha256: Sha256,
+        uriEscapePath: false, // Path is already encoded in rawPath
       });
 
       // Extract signing date from request if possible
@@ -188,12 +189,23 @@ export function verifyIncomingSigV4(
         }
       });
 
+      // Use raw path from request.url to avoid URL constructor decoding
+      // We want the part between the host and the query string, as-is.
+      const urlString = request.url;
+      const queryIndex = urlString.indexOf("?");
+      const withoutQuery = queryIndex === -1
+        ? urlString
+        : urlString.substring(0, queryIndex);
+
+      // Remove protocol and host if present
+      const rawPath = withoutQuery.replace(/^[a-z]+:\/\/[^/]+/, "");
+
       const signableReq: HttpRequest = {
         method: request.method,
         protocol: url.protocol,
         hostname: url.hostname,
         port: url.port ? parseInt(url.port) : undefined,
-        path: url.pathname,
+        path: rawPath,
         query: queryBag,
         headers: filteredHeaders,
       };

@@ -6,6 +6,8 @@ import { makeS3Backend } from "../Backends/S3/Backend.ts";
 import { makeSwiftBackend } from "../Backends/Swift/Backend.ts";
 import type { SwiftClient } from "../Backends/Swift/Client.ts";
 import type { MaterializedBucket } from "../Domain/Config.ts";
+import type { Checksum } from "./Checksum.ts";
+import type { S3HeaderService } from "./S3HeaderService.ts";
 
 /**
  * BackendResolver handles dynamic resolution and provisioning of Backend implementations
@@ -20,7 +22,12 @@ export class BackendResolver extends Context.Tag("BackendResolver")<
     ) => Effect.Effect<
       A,
       E | Error,
-      Exclude<R, Backend> | HeraldConfig | S3Client | SwiftClient
+      | Exclude<R, Backend>
+      | HeraldConfig
+      | S3Client
+      | SwiftClient
+      | Checksum
+      | S3HeaderService
     >;
 
     readonly provideForBackendId: <A, E, R>(
@@ -29,7 +36,12 @@ export class BackendResolver extends Context.Tag("BackendResolver")<
     ) => Effect.Effect<
       A,
       E | Error,
-      Exclude<R, Backend> | HeraldConfig | S3Client | SwiftClient
+      | Exclude<R, Backend>
+      | HeraldConfig
+      | S3Client
+      | SwiftClient
+      | Checksum
+      | S3HeaderService
     >;
   }
 >() {}
@@ -108,7 +120,12 @@ export const BackendResolverLive = Layer.effect(
         }) as Effect.Effect<
           A,
           E | Error,
-          Exclude<R, Backend> | HeraldConfig | S3Client | SwiftClient
+          | Exclude<R, Backend>
+          | HeraldConfig
+          | S3Client
+          | SwiftClient
+          | Checksum
+          | S3HeaderService
         >,
 
       provideForBackendId: <A, E, R>(
@@ -121,7 +138,12 @@ export const BackendResolverLive = Layer.effect(
         }) as Effect.Effect<
           A,
           E | Error,
-          Exclude<R, Backend> | HeraldConfig | S3Client | SwiftClient
+          | Exclude<R, Backend>
+          | HeraldConfig
+          | S3Client
+          | SwiftClient
+          | Checksum
+          | S3HeaderService
         >,
     };
   }),

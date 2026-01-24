@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { HttpServerResponse } from "@effect/platform";
 import { RequestContext } from "../Utils.ts";
+import { S3HeaderService } from "../../Services/S3HeaderService.ts";
 
 /**
  * Handler for PutObject (PUT /:bucket/*)
@@ -8,6 +9,13 @@ import { RequestContext } from "../Utils.ts";
 export const putObject = () =>
   Effect.gen(function* () {
     const { backend, key, params, request } = yield* RequestContext;
+    const headerService = yield* S3HeaderService;
+
+    const headersWithLen = { ...request.headers };
+    const len = request.headers["content-length"];
+    if (len) {
+      headersWithLen["content-length"] = len;
+    }
 
     if (params.partNumber && params.uploadId) {
       // Upload Part
@@ -16,63 +24,23 @@ export const putObject = () =>
         params.uploadId,
         params.partNumber,
         request.stream,
-        request.headers,
+        headersWithLen,
       );
-      const headers: Record<string, string> = { ETag: result.etag };
-      if (result.checksumAlgorithm) {
-        headers["x-amz-checksum-algorithm"] = result.checksumAlgorithm;
-      }
-      if (result.checksumCRC32) {
-        headers["x-amz-checksum-crc32"] = result.checksumCRC32;
-      }
-      if (result.checksumCRC32C) {
-        headers["x-amz-checksum-crc32c"] = result.checksumCRC32C;
-      }
-      if (result.checksumCRC64NVME) {
-        headers["x-amz-checksum-crc64nvme"] = result.checksumCRC64NVME;
-      }
-      if (result.checksumSHA1) {
-        headers["x-amz-checksum-sha1"] = result.checksumSHA1;
-      }
-      if (result.checksumSHA256) {
-        headers["x-amz-checksum-sha256"] = result.checksumSHA256;
-      }
 
       return HttpServerResponse.empty({
         status: 200,
-        headers,
+        headers: headerService.toResponseHeaders(result),
       });
     }
 
     const result = yield* backend.putObject(
       key,
       request.stream,
-      request.headers,
+      headersWithLen,
     );
-    const headers: Record<string, string> = {};
-    if (result.etag) headers["ETag"] = result.etag;
-    if (result.versionId) headers["x-amz-version-id"] = result.versionId;
-    if (result.checksumAlgorithm) {
-      headers["x-amz-checksum-algorithm"] = result.checksumAlgorithm;
-    }
-    if (result.checksumCRC32) {
-      headers["x-amz-checksum-crc32"] = result.checksumCRC32;
-    }
-    if (result.checksumCRC32C) {
-      headers["x-amz-checksum-crc32c"] = result.checksumCRC32C;
-    }
-    if (result.checksumCRC64NVME) {
-      headers["x-amz-checksum-crc64nvme"] = result.checksumCRC64NVME;
-    }
-    if (result.checksumSHA1) {
-      headers["x-amz-checksum-sha1"] = result.checksumSHA1;
-    }
-    if (result.checksumSHA256) {
-      headers["x-amz-checksum-sha256"] = result.checksumSHA256;
-    }
 
     return HttpServerResponse.empty({
       status: 200,
-      headers,
+      headers: headerService.toResponseHeaders(result),
     });
   });

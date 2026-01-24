@@ -7,6 +7,8 @@ import { BackendResolverLive } from "../src/Services/BackendResolver.ts";
 import { S3ClientLive } from "../src/Backends/S3/Client.ts";
 import { SwiftClient, SwiftClientLive } from "../src/Backends/Swift/Client.ts";
 import { S3XmlLive } from "../src/Services/S3Xml.ts";
+import { ChecksumLive } from "../src/Services/Checksum.ts";
+import { S3HeaderServiceLive } from "../src/Services/S3HeaderService.ts";
 import { HttpApiBuilder, HttpServer } from "@effect/platform";
 import { FetchHttpClient, HttpClient } from "@effect/platform";
 import type { GlobalConfig } from "../src/Domain/Config.ts";
@@ -120,6 +122,8 @@ export const makeBenchHarness = (
       Layer.provide(S3ClientLive),
       Layer.provide(SwiftClientLive),
       Layer.provide(S3XmlLive),
+      Layer.provide(ChecksumLive),
+      Layer.provide(S3HeaderServiceLive),
       Layer.provide(HeraldConfigLive),
       Layer.provide(FetchHttpClient.layer),
       Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, {

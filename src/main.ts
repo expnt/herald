@@ -5,9 +5,12 @@ import { Layer } from "effect";
 import { HttpServerHeraldLive } from "./Http.ts";
 // otel tracing layer
 import { TracingLive } from "./Tracing.ts";
+// checksum layer
+import { ChecksumLive } from "./Services/Checksum.ts";
 
 HttpServerHeraldLive.pipe(
   Layer.provide(TracingLive),
+  Layer.provide(ChecksumLive),
   // provider an HttpClient impl based on `fetch`
   // used to talk the the swift impl
   Layer.provide(FetchHttpClient.layer),

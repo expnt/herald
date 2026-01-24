@@ -2,12 +2,15 @@ import { Context, Layer } from "effect";
 import { HttpServerResponse } from "@effect/platform";
 import {
   AccessDenied,
+  BadDigest,
   BucketAlreadyExists,
   BucketAlreadyOwnedByYou,
   type BucketInfo,
   BucketNotEmpty,
   EntityTooSmall,
   InternalError,
+  InvalidArgument,
+  InvalidBucketName,
   InvalidPart,
   InvalidPartOrder,
   InvalidRequest,
@@ -50,6 +53,7 @@ export class S3Xml extends Context.Tag("S3Xml")<
       key: string,
       uploadId: string,
       checksumAlgorithm?: string,
+      checksumType?: string,
     ) => HttpServerResponse.HttpServerResponse;
     readonly formatCompleteMultipartUpload: (
       result: {
@@ -58,6 +62,7 @@ export class S3Xml extends Context.Tag("S3Xml")<
         key: string;
         etag: string;
         checksumAlgorithm?: string;
+        checksumType?: string;
         checksumCRC32?: string;
         checksumCRC32C?: string;
         checksumCRC64NVME?: string;
@@ -127,6 +132,18 @@ export const S3XmlLive = Layer.succeed(
         code = "InvalidRequest";
         message = e.message;
         status = 400;
+      } else if (e instanceof BadDigest) {
+        code = "BadDigest";
+        message = e.message;
+        status = 400;
+      } else if (e instanceof InvalidBucketName) {
+        code = "InvalidBucketName";
+        message = e.message;
+        status = 400;
+      } else if (e instanceof InvalidArgument) {
+        code = "InvalidArgument";
+        message = e.message;
+        status = 400;
       } else if (e instanceof MalformedXML) {
         code = "MalformedXML";
         message = e.message;
@@ -136,6 +153,14 @@ export const S3XmlLive = Layer.succeed(
         message = e.message;
         status = 500;
       } else if (e instanceof Error) {
+        if (e.name === "InvalidArgument") {
+          code = "InvalidArgument";
+          status = 400;
+        } else if (e.name === "InvalidAttributeName") {
+          code = "InvalidArgument";
+          message = "Invalid attribute name specified.";
+          status = 400;
+        }
         message = e.message;
       } else if (typeof e === "string") {
         message = e;
@@ -356,12 +381,16 @@ export const S3XmlLive = Layer.succeed(
       key,
       uploadId,
       checksumAlgorithm,
+      checksumType,
     ) => {
       const checksumAlgorithmXml = checksumAlgorithm
-        ? `<ChecksumAlgorithm>${checksumAlgorithm}</ChecksumAlgorithm>`
+        ? `<ChecksumAlgorithm>${checksumAlgorithm.toUpperCase()}</ChecksumAlgorithm>`
+        : "";
+      const checksumTypeXml = checksumType
+        ? `<ChecksumType>${checksumType.toUpperCase()}</ChecksumType>`
         : "";
       const xml =
-        `<?xml version="1.0" encoding="UTF-8"?><InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Bucket>${bucket}</Bucket><Key>${key}</Key><UploadId>${uploadId}</UploadId>${checksumAlgorithmXml}</InitiateMultipartUploadResult>`;
+        `<?xml version="1.0" encoding="UTF-8"?><InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Bucket>${bucket}</Bucket><Key>${key}</Key><UploadId>${uploadId}</UploadId>${checksumAlgorithmXml}${checksumTypeXml}</InitiateMultipartUploadResult>`;
 
       return HttpServerResponse.text(xml, {
         headers: {
@@ -372,7 +401,10 @@ export const S3XmlLive = Layer.succeed(
 
     formatCompleteMultipartUpload: (result) => {
       const checksumAlgorithmXml = result.checksumAlgorithm
-        ? `<ChecksumAlgorithm>${result.checksumAlgorithm}</ChecksumAlgorithm>`
+        ? `<ChecksumAlgorithm>${result.checksumAlgorithm.toUpperCase()}</ChecksumAlgorithm>`
+        : "";
+      const checksumTypeXml = result.checksumType
+        ? `<ChecksumType>${result.checksumType.toUpperCase()}</ChecksumType>`
         : "";
       const checksumCRC32Xml = result.checksumCRC32
         ? `<ChecksumCRC32>${result.checksumCRC32}</ChecksumCRC32>`
@@ -391,7 +423,7 @@ export const S3XmlLive = Layer.succeed(
         : "";
 
       const xml =
-        `<?xml version="1.0" encoding="UTF-8"?><CompleteMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Location>${result.location}</Location><Bucket>${result.bucket}</Bucket><Key>${result.key}</Key><ETag>${result.etag}</ETag>${checksumAlgorithmXml}${checksumCRC32Xml}${checksumCRC32CXml}${checksumCRC64NVMEXml}${checksumSHA1Xml}${checksumSHA256Xml}</CompleteMultipartUploadResult>`;
+        `<?xml version="1.0" encoding="UTF-8"?><CompleteMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Location>${result.location}</Location><Bucket>${result.bucket}</Bucket><Key>${result.key}</Key><ETag>${result.etag}</ETag>${checksumAlgorithmXml}${checksumTypeXml}${checksumCRC32Xml}${checksumCRC32CXml}${checksumCRC64NVMEXml}${checksumSHA1Xml}${checksumSHA256Xml}</CompleteMultipartUploadResult>`;
 
       return HttpServerResponse.text(xml, {
         headers: {
@@ -445,6 +477,7 @@ export const S3XmlLive = Layer.succeed(
       let checksumXml = "";
       if (result.checksum) {
         const {
+          checksumAlgorithm,
           checksumCRC32,
           checksumCRC32C,
           checksumCRC64NVME,
@@ -453,6 +486,10 @@ export const S3XmlLive = Layer.succeed(
           checksumType,
         } = result.checksum;
         checksumXml = `<Checksum>${
+          checksumAlgorithm
+            ? `<ChecksumAlgorithm>${checksumAlgorithm.toUpperCase()}</ChecksumAlgorithm>`
+            : ""
+        }${
           checksumCRC32 ? `<ChecksumCRC32>${checksumCRC32}</ChecksumCRC32>` : ""
         }${
           checksumCRC32C
@@ -468,7 +505,7 @@ export const S3XmlLive = Layer.succeed(
             : ""
         }${
           checksumType
-            ? `<ChecksumAlgorithm>${checksumType}</ChecksumAlgorithm>`
+            ? `<ChecksumType>${checksumType.toUpperCase()}</ChecksumType>`
             : ""
         }</Checksum>`;
       }
@@ -495,9 +532,17 @@ export const S3XmlLive = Layer.succeed(
           return `<Part><PartNumber>${p.partNumber}</PartNumber><Size>${p.size}</Size>${checksumCRC32Xml}${checksumCRC32CXml}${checksumCRC64NVMEXml}${checksumSHA1Xml}${checksumSHA256Xml}</Part>`;
         }).join("");
 
-        objectPartsXml = `<ObjectParts><PartsCount>${
-          result.objectParts.partsCount ?? 0
-        }</PartsCount>${partsXml}</ObjectParts>`;
+        objectPartsXml = `<ObjectParts><TotalPartsCount>${
+          result.objectParts.totalPartsCount ?? 0
+        }</TotalPartsCount><PartNumberMarker>${
+          result.objectParts.partNumberMarker ?? 0
+        }</PartNumberMarker><NextPartNumberMarker>${
+          result.objectParts.nextPartNumberMarker ?? 0
+        }</NextPartNumberMarker><MaxParts>${
+          result.objectParts.maxParts ?? 1000
+        }</MaxParts><IsTruncated>${
+          result.objectParts.isTruncated ?? false
+        }</IsTruncated>${partsXml}</ObjectParts>`;
       }
 
       const xml =

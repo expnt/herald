@@ -7,6 +7,8 @@ import { BackendResolverLive } from "../src/Services/BackendResolver.ts";
 import { S3ClientLive } from "../src/Backends/S3/Client.ts";
 import { SwiftClientLive } from "../src/Backends/Swift/Client.ts";
 import { S3XmlLive } from "../src/Services/S3Xml.ts";
+import { ChecksumLive } from "../src/Services/Checksum.ts";
+import { S3HeaderServiceLive } from "../src/Services/S3HeaderService.ts";
 import { HttpApiBuilder, HttpServer } from "@effect/platform";
 import { FetchHttpClient } from "@effect/platform";
 import type { GlobalConfig } from "../src/Domain/Config.ts";
@@ -49,7 +51,17 @@ export const makeTestHarness = (
     // Ensure auth is configured so tests don't fail due to "Deny by default" policy
     const configWithAuth: GlobalConfig = {
       ...config,
-      auth: config.auth ?? { accessKeysRefs: ["test"] },
+      auth: config.auth ?? {
+        accessKeysRefs: [
+          "test",
+          "main",
+          "alt",
+          "tenant",
+          "iam",
+          "iam_root",
+          "iam_alt_root",
+        ],
+      },
     };
 
     const HeraldConfigLive = Layer.succeed(HeraldConfig, {
@@ -84,6 +96,8 @@ export const makeTestHarness = (
       Layer.provide(S3ClientLive),
       Layer.provide(SwiftClientLive),
       Layer.provide(S3XmlLive),
+      Layer.provide(ChecksumLive),
+      Layer.provide(S3HeaderServiceLive),
       Layer.provide(HeraldConfigLive),
       Layer.provide(FetchHttpClient.layer),
       Layer.provideMerge(HttpServer.layerContext),

@@ -15,6 +15,7 @@ import { S3ClientLive } from "../Backends/S3/Client.ts";
 import { SwiftClientLive } from "../Backends/Swift/Client.ts";
 import { S3XmlLive } from "../Services/S3Xml.ts";
 import { BackendResolverLive } from "../Services/BackendResolver.ts";
+import { S3HeaderServiceLive } from "../Services/S3HeaderService.ts";
 import { provideRequestContext } from "./Utils.ts";
 
 export const HttpS3Live = HttpApiBuilder.group(
@@ -43,4 +44,5 @@ export const HttpS3Live = HttpApiBuilder.group(
   Layer.provide(S3ClientLive),
   Layer.provide(SwiftClientLive),
   Layer.provide(S3XmlLive),
+  Layer.provide(S3HeaderServiceLive),
 );

@@ -31,6 +31,8 @@
     "npm:@opentelemetry/exporter-trace-otlp-http@0.203": "0.203.0_@opentelemetry+api@1.9.0",
     "npm:@opentelemetry/sdk-trace-base@^2.0.1": "2.3.0_@opentelemetry+api@1.9.0",
     "npm:@opentelemetry/sdk-trace-node@^2.0.1": "2.3.0_@opentelemetry+api@1.9.0",
+    "npm:@smithy/fetch-http-handler@*": "5.3.6",
+    "npm:@smithy/fetch-http-handler@4": "4.1.3",
     "npm:@smithy/signature-v4@^4.2.0": "4.2.4",
     "npm:@smithy/types@^3.7.0": "3.7.2",
     "npm:effect@*": "3.19.14",
@@ -204,7 +206,7 @@
         "@smithy/eventstream-serde-browser",
         "@smithy/eventstream-serde-config-resolver",
         "@smithy/eventstream-serde-node",
-        "@smithy/fetch-http-handler",
+        "@smithy/fetch-http-handler@5.3.6",
         "@smithy/hash-blob-browser",
         "@smithy/hash-node",
         "@smithy/hash-stream-node",
@@ -221,7 +223,7 @@
         "@smithy/smithy-client",
         "@smithy/types@4.9.0",
         "@smithy/url-parser",
-        "@smithy/util-base64",
+        "@smithy/util-base64@4.3.0",
         "@smithy/util-body-length-browser",
         "@smithy/util-body-length-node",
         "@smithy/util-defaults-mode-browser",
@@ -252,7 +254,7 @@
         "@aws-sdk/util-user-agent-node",
         "@smithy/config-resolver",
         "@smithy/core",
-        "@smithy/fetch-http-handler",
+        "@smithy/fetch-http-handler@5.3.6",
         "@smithy/hash-node",
         "@smithy/invalid-dependency",
         "@smithy/middleware-content-length",
@@ -266,7 +268,7 @@
         "@smithy/smithy-client",
         "@smithy/types@4.9.0",
         "@smithy/url-parser",
-        "@smithy/util-base64",
+        "@smithy/util-base64@4.3.0",
         "@smithy/util-body-length-browser",
         "@smithy/util-body-length-node",
         "@smithy/util-defaults-mode-browser",
@@ -290,7 +292,7 @@
         "@smithy/signature-v4@5.3.5",
         "@smithy/smithy-client",
         "@smithy/types@4.9.0",
-        "@smithy/util-base64",
+        "@smithy/util-base64@4.3.0",
         "@smithy/util-middleware@4.2.5",
         "@smithy/util-utf8@4.2.0",
         "tslib"
@@ -311,7 +313,7 @@
       "dependencies": [
         "@aws-sdk/core",
         "@aws-sdk/types",
-        "@smithy/fetch-http-handler",
+        "@smithy/fetch-http-handler@5.3.6",
         "@smithy/node-http-handler",
         "@smithy/property-provider",
         "@smithy/protocol-http@5.3.5",
@@ -536,7 +538,7 @@
         "@aws-sdk/util-user-agent-node",
         "@smithy/config-resolver",
         "@smithy/core",
-        "@smithy/fetch-http-handler",
+        "@smithy/fetch-http-handler@5.3.6",
         "@smithy/hash-node",
         "@smithy/invalid-dependency",
         "@smithy/middleware-content-length",
@@ -550,7 +552,7 @@
         "@smithy/smithy-client",
         "@smithy/types@4.9.0",
         "@smithy/url-parser",
-        "@smithy/util-base64",
+        "@smithy/util-base64@4.3.0",
         "@smithy/util-body-length-browser",
         "@smithy/util-body-length-node",
         "@smithy/util-defaults-mode-browser",
@@ -1043,7 +1045,7 @@
     "@smithy/chunked-blob-reader-native@4.2.1": {
       "integrity": "sha512-lX9Ay+6LisTfpLid2zZtIhSEjHMZoAR5hHCR4H7tBz/Zkfr5ea8RcQ7Tk4mi0P76p4cN+Btz16Ffno7YHpKXnQ==",
       "dependencies": [
-        "@smithy/util-base64",
+        "@smithy/util-base64@4.3.0",
         "tslib"
       ]
     },
@@ -1070,7 +1072,7 @@
         "@smithy/middleware-serde",
         "@smithy/protocol-http@5.3.5",
         "@smithy/types@4.9.0",
-        "@smithy/util-base64",
+        "@smithy/util-base64@4.3.0",
         "@smithy/util-body-length-browser",
         "@smithy/util-middleware@4.2.5",
         "@smithy/util-stream",
@@ -1129,13 +1131,23 @@
         "tslib"
       ]
     },
+    "@smithy/fetch-http-handler@4.1.3": {
+      "integrity": "sha512-6SxNltSncI8s689nvnzZQc/dPXcpHQ34KUj6gR/HBroytKOd/isMG3gJF/zBE1TBmTT18TXyzhg3O3SOOqGEhA==",
+      "dependencies": [
+        "@smithy/protocol-http@4.1.8",
+        "@smithy/querystring-builder@3.0.11",
+        "@smithy/types@3.7.2",
+        "@smithy/util-base64@3.0.0",
+        "tslib"
+      ]
+    },
     "@smithy/fetch-http-handler@5.3.6": {
       "integrity": "sha512-3+RG3EA6BBJ/ofZUeTFJA7mHfSYrZtQIrDP9dI8Lf7X6Jbos2jptuLrAAteDiFVrmbEmLSuRG/bUKzfAXk7dhg==",
       "dependencies": [
         "@smithy/protocol-http@5.3.5",
-        "@smithy/querystring-builder",
+        "@smithy/querystring-builder@4.2.5",
         "@smithy/types@4.9.0",
-        "@smithy/util-base64",
+        "@smithy/util-base64@4.3.0",
         "tslib"
       ]
     },
@@ -1262,7 +1274,7 @@
       "dependencies": [
         "@smithy/abort-controller",
         "@smithy/protocol-http@5.3.5",
-        "@smithy/querystring-builder",
+        "@smithy/querystring-builder@4.2.5",
         "@smithy/types@4.9.0",
         "tslib"
       ]
@@ -1285,6 +1297,14 @@
       "integrity": "sha512-RlaL+sA0LNMp03bf7XPbFmT5gN+w3besXSWMkA8rcmxLSVfiEXElQi4O2IWwPfxzcHkxqrwBFMbngB8yx/RvaQ==",
       "dependencies": [
         "@smithy/types@4.9.0",
+        "tslib"
+      ]
+    },
+    "@smithy/querystring-builder@3.0.11": {
+      "integrity": "sha512-u+5HV/9uJaeLj5XTb6+IEF/dokWWkEqJ0XiaRRogyREmKGUgZnNecLucADLdauWFKUNbQfulHFEZEdjwEBjXRg==",
+      "dependencies": [
+        "@smithy/types@3.7.2",
+        "@smithy/util-uri-escape@3.0.0",
         "tslib"
       ]
     },
@@ -1371,6 +1391,14 @@
       "dependencies": [
         "@smithy/querystring-parser",
         "@smithy/types@4.9.0",
+        "tslib"
+      ]
+    },
+    "@smithy/util-base64@3.0.0": {
+      "integrity": "sha512-Kxvoh5Qtt0CDsfajiZOCpJxgtPHXOKwmM+Zy4waD43UoEMA+qPxxa98aE/7ZhdnBFZFXMOiBR5xbcaMhLtznQQ==",
+      "dependencies": [
+        "@smithy/util-buffer-from@3.0.0",
+        "@smithy/util-utf8@3.0.0",
         "tslib"
       ]
     },
@@ -1487,10 +1515,10 @@
     "@smithy/util-stream@4.5.6": {
       "integrity": "sha512-qWw/UM59TiaFrPevefOZ8CNBKbYEP6wBAIlLqxn3VAIo9rgnTNc4ASbVrqDmhuwI87usnjhdQrxodzAGFFzbRQ==",
       "dependencies": [
-        "@smithy/fetch-http-handler",
+        "@smithy/fetch-http-handler@5.3.6",
         "@smithy/node-http-handler",
         "@smithy/types@4.9.0",
-        "@smithy/util-base64",
+        "@smithy/util-base64@4.3.0",
         "@smithy/util-buffer-from@4.2.0",
         "@smithy/util-hex-encoding@4.2.0",
         "@smithy/util-utf8@4.2.0",
@@ -1806,6 +1834,7 @@
       "npm:@opentelemetry/exporter-trace-otlp-http@0.203",
       "npm:@opentelemetry/sdk-trace-base@^2.0.1",
       "npm:@opentelemetry/sdk-trace-node@^2.0.1",
+      "npm:@smithy/fetch-http-handler@4",
       "npm:@smithy/signature-v4@^4.2.0",
       "npm:@smithy/types@^3.7.0",
       "npm:effect@^3.17.7",

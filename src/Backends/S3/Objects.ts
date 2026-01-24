@@ -1,7 +1,6 @@
 import { Chunk, Effect, Option, Stream } from "effect";
 import {
   AbortMultipartUploadCommand,
-  type ChecksumAlgorithm,
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
   DeleteObjectCommand,
@@ -21,18 +20,30 @@ import {
   UploadPartCommand,
 } from "@aws-sdk/client-s3";
 import {
+  type BackendError,
   type CommonPrefix,
+  type CompleteMultipartUploadResult,
+  type HeadObjectResult,
   InternalError,
+  InvalidRequest,
   type ListObjectsResult,
+  type MultipartUploadResult,
+  type ObjectAttributes,
   type ObjectInfo,
   type ObjectResponse,
+  type PutObjectResult,
+  type UploadPartResult,
 } from "../../Services/Backend.ts";
+import type {
+  ChecksumAlgorithm,
+  ChecksumType,
+} from "../../Services/S3Schema.ts";
+import { mapS3Error, type S3Target, stripMinioMetadata } from "./Utils.ts";
 import {
-  extractHeader,
-  mapS3Error,
-  type S3Target,
-  stripMinioMetadata,
-} from "./Utils.ts";
+  normalizeHeaders,
+  S3HeaderService,
+} from "../../Services/S3HeaderService.ts";
+import { Checksum } from "../../Services/Checksum.ts";
 
 interface S3ChecksumFields {
   readonly ChecksumCRC32?: string;
@@ -41,51 +52,17 @@ interface S3ChecksumFields {
   readonly ChecksumSHA1?: string;
   readonly ChecksumSHA256?: string;
   readonly ChecksumAlgorithm?: string;
+  readonly ChecksumType?: string;
 }
 
-const mapS3ChecksumsToHeaders = (
-  result: S3ChecksumFields,
-  headers: Record<string, string>,
-) => {
-  if (result.ChecksumCRC32) {
-    headers["x-amz-checksum-crc32"] = result.ChecksumCRC32;
-  }
-  if (result.ChecksumCRC32C) {
-    headers["x-amz-checksum-crc32c"] = result.ChecksumCRC32C;
-  }
-  if (result.ChecksumCRC64NVME) {
-    headers["x-amz-checksum-crc64nvme"] = result.ChecksumCRC64NVME;
-  }
-  if (result.ChecksumSHA1) {
-    headers["x-amz-checksum-sha1"] = result.ChecksumSHA1;
-  }
-  if (result.ChecksumSHA256) {
-    headers["x-amz-checksum-sha256"] = result.ChecksumSHA256;
-  }
-  if (result.ChecksumAlgorithm) {
-    headers["x-amz-checksum-algorithm"] = result.ChecksumAlgorithm;
-  }
-};
-
 const mapS3ChecksumsToResult = (result: S3ChecksumFields) => ({
-  checksumAlgorithm: result.ChecksumAlgorithm,
+  checksumAlgorithm: result.ChecksumAlgorithm as ChecksumAlgorithm,
+  checksumType: result.ChecksumType as ChecksumType,
   checksumCRC32: result.ChecksumCRC32,
   checksumCRC32C: result.ChecksumCRC32C,
   checksumCRC64NVME: result.ChecksumCRC64NVME,
   checksumSHA1: result.ChecksumSHA1,
   checksumSHA256: result.ChecksumSHA256,
-});
-
-const extractChecksumsFromS3Headers = (
-  headers: Record<string, string | string[] | undefined>,
-) => ({
-  checksumAlgorithm: extractHeader(headers, "x-amz-sdk-checksum-algorithm") ||
-    extractHeader(headers, "x-amz-checksum-algorithm"),
-  checksumCRC32: extractHeader(headers, "x-amz-checksum-crc32"),
-  checksumCRC32C: extractHeader(headers, "x-amz-checksum-crc32c"),
-  checksumCRC64NVME: extractHeader(headers, "x-amz-checksum-crc64nvme"),
-  checksumSHA1: extractHeader(headers, "x-amz-checksum-sha1"),
-  checksumSHA256: extractHeader(headers, "x-amz-checksum-sha256"),
 });
 
 export const makeObjectOps = (target: S3Target) => ({
@@ -273,43 +250,29 @@ export const makeObjectOps = (target: S3Target) => ({
   getObject: (
     key: string,
     headers: Record<string, string | string[] | undefined>,
-  ) =>
+  ): Effect.Effect<ObjectResponse, BackendError, S3HeaderService> =>
     Effect.gen(function* () {
       const { client, bucketName } = target;
+      const headerService = yield* S3HeaderService;
+      const normalized = normalizeHeaders(headers);
+      const { s3Params } = headerService.fromRequestHeaders(headers);
+
       const result = yield* Effect.tryPromise({
         try: () =>
           client.send(
             new GetObjectCommand({
               Bucket: bucketName,
               Key: key,
-              Range: (headers["range"] || headers["Range"]) as string,
-              PartNumber: (headers["part-number"] ||
-                  headers["Part-Number"] ||
-                  headers["x-amz-part-number"])
-                ? parseInt(
-                  (headers["part-number"] ||
-                    headers["Part-Number"] ||
-                    headers["x-amz-part-number"]) as string,
-                )
+              Range: normalized["range"],
+              PartNumber: s3Params.partNumber,
+              ChecksumMode: s3Params.checksumMode as "ENABLED",
+              IfMatch: normalized["if-match"],
+              IfNoneMatch: normalized["if-none-match"],
+              IfModifiedSince: normalized["if-modified-since"]
+                ? new Date(normalized["if-modified-since"] as string)
                 : undefined,
-              ChecksumMode: (headers["x-amz-checksum-mode"] ||
-                headers["X-Amz-Checksum-Mode"]) as "ENABLED",
-              IfMatch: (headers["if-match"] || headers["If-Match"]) as string,
-              IfNoneMatch: (headers["if-none-match"] ||
-                headers["If-None-Match"]) as string,
-              IfModifiedSince: (headers["if-modified-since"] ||
-                  headers["If-Modified-Since"])
-                ? new Date(
-                  (headers["if-modified-since"] ||
-                    headers["If-Modified-Since"]) as string,
-                )
-                : undefined,
-              IfUnmodifiedSince: (headers["if-unmodified-since"] ||
-                  headers["If-Unmodified-Since"])
-                ? new Date(
-                  (headers["if-unmodified-since"] ||
-                    headers["If-Unmodified-Since"]) as string,
-                )
+              IfUnmodifiedSince: normalized["if-unmodified-since"]
+                ? new Date(normalized["if-unmodified-since"] as string)
                 : undefined,
             }),
           ),
@@ -350,38 +313,15 @@ export const makeObjectOps = (target: S3Target) => ({
       const metadata: Record<string, string> = {};
       if (result.Metadata) {
         for (const [k, v] of Object.entries(result.Metadata)) {
-          metadata[k] = Option.liftThrowable(decodeURIComponent)(
-            v ?? "",
-          ).pipe(
-            Option.getOrElse(() => v ?? ""),
-          );
+          metadata[k] = v.includes("%")
+            ? Option.liftThrowable(decodeURIComponent)(v).pipe(
+              Option.getOrElse(() => v),
+            )
+            : v;
         }
       }
 
-      const s3Headers: Record<string, string> = {};
-      if (result.ContentType) {
-        s3Headers["content-type"] = result.ContentType;
-      }
-      if (result.ContentLength !== undefined) {
-        s3Headers["content-length"] = String(result.ContentLength);
-      }
-      if (result.ETag) s3Headers["etag"] = result.ETag;
-      if (result.PartsCount !== undefined) {
-        s3Headers["x-amz-mp-parts-count"] = String(result.PartsCount);
-      }
-      if (result.VersionId) {
-        s3Headers["x-amz-version-id"] = result.VersionId;
-      }
-      mapS3ChecksumsToHeaders(result as S3ChecksumFields, s3Headers);
-      if (result.LastModified) {
-        s3Headers["last-modified"] = result.LastModified.toUTCString();
-      }
-
-      for (const [k, v] of Object.entries(metadata)) {
-        s3Headers[`x-amz-meta-${k}`] = v;
-      }
-
-      return {
+      const responseResult: ObjectResponse = {
         stream,
         nativeStream: webStream,
         contentType: result.ContentType,
@@ -389,31 +329,38 @@ export const makeObjectOps = (target: S3Target) => ({
         etag: result.ETag,
         lastModified: result.LastModified,
         metadata,
-        headers: s3Headers,
+        partsCount: result.PartsCount,
+        headers: headerService.toResponseHeaders({
+          ...mapS3ChecksumsToResult(result as S3ChecksumFields),
+          metadata,
+          headers: {},
+          stream: Stream.empty,
+          partsCount: result.PartsCount,
+          contentLength: result.ContentLength,
+          contentType: result.ContentType,
+          etag: result.ETag,
+          lastModified: result.LastModified,
+        }),
         ...mapS3ChecksumsToResult(result as S3ChecksumFields),
-      } satisfies ObjectResponse;
+      };
+
+      return responseResult;
     }),
 
   headObject: (
     key: string,
     headers: Record<string, string | string[] | undefined>,
-  ) =>
+  ): Effect.Effect<HeadObjectResult, BackendError, S3HeaderService> =>
     Effect.gen(function* () {
       const { client, bucketName } = target;
+      const headerService = yield* S3HeaderService;
+      const { s3Params } = headerService.fromRequestHeaders(headers);
+
       const commandInput = {
         Bucket: bucketName,
         Key: key,
-        PartNumber: (headers["part-number"] ||
-            headers["Part-Number"] ||
-            headers["x-amz-part-number"])
-          ? parseInt(
-            (headers["part-number"] ||
-              headers["Part-Number"] ||
-              headers["x-amz-part-number"]) as string,
-          )
-          : undefined,
-        ChecksumMode: (headers["x-amz-checksum-mode"] ||
-          headers["X-Amz-Checksum-Mode"]) as "ENABLED",
+        PartNumber: s3Params.partNumber,
+        ChecksumMode: s3Params.checksumMode as "ENABLED",
       };
       const result = yield* Effect.tryPromise({
         try: () => client.send(new HeadObjectCommand(commandInput)),
@@ -423,36 +370,12 @@ export const makeObjectOps = (target: S3Target) => ({
       const metadata: Record<string, string> = {};
       if (result.Metadata) {
         for (const [k, v] of Object.entries(result.Metadata)) {
-          metadata[k] = Option.liftThrowable(decodeURIComponent)(
-            v ?? "",
-          ).pipe(
-            Option.getOrElse(() => v ?? ""),
-          );
+          metadata[k] = v.includes("%")
+            ? Option.liftThrowable(decodeURIComponent)(v).pipe(
+              Option.getOrElse(() => v),
+            )
+            : v;
         }
-      }
-
-      const s3Headers: Record<string, string> = {};
-      if (result.ContentType) {
-        s3Headers["content-type"] = result.ContentType;
-      }
-      if (result.ContentLength !== undefined) {
-        s3Headers["content-length"] = String(result.ContentLength);
-      }
-      if (result.ETag) s3Headers["etag"] = result.ETag;
-      if (result.PartsCount !== undefined) {
-        s3Headers["x-amz-mp-parts-count"] = String(result.PartsCount);
-      }
-      if (result.VersionId) {
-        s3Headers["x-amz-version-id"] = result.VersionId;
-      }
-      mapS3ChecksumsToHeaders(result as S3ChecksumFields, s3Headers);
-      if (result.LastModified) {
-        s3Headers["last-modified"] = result
-          .LastModified.toUTCString();
-      }
-
-      for (const [k, v] of Object.entries(metadata)) {
-        s3Headers[`x-amz-meta-${k}`] = v;
       }
 
       return {
@@ -461,49 +384,79 @@ export const makeObjectOps = (target: S3Target) => ({
         etag: result.ETag,
         lastModified: result.LastModified,
         metadata,
-        headers: s3Headers,
+        partsCount: result.PartsCount,
+        headers: headerService.toResponseHeaders({
+          ...mapS3ChecksumsToResult(result as S3ChecksumFields),
+          metadata,
+          headers: {},
+          partsCount: result.PartsCount,
+          contentLength: result.ContentLength,
+          contentType: result.ContentType,
+          etag: result.ETag,
+          lastModified: result.LastModified,
+        }),
         ...mapS3ChecksumsToResult(result as S3ChecksumFields),
-      };
+      } satisfies HeadObjectResult;
     }),
 
   putObject: (
     key: string,
     bodyStream: Stream.Stream<Uint8Array, Error>,
     headers: Record<string, string | string[] | undefined>,
-  ) =>
+  ): Effect.Effect<
+    PutObjectResult,
+    BackendError,
+    Checksum | S3HeaderService
+  > =>
     Effect.gen(function* () {
       const { client, bucketName } = target;
-      const chunks = yield* Stream.runCollect(bodyStream).pipe(
-        Effect.mapError((e) => new InternalError({ message: String(e) })),
-      );
-      const totalLength = Chunk.reduce(
-        chunks,
-        0,
-        (acc, chunk) => acc + chunk.length,
-      );
-      const body = new Uint8Array(totalLength);
-      let offset = 0;
-      for (const chunk of chunks) {
-        body.set(chunk, offset);
-        offset += chunk.length;
-      }
+      const headerService = yield* S3HeaderService;
+      const { checksums, metadata, s3Params } = headerService
+        .fromRequestHeaders(headers);
+      const _normalized = normalizeHeaders(headers);
 
-      const metadata: Record<string, string> = {};
-      for (const [k, v] of Object.entries(headers)) {
-        if (k.toLowerCase().startsWith("x-amz-meta-")) {
-          const metaKey = k.substring("x-amz-meta-".length);
-          const value = String(v);
-          metadata[metaKey] = /[^\x20-\x7E]/.test(value)
-            ? encodeURIComponent(value)
-            : value;
-        }
-      }
-
-      const contentType = extractHeader(headers, "content-type");
-      const checksums = extractChecksumsFromS3Headers(headers);
+      const contentType = _normalized["content-type"] as string;
+      const contentLength = s3Params.contentLength;
 
       yield* Effect.logDebug(
-        `PutObject key=[${key}] checksums: algo=[${checksums.checksumAlgorithm}] sha256=[${checksums.checksumSHA256}] crc32=[${checksums.checksumCRC32}] crc32c=[${checksums.checksumCRC32C}]`,
+        `PutObject key=[${key}] checksums: algo=[${checksums.algorithm}] sha256=[${checksums.sha256}] crc32=[${checksums.crc32}] crc32c=[${checksums.crc32c}] headers=[${
+          JSON.stringify(_normalized)
+        }]`,
+      );
+
+      const checksumService = yield* Checksum;
+      const validatedStream = yield* checksumService.validate(
+        bodyStream,
+        checksums,
+      );
+
+      const body = (contentLength !== undefined && contentLength > 1024 * 1024)
+        ? Stream.toReadableStream(validatedStream.pipe(
+          Stream.mapError((e) => new Error(String(e))),
+        ))
+        : yield* Effect.gen(function* () {
+          const chunks = yield* Stream.runCollect(validatedStream).pipe(
+            Effect.mapError((e) => {
+              if (e instanceof InvalidRequest) return e;
+              return new InternalError({ message: String(e) });
+            }),
+          );
+          const totalLength = Chunk.reduce(
+            chunks,
+            0,
+            (acc, chunk) => acc + chunk.length,
+          );
+          const body = new Uint8Array(totalLength);
+          let offset = 0;
+          for (const chunk of chunks) {
+            body.set(chunk, offset);
+            offset += chunk.length;
+          }
+          return body;
+        });
+
+      yield* Effect.logDebug(
+        `PutObject key=[${key}] streaming body (contentLength=${contentLength})`,
       );
 
       const result = yield* Effect.tryPromise({
@@ -512,16 +465,16 @@ export const makeObjectOps = (target: S3Target) => ({
             new PutObjectCommand({
               Bucket: bucketName,
               Key: key,
-              Body: body,
-              ContentType: contentType ? String(contentType) : undefined,
+              Body: body, // SDK accepts ReadableStream or Uint8Array
+              ContentType: contentType,
+              ContentLength: contentLength,
               Metadata: metadata,
-              ChecksumAlgorithm: checksums
-                .checksumAlgorithm as ChecksumAlgorithm,
-              ChecksumCRC32: checksums.checksumCRC32,
-              ChecksumCRC32C: checksums.checksumCRC32C,
-              ChecksumCRC64NVME: checksums.checksumCRC64NVME,
-              ChecksumSHA1: checksums.checksumSHA1,
-              ChecksumSHA256: checksums.checksumSHA256,
+              ChecksumAlgorithm: checksums.algorithm,
+              ChecksumCRC32: checksums.crc32,
+              ChecksumCRC32C: checksums.crc32c,
+              ChecksumCRC64NVME: checksums.crc64nvme,
+              ChecksumSHA1: checksums.sha1,
+              ChecksumSHA256: checksums.sha256,
             }),
           ),
         catch: (e) => mapS3Error(e, bucketName),
@@ -582,9 +535,11 @@ export const makeObjectOps = (target: S3Target) => ({
     key: string,
     attributes: readonly string[],
     headers: Record<string, string | string[] | undefined>,
-  ) =>
+  ): Effect.Effect<ObjectAttributes, BackendError, S3HeaderService> =>
     Effect.gen(function* () {
       const { client, bucketName } = target;
+      const headerService = yield* S3HeaderService;
+      const { s3Params } = headerService.fromRequestHeaders(headers);
 
       // Map attribute names to what S3 SDK expects (case-sensitive)
       const s3Attributes = attributes
@@ -598,6 +553,12 @@ export const makeObjectOps = (target: S3Target) => ({
           return undefined;
         })
         .filter((a): a is S3ObjectAttributes => a !== undefined);
+
+      yield* Effect.logDebug(
+        `getObjectAttributes key=[${key}] s3Attributes=[${
+          s3Attributes.join(",")
+        }]`,
+      );
 
       if (s3Attributes.length === 0) {
         // If no recognized attributes, return a sensible default or fail?
@@ -615,8 +576,7 @@ export const makeObjectOps = (target: S3Target) => ({
               Bucket: bucketName,
               Key: key,
               ObjectAttributes: s3Attributes,
-              VersionId: (headers["x-amz-version-id"] ||
-                headers["versionId"]) as string,
+              VersionId: s3Params.versionId,
             }),
           ),
         catch: (e) => mapS3Error(e, bucketName),
@@ -631,12 +591,20 @@ export const makeObjectOps = (target: S3Target) => ({
             checksumCRC64NVME: result.Checksum.ChecksumCRC64NVME,
             checksumSHA1: result.Checksum.ChecksumSHA1,
             checksumSHA256: result.Checksum.ChecksumSHA256,
-            checksumType: (result as S3ChecksumFields).ChecksumAlgorithm,
+            checksumType: result.Checksum.ChecksumType,
           }
           : undefined,
         objectParts: result.ObjectParts
           ? {
-            partsCount: result.ObjectParts.TotalPartsCount,
+            totalPartsCount: result.ObjectParts.TotalPartsCount,
+            partNumberMarker: result.ObjectParts.PartNumberMarker
+              ? parseInt(String(result.ObjectParts.PartNumberMarker))
+              : undefined,
+            nextPartNumberMarker: result.ObjectParts.NextPartNumberMarker
+              ? parseInt(String(result.ObjectParts.NextPartNumberMarker))
+              : undefined,
+            maxParts: result.ObjectParts.MaxParts,
+            isTruncated: result.ObjectParts.IsTruncated,
             parts: (result.ObjectParts.Parts ?? []).map((p) => ({
               partNumber: p.PartNumber ?? 0,
               etag: "", // GetObjectAttributes doesn't return ETag for parts
@@ -658,45 +626,31 @@ export const makeObjectOps = (target: S3Target) => ({
   createMultipartUpload: (
     key: string,
     headers: Record<string, string | string[] | undefined>,
-  ) =>
+  ): Effect.Effect<MultipartUploadResult, BackendError, S3HeaderService> =>
     Effect.gen(function* () {
       const { client, bucketName } = target;
-      const metadata: Record<string, string> = {};
-      for (const [k, v] of Object.entries(headers)) {
-        if (k.toLowerCase().startsWith("x-amz-meta-")) {
-          const metaKey = k.substring("x-amz-meta-".length);
-          metadata[metaKey] = String(v);
-        }
-      }
-      const contentType = headers["content-type"];
-      const checksumAlgorithm = (headers["x-amz-sdk-checksum-algorithm"] ||
-        headers["x-amz-checksum-algorithm"]) as ChecksumAlgorithm || undefined;
+      const headerService = yield* S3HeaderService;
 
-      const result = yield* Effect.tryPromise({
-        try: () =>
-          client.send(
-            new CreateMultipartUploadCommand({
-              Bucket: bucketName,
-              Key: key,
-              Metadata: metadata,
-              ContentType: contentType ? String(contentType) : undefined,
-              ChecksumAlgorithm: checksumAlgorithm,
-            }),
-          ),
+      const { checksums, metadata } = headerService.fromRequestHeaders(headers);
+      const normalized = normalizeHeaders(headers);
+
+      const command = new CreateMultipartUploadCommand({
+        Bucket: bucketName,
+        Key: key,
+        Metadata: metadata,
+        ContentType: normalized["content-type"] as string,
+        ChecksumAlgorithm: checksums.algorithm,
+        ChecksumType: checksums.type,
+      });
+      const response = yield* Effect.tryPromise({
+        try: () => client.send(command),
         catch: (e) => mapS3Error(e, bucketName),
       });
-
-      if (!result.UploadId) {
-        return yield* Effect.fail(
-          new InternalError({
-            message: "S3 returned empty UploadId",
-          }),
-        );
-      }
       return {
-        uploadId: result.UploadId,
-        checksumAlgorithm: result.ChecksumAlgorithm,
-      };
+        uploadId: response.UploadId!,
+        checksumAlgorithm: response.ChecksumAlgorithm,
+        checksumType: response.ChecksumType,
+      } satisfies MultipartUploadResult;
     }),
 
   uploadPart: (
@@ -705,25 +659,46 @@ export const makeObjectOps = (target: S3Target) => ({
     partNumber: number,
     bodyStream: Stream.Stream<Uint8Array, Error>,
     headers: Record<string, string | string[] | undefined>,
-  ) =>
+  ): Effect.Effect<
+    UploadPartResult,
+    BackendError,
+    Checksum | S3HeaderService
+  > =>
     Effect.gen(function* () {
       const { client, bucketName } = target;
-      const chunks = yield* Stream.runCollect(bodyStream).pipe(
-        Effect.mapError((e) => new InternalError({ message: String(e) })),
-      );
-      const totalLength = Chunk.reduce(
-        chunks,
-        0,
-        (acc, chunk) => acc + chunk.length,
-      );
-      const body = new Uint8Array(totalLength);
-      let offset = 0;
-      for (const chunk of chunks) {
-        body.set(chunk, offset);
-        offset += chunk.length;
-      }
+      const headerService = yield* S3HeaderService;
 
-      const checksums = extractChecksumsFromS3Headers(headers);
+      const { checksums, s3Params } = headerService.fromRequestHeaders(headers);
+      const _normalized = normalizeHeaders(headers);
+
+      const contentLength = s3Params.contentLength;
+
+      const checksumService = yield* Checksum;
+      const validatedStream = yield* checksumService.validate(
+        bodyStream,
+        checksums,
+      );
+
+      const body = yield* Effect.gen(function* () {
+        const chunks = yield* Stream.runCollect(validatedStream).pipe(
+          Effect.mapError((e) => {
+            if (e instanceof InvalidRequest) return e;
+            return new InternalError({ message: String(e) });
+          }),
+        );
+        const totalLength = Chunk.reduce(
+          chunks,
+          0,
+          (acc, chunk) => acc + chunk.length,
+        );
+        const body = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of chunks) {
+          body.set(chunk, offset);
+          offset += chunk.length;
+        }
+        return body;
+      });
 
       const result = yield* Effect.tryPromise({
         try: () =>
@@ -733,14 +708,14 @@ export const makeObjectOps = (target: S3Target) => ({
               Key: key,
               UploadId: uploadId,
               PartNumber: partNumber,
-              Body: body,
-              ChecksumAlgorithm: checksums
-                .checksumAlgorithm as ChecksumAlgorithm,
-              ChecksumCRC32: checksums.checksumCRC32,
-              ChecksumCRC32C: checksums.checksumCRC32C,
-              ChecksumCRC64NVME: checksums.checksumCRC64NVME,
-              ChecksumSHA1: checksums.checksumSHA1,
-              ChecksumSHA256: checksums.checksumSHA256,
+              Body: body, // SDK accepts ReadableStream or Uint8Array
+              ContentLength: contentLength,
+              ChecksumAlgorithm: checksums.algorithm,
+              ChecksumCRC32: checksums.crc32,
+              ChecksumCRC32C: checksums.crc32c,
+              ChecksumCRC64NVME: checksums.crc64nvme,
+              ChecksumSHA1: checksums.sha1,
+              ChecksumSHA256: checksums.sha256,
             }),
           ),
         catch: (e) => mapS3Error(e, bucketName),
@@ -756,7 +731,7 @@ export const makeObjectOps = (target: S3Target) => ({
       return {
         etag: result.ETag,
         ...mapS3ChecksumsToResult(result as S3ChecksumFields),
-      };
+      } satisfies UploadPartResult;
     }),
 
   completeMultipartUpload: (
@@ -773,11 +748,16 @@ export const makeObjectOps = (target: S3Target) => ({
     }[],
     _metadata: Record<string, string>,
     headers: Record<string, string | string[] | undefined>,
-  ) =>
+  ): Effect.Effect<
+    CompleteMultipartUploadResult,
+    BackendError,
+    S3HeaderService
+  > =>
     Effect.gen(function* () {
       const { client, bucketName } = target;
+      const headerService = yield* S3HeaderService;
 
-      const checksums = extractChecksumsFromS3Headers(headers);
+      const { checksums } = headerService.fromRequestHeaders(headers);
 
       const result = yield* Effect.tryPromise({
         try: () =>
@@ -797,11 +777,12 @@ export const makeObjectOps = (target: S3Target) => ({
                   ChecksumSHA256: p.checksumSHA256,
                 })),
               },
-              ChecksumCRC32: checksums.checksumCRC32,
-              ChecksumCRC32C: checksums.checksumCRC32C,
-              ChecksumCRC64NVME: checksums.checksumCRC64NVME,
-              ChecksumSHA1: checksums.checksumSHA1,
-              ChecksumSHA256: checksums.checksumSHA256,
+              ChecksumCRC32: checksums.crc32,
+              ChecksumCRC32C: checksums.crc32c,
+              ChecksumCRC64NVME: checksums.crc64nvme,
+              ChecksumSHA1: checksums.sha1,
+              ChecksumSHA256: checksums.sha256,
+              ChecksumType: checksums.type,
             }),
           ),
         catch: (e) => mapS3Error(e, bucketName),
@@ -817,14 +798,21 @@ export const makeObjectOps = (target: S3Target) => ({
           }),
         );
       }
+      const checksumResult = result as S3ChecksumFields;
       return {
         location: result.Location,
         bucket: result.Bucket,
         key: result.Key,
         etag: result.ETag,
         versionId: result.VersionId,
-        ...mapS3ChecksumsToResult(result as S3ChecksumFields),
-      };
+        checksumAlgorithm: checksumResult.ChecksumAlgorithm,
+        checksumType: checksumResult.ChecksumType,
+        checksumCRC32: result.ChecksumCRC32,
+        checksumCRC32C: result.ChecksumCRC32C,
+        checksumCRC64NVME: result.ChecksumCRC64NVME,
+        checksumSHA1: result.ChecksumSHA1,
+        checksumSHA256: result.ChecksumSHA256,
+      } satisfies CompleteMultipartUploadResult;
     }),
 
   abortMultipartUpload: (key: string, uploadId: string) =>
@@ -879,7 +867,7 @@ export const makeObjectOps = (target: S3Target) => ({
         maxUploads: result.MaxUploads ?? 1000,
         delimiter: result.Delimiter,
         isTruncated: result.IsTruncated ?? false,
-        encodingType: result.EncodingType as string,
+        encodingType: result.EncodingType ?? "",
         uploads: (result.Uploads ?? []).map((u) => ({
           key: u.Key ?? "",
           uploadId: u.UploadId ?? "",

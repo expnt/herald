@@ -2,6 +2,10 @@ import { Effect, Option } from "effect";
 import { HttpServerResponse } from "@effect/platform";
 import { deriveBaseUrl, RequestContext } from "../Utils.ts";
 import { S3Xml } from "../../Services/S3Xml.ts";
+import {
+  parseCompleteMultipartUploadRequest,
+  parseDeleteObjectsRequest,
+} from "../../Services/XmlParser.ts";
 
 /**
  * Handler for POST requests on buckets or objects.
@@ -16,28 +20,7 @@ export const postObject = () =>
     if (params.delete !== undefined) {
       // Multi-Object Delete
       const bodyText = yield* request.text;
-
-      const objects: { key: string; versionId?: string }[] = [];
-      // Simple XML parsing for Multi-Object Delete
-      const objectMatches = Array.from(
-        bodyText.matchAll(/<Object>(.*?)<\/Object>/gs),
-      );
-      for (const match of objectMatches) {
-        const content = match[1];
-        const keyMatch = content.match(/<Key>(.*?)<\/Key>/);
-        const versionIdMatch = content.match(/<VersionId>(.*?)<\/VersionId>/);
-        if (keyMatch) {
-          const rawKey = keyMatch[1];
-          const key = Option.liftThrowable(decodeURIComponent)(rawKey).pipe(
-            Option.getOrElse(() => rawKey),
-          );
-          yield* Effect.logDebug(`DeleteObjects extracted key=[${key}]`);
-          objects.push({
-            key,
-            versionId: versionIdMatch ? versionIdMatch[1] : undefined,
-          });
-        }
-      }
+      const objects = yield* parseDeleteObjectsRequest(bodyText);
 
       if (objects.length > 0) {
         const deleteResult = yield* backend.deleteObjects(objects);
@@ -76,10 +59,32 @@ export const postObject = () =>
       const metadata: Record<string, string> = {};
       for (const [k, v] of Object.entries(request.headers)) {
         const lowK = k.toLowerCase();
-        if (lowK.startsWith("x-amz-meta-") || lowK === "content-type") {
+        if (
+          lowK.startsWith("x-amz-meta-") ||
+          lowK === "content-type" ||
+          lowK.startsWith("x-amz-checksum-") ||
+          lowK === "x-amz-sdk-checksum-algorithm"
+        ) {
           metadata[lowK] = String(v);
         }
       }
+      const finalChecksumAlgorithm = (
+        result.checksumAlgorithm ??
+          metadata["x-amz-checksum-algorithm"] ??
+          metadata["x-amz-sdk-checksum-algorithm"]
+      )?.toUpperCase();
+      const finalChecksumType = (
+        result.checksumType ??
+          metadata["x-amz-checksum-type"]
+      )?.toUpperCase();
+
+      if (finalChecksumAlgorithm) {
+        metadata["x-amz-checksum-algorithm"] = finalChecksumAlgorithm;
+      }
+      if (finalChecksumType) {
+        metadata["x-amz-checksum-type"] = finalChecksumType;
+      }
+
       yield* backend.multipartMetadataStore.set(
         `${key}/${result.uploadId}`,
         JSON.stringify(metadata),
@@ -93,58 +98,24 @@ export const postObject = () =>
         bucket,
         key,
         result.uploadId,
-        result.checksumAlgorithm,
+        finalChecksumAlgorithm,
+        finalChecksumType,
+      ).pipe(
+        HttpServerResponse.setHeader(
+          "x-amz-checksum-algorithm",
+          finalChecksumAlgorithm ?? "",
+        ),
+        HttpServerResponse.setHeader(
+          "x-amz-checksum-type",
+          finalChecksumType ?? "",
+        ),
       );
     }
 
     if (params.uploadId) {
       // Complete Multipart Upload
       const bodyText = yield* request.text;
-
-      const parts: {
-        etag: string;
-        partNumber: number;
-        checksumCRC32?: string;
-        checksumCRC32C?: string;
-        checksumCRC64NVME?: string;
-        checksumSHA1?: string;
-        checksumSHA256?: string;
-      }[] = [];
-      const partMatches = Array.from(
-        bodyText.matchAll(/<Part>(.*?)<\/Part>/gs),
-      );
-      for (const match of partMatches) {
-        const content = match[1];
-        const partNumberMatch = content.match(
-          /<PartNumber>(.*?)<\/PartNumber>/,
-        );
-        const etagMatch = content.match(/<ETag>(.*?)<\/ETag>/);
-        const crc32Match = content.match(
-          /<ChecksumCRC32>(.*?)<\/ChecksumCRC32>/,
-        );
-        const crc32cMatch = content.match(
-          /<ChecksumCRC32C>(.*?)<\/ChecksumCRC32C>/,
-        );
-        const crc64nvmeMatch = content.match(
-          /<ChecksumCRC64NVME>(.*?)<\/ChecksumCRC64NVME>/,
-        );
-        const sha1Match = content.match(/<ChecksumSHA1>(.*?)<\/ChecksumSHA1>/);
-        const sha256Match = content.match(
-          /<ChecksumSHA256>(.*?)<\/ChecksumSHA256>/,
-        );
-
-        if (partNumberMatch && etagMatch) {
-          parts.push({
-            partNumber: parseInt(partNumberMatch[1]),
-            etag: etagMatch[1].replace(/&quot;/g, '"'),
-            checksumCRC32: crc32Match ? crc32Match[1] : undefined,
-            checksumCRC32C: crc32cMatch ? crc32cMatch[1] : undefined,
-            checksumCRC64NVME: crc64nvmeMatch ? crc64nvmeMatch[1] : undefined,
-            checksumSHA1: sha1Match ? sha1Match[1] : undefined,
-            checksumSHA256: sha256Match ? sha256Match[1] : undefined,
-          });
-        }
-      }
+      const parts = yield* parseCompleteMultipartUploadRequest(bodyText);
 
       // Retrieve metadata
       const metadataOpt = yield* backend.multipartMetadataStore.get(
@@ -185,7 +156,7 @@ export const postObject = () =>
         params.uploadId,
         parts,
         metadata,
-        request.headers,
+        { ...request.headers, ...metadata },
       ).pipe(
         Effect.tap(() =>
           backend.multipartMetadataStore.remove(`${key}/${params.uploadId!}`)

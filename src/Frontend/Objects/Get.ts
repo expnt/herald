@@ -9,18 +9,12 @@ import { InvalidRequest } from "../../Services/Backend.ts";
  */
 export const getObjectAttributes = () =>
   Effect.gen(function* () {
-    const { backend, key, request } = yield* RequestContext;
+    const { backend, key, request, objectAttributes: attributes } =
+      yield* RequestContext;
+    yield* Effect.logDebug(
+      `getObjectAttributes key=[${key}] attributes=[${attributes.join(",")}]`,
+    );
     const s3Xml = yield* S3Xml;
-
-    const attributesHeader = request.headers["x-amz-object-attributes"] ||
-      request.headers["X-Amz-Object-Attributes"];
-    const attributes = attributesHeader
-      ? (Array.isArray(attributesHeader)
-        ? attributesHeader[0]
-        : attributesHeader).split(",").map((a: string) => a.trim()).filter((
-          a: string,
-        ) => a !== "")
-      : [];
 
     if (attributes.length === 0) {
       return s3Xml.formatError(

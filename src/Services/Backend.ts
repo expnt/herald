@@ -64,6 +64,8 @@ export interface ObjectResponse {
   readonly checksumCRC64NVME?: string;
   readonly checksumSHA1?: string;
   readonly checksumSHA256?: string;
+  readonly checksumType?: string;
+  readonly partsCount?: number;
 }
 
 export interface HeadObjectResult {
@@ -79,6 +81,8 @@ export interface HeadObjectResult {
   readonly checksumCRC64NVME?: string;
   readonly checksumSHA1?: string;
   readonly checksumSHA256?: string;
+  readonly checksumType?: string;
+  readonly partsCount?: number;
 }
 
 export interface PutObjectResult {
@@ -90,11 +94,13 @@ export interface PutObjectResult {
   readonly checksumCRC64NVME?: string;
   readonly checksumSHA1?: string;
   readonly checksumSHA256?: string;
+  readonly checksumType?: string;
 }
 
 export interface MultipartUploadResult {
   readonly uploadId: string;
   readonly checksumAlgorithm?: string;
+  readonly checksumType?: string;
 }
 
 export interface UploadPartResult {
@@ -105,6 +111,7 @@ export interface UploadPartResult {
   readonly checksumCRC64NVME?: string;
   readonly checksumSHA1?: string;
   readonly checksumSHA256?: string;
+  readonly checksumType?: string;
 }
 
 export interface CompleteMultipartUploadResult {
@@ -119,11 +126,13 @@ export interface CompleteMultipartUploadResult {
   readonly checksumCRC64NVME?: string;
   readonly checksumSHA1?: string;
   readonly checksumSHA256?: string;
+  readonly checksumType?: string;
 }
 
 export interface ObjectAttributes {
   readonly etag?: string;
   readonly checksum?: {
+    readonly checksumAlgorithm?: string;
     readonly checksumCRC32?: string;
     readonly checksumCRC32C?: string;
     readonly checksumCRC64NVME?: string;
@@ -132,7 +141,11 @@ export interface ObjectAttributes {
     readonly checksumType?: string;
   };
   readonly objectParts?: {
-    readonly partsCount?: number;
+    readonly totalPartsCount?: number;
+    readonly partNumberMarker?: number;
+    readonly nextPartNumberMarker?: number;
+    readonly maxParts?: number;
+    readonly isTruncated?: boolean;
     readonly parts?: readonly PartInfo[];
   };
   readonly objectSize?: number;
@@ -263,6 +276,20 @@ export class MalformedXML
     message: Schema.String,
   }) {}
 
+export class BadDigest extends Schema.TaggedError<BadDigest>()("BadDigest", {
+  message: Schema.String,
+}) {}
+
+export class InvalidBucketName
+  extends Schema.TaggedError<InvalidBucketName>()("InvalidBucketName", {
+    message: Schema.String,
+  }) {}
+
+export class InvalidArgument
+  extends Schema.TaggedError<InvalidArgument>()("InvalidArgument", {
+    message: Schema.String,
+  }) {}
+
 export interface DeleteError {
   readonly key: string;
   readonly code: string;
@@ -299,7 +326,10 @@ export type BackendError =
   | InvalidPartOrder
   | EntityTooSmall
   | InvalidRequest
-  | MalformedXML;
+  | MalformedXML
+  | BadDigest
+  | InvalidBucketName
+  | InvalidArgument;
 
 export interface BackendService {
   readonly listBuckets: () => Effect.Effect<

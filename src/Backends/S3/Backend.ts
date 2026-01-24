@@ -7,6 +7,8 @@ import { getTarget } from "./Utils.ts";
 import type { S3Client } from "./Client.ts";
 import type { HeraldConfig } from "../../Config/Layer.ts";
 import { makeNoopKeyValueStore } from "../../Services/NoopKeyValueStore.ts";
+import type { Checksum } from "../../Services/Checksum.ts";
+import type { S3HeaderService } from "../../Services/S3HeaderService.ts";
 
 /**
  * Creates an S3-specific Backend implementation for a given configuration context.
@@ -15,14 +17,18 @@ import { makeNoopKeyValueStore } from "../../Services/NoopKeyValueStore.ts";
  */
 export const makeS3Backend = (
   bucket: MaterializedBucket | { backend_id: string },
-): Effect.Effect<BackendService, BackendError, S3Client | HeraldConfig> =>
+): Effect.Effect<
+  BackendService,
+  BackendError,
+  S3Client | HeraldConfig | Checksum | S3HeaderService
+> =>
   Effect.gen(function* () {
     const target = yield* getTarget(bucket);
     const multipartMetadataStore = makeNoopKeyValueStore();
     const fullTarget = { ...target, multipartMetadataStore };
-    return {
+    return ({
       ...makeBucketOps(fullTarget),
       ...makeObjectOps(fullTarget),
       multipartMetadataStore,
-    } satisfies BackendService;
+    } as unknown) as BackendService;
   });

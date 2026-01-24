@@ -5,6 +5,8 @@ import {
   BucketAlreadyOwnedByYou,
   BucketNotEmpty,
   InternalError,
+  InvalidBucketName,
+  InvalidRequest,
   NoSuchBucket,
   NoSuchKey,
 } from "../../Services/Backend.ts";
@@ -27,6 +29,17 @@ export interface SwiftTarget extends SwiftBaseTarget {
 export const INTERNAL_PREFIX = ".hrld/";
 export const MP_META_PREFIX = `${INTERNAL_PREFIX}mmp/`;
 export const MP_SEGMENTS_PREFIX = `${INTERNAL_PREFIX}msg/`;
+
+/**
+ * Safely extracts a header value from a record that might contain arrays.
+ */
+export function extractHeader(
+  headers: Record<string, string | string[] | undefined>,
+  key: string,
+): string | undefined {
+  const val = headers[key] || headers[key.toLowerCase()];
+  return Array.isArray(val) ? val[0] : val;
+}
 
 export const mapError = (
   status: number,
@@ -58,6 +71,11 @@ export const mapError = (
       return new InternalError({
         message: `Swift error (${status}): ${message}`,
       });
+    case 400:
+      if (message.includes("Invalid bucket name")) {
+        return new InvalidBucketName({ message });
+      }
+      return new InvalidRequest({ message });
     default:
       return new InternalError({
         message: `Swift error (${status}): ${message}`,

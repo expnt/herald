@@ -5,11 +5,14 @@ import { HeraldConfig } from "../../Config/Layer.ts";
 import {
   AccessDenied,
   type BackendError,
+  BadDigest,
   BucketAlreadyExists,
   BucketAlreadyOwnedByYou,
   BucketNotEmpty,
   EntityTooSmall,
   InternalError,
+  InvalidArgument,
+  InvalidBucketName,
   InvalidPart,
   InvalidPartOrder,
   InvalidRequest,
@@ -106,6 +109,16 @@ export function mapS3Error(e: unknown, bucketName?: string): BackendError {
     case "BucketNotEmpty":
     case "Conflict":
       return new BucketNotEmpty({ bucketName: bucket, message });
+    case "InvalidArgument":
+      return new InvalidArgument({ message });
+    case "BadDigest":
+      return new BadDigest({ message });
+    case "InvalidAttributeName":
+      return new InvalidArgument({
+        message: "Invalid attribute name specified.",
+      });
+    case "InvalidBucketName":
+      return new InvalidBucketName({ message });
   }
 
   // Handle case where it might be a raw 404 from HEAD request
@@ -115,6 +128,10 @@ export function mapS3Error(e: unknown, bucketName?: string): BackendError {
       key: "unknown",
       message: "Not Found",
     });
+  }
+
+  if (err?.$metadata?.httpStatusCode === 400) {
+    return new InvalidRequest({ message });
   }
 
   return new InternalError({

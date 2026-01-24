@@ -1,6 +1,7 @@
-import { Cache, Context, Effect, Layer, type Schema } from "effect";
+import { Cache, Context, Effect, Layer, Schema } from "effect";
 import { HttpClient, HttpClientRequest } from "@effect/platform";
-import type { MaterializedBucket, SwiftConfig } from "../../Domain/Config.ts";
+import type { MaterializedBucket } from "../../Domain/Config.ts";
+import type { SwiftConfig } from "../../Domain/Config.ts";
 import { HeraldConfig } from "../../Config/Layer.ts";
 
 export interface SwiftAuthMeta {
@@ -17,22 +18,22 @@ export class SwiftClient extends Context.Tag("SwiftClient")<
   }
 >() {}
 
-interface SwiftEndpoint {
-  readonly region: string;
-  readonly interface: "public" | "internal" | "admin";
-  readonly url: string;
-}
+const SwiftEndpoint = Schema.Struct({
+  region: Schema.String,
+  interface: Schema.Literal("public", "internal", "admin"),
+  url: Schema.String,
+});
 
-interface SwiftService {
-  readonly type: string;
-  readonly endpoints: readonly SwiftEndpoint[];
-}
+const SwiftService = Schema.Struct({
+  type: Schema.String,
+  endpoints: Schema.Array(SwiftEndpoint),
+});
 
-interface SwiftTokenResponse {
-  readonly token: {
-    readonly catalog: readonly SwiftService[];
-  };
-}
+const SwiftTokenResponse = Schema.Struct({
+  token: Schema.Struct({
+    catalog: Schema.Array(SwiftService),
+  }),
+});
 
 export const SwiftClientLive = Layer.effect(
   SwiftClient,
@@ -160,9 +161,14 @@ export const SwiftClientLive = Layer.effect(
           );
         }
 
-        const body = (yield* response.json.pipe(
+        const json = yield* response.json.pipe(
           Effect.mapError((e) => new Error(String(e))),
-        )) as SwiftTokenResponse;
+        );
+        const body = yield* Schema.decodeUnknown(SwiftTokenResponse)(json).pipe(
+          Effect.mapError((e) =>
+            new Error(`Failed to parse Swift token response: ${e}`)
+          ),
+        );
 
         const catalog = body.token.catalog;
         const storageService = catalog.find((s) => s.type === "object-store");
@@ -198,9 +204,9 @@ export const SwiftClientLive = Layer.effect(
 
     const cache = yield* Cache.make({
       capacity: 100,
-      timeToLive: "50 minutes", // Swift tokens usually last 1h
       lookup: (config: Schema.Schema.Type<typeof SwiftConfig>) =>
         fetchAuthMeta(config),
+      timeToLive: "50 minutes", // Swift tokens usually last 1h
     });
 
     return SwiftClient.of({

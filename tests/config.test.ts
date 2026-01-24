@@ -13,6 +13,12 @@ import {
 import { HeraldConfig, parseConfig } from "../src/Config/Layer.ts";
 import { S3Client } from "../src/Backends/S3/Client.ts";
 import { SwiftClient } from "../src/Backends/Swift/Client.ts";
+import { ChecksumLive } from "../src/Services/Checksum.ts";
+import {
+  type S3HeaderService,
+  S3HeaderServiceLive,
+} from "../src/Services/S3HeaderService.ts";
+import type { Checksum } from "../src/Services/Checksum.ts";
 import type { S3Client as S3ClientSDK } from "@aws-sdk/client-s3";
 import { Backend } from "../src/Services/Backend.ts";
 
@@ -459,7 +465,11 @@ interface ResolverTestCase {
   config: GlobalConfig;
   op: (
     resolver: Context.Tag.Service<BackendResolver>,
-  ) => Effect.Effect<unknown, unknown, HeraldConfig | S3Client | SwiftClient>;
+  ) => Effect.Effect<
+    unknown,
+    unknown,
+    HeraldConfig | S3Client | SwiftClient | Checksum | S3HeaderService
+  >;
   expectedError?: string;
 }
 
@@ -553,6 +563,8 @@ for (const tc of resolverCases) {
         return yield* tc.op(resolver);
       }).pipe(
         Effect.provide(BackendResolverLive),
+        Effect.provide(ChecksumLive),
+        Effect.provide(S3HeaderServiceLive),
         Effect.provide(HeraldConfigLive),
         Effect.provide(S3ClientLive),
         Effect.provide(SwiftClientLive),

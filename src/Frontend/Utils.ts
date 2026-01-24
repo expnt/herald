@@ -4,12 +4,15 @@ import { S3Xml } from "../Services/S3Xml.ts";
 import {
   AccessDenied,
   Backend,
+  BadDigest,
   BucketAlreadyExists,
   BucketAlreadyOwnedByYou,
   BucketNotEmpty,
   DeleteObjectsError,
   EntityTooSmall,
   InternalError,
+  InvalidArgument,
+  InvalidBucketName,
   InvalidPart,
   InvalidPartOrder,
   InvalidRequest,
@@ -26,8 +29,11 @@ import {
 import { HeraldConfig } from "../Config/Layer.ts";
 import type { S3Client } from "../Backends/S3/Client.ts";
 import type { SwiftClient } from "../Backends/Swift/Client.ts";
+import type { Checksum } from "../Services/Checksum.ts";
 import { BadGateway } from "./Api.ts";
 import { verifyIncomingSigV4 } from "../Services/Auth.ts";
+import { S3HeaderService } from "../Services/S3HeaderService.ts";
+import type { ChecksumHeaders } from "../Services/S3Schema.ts";
 
 /**
  * Fixes header values that might have been incorrectly decoded as Latin-1
@@ -89,6 +95,8 @@ export class RequestContext extends Context.Tag("RequestContext")<
     readonly key: string;
     readonly params: S3QueryParams;
     readonly request: HttpServerRequest.HttpServerRequest;
+    readonly checksumHeaders: ChecksumHeaders;
+    readonly objectAttributes: string[];
   }
 >() {}
 
@@ -112,12 +120,15 @@ export function provideRequestContext<
   | HeraldConfig
   | S3Client
   | SwiftClient
+  | Checksum
+  | S3HeaderService
   | HttpServerRequest.HttpServerRequest
 > {
   return ({ path: { bucket } }) =>
     resolveBucket(bucket, (backend) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
+        const headerService = yield* S3HeaderService;
         const urlResult = Url.fromString(request.url, "http://localhost");
         if (Either.isLeft(urlResult)) {
           return yield* Effect.fail(
@@ -127,12 +138,17 @@ export function provideRequestContext<
         const url = urlResult.right;
         const key = extractKey(request.url, bucket);
         const params = yield* parseQueryParams(url.searchParams, S3QueryParams);
+        const { checksums: checksumHeaders, objectAttributes } = headerService
+          .fromRequestHeaders(request.headers);
+
         const ctx = {
           backend,
           bucket,
           key,
           params,
           request,
+          checksumHeaders,
+          objectAttributes,
         };
         return yield* fn().pipe(Effect.provideService(RequestContext, ctx));
       }) as unknown as Effect.Effect<
@@ -205,6 +221,8 @@ export function resolveBucket<
   | HeraldConfig
   | S3Client
   | SwiftClient
+  | Checksum
+  | S3HeaderService
   | HttpServerRequest.HttpServerRequest
 > {
   return Effect.gen(function* () {
@@ -275,6 +293,9 @@ export function resolveBucket<
               e instanceof InvalidPartOrder ||
               e instanceof EntityTooSmall ||
               e instanceof InvalidRequest ||
+              e instanceof BadDigest ||
+              e instanceof InvalidBucketName ||
+              e instanceof InvalidArgument ||
               e instanceof MalformedXML ||
               e instanceof DeleteObjectsError
             ) {
@@ -318,6 +339,8 @@ export function resolveBackend<
   | HeraldConfig
   | S3Client
   | SwiftClient
+  | Checksum
+  | S3HeaderService
   | HttpServerRequest.HttpServerRequest
 > {
   return Effect.gen(function* () {
@@ -383,6 +406,9 @@ export function resolveBackend<
           e instanceof InvalidPartOrder ||
           e instanceof EntityTooSmall ||
           e instanceof InvalidRequest ||
+          e instanceof BadDigest ||
+          e instanceof InvalidBucketName ||
+          e instanceof InvalidArgument ||
           e instanceof MalformedXML ||
           e instanceof DeleteObjectsError
         ) {

@@ -14,6 +14,8 @@ import { getTarget, MP_META_PREFIX } from "./Utils.ts";
 import type { SwiftClient } from "./Client.ts";
 import { makeBackendKeyValueStore } from "../../Services/BackendKeyValueStore.ts";
 import type { Stream } from "effect";
+import type { Checksum } from "../../Services/Checksum.ts";
+import type { S3HeaderService } from "../../Services/S3HeaderService.ts";
 
 /**
  * Creates a Swift-specific Backend implementation for a given configuration context.
@@ -25,7 +27,7 @@ export const makeSwiftBackend = (
 ): Effect.Effect<
   BackendService,
   BackendError,
-  SwiftClient | HttpClient.HttpClient
+  SwiftClient | HttpClient.HttpClient | Checksum | S3HeaderService
 > =>
   Effect.gen(function* () {
     const target = yield* getTarget(bucket);
@@ -53,14 +55,17 @@ export const makeSwiftBackend = (
         getObject: (
           key: string,
           headers: Record<string, string | string[] | undefined>,
-        ): Effect.Effect<ObjectResponse, BackendError> =>
+        ): Effect.Effect<ObjectResponse, BackendError, S3HeaderService> =>
           objectOps.getObject(key, headers),
         putObject: (
           key: string,
           stream: Stream.Stream<Uint8Array, Error>,
           headers: Record<string, string | string[] | undefined>,
-        ): Effect.Effect<PutObjectResult, BackendError> =>
-          objectOps.putObject(key, stream, headers),
+        ): Effect.Effect<
+          PutObjectResult,
+          BackendError,
+          Checksum | S3HeaderService
+        > => objectOps.putObject(key, stream, headers),
         deleteObject: (key: string): Effect.Effect<void, BackendError> =>
           objectOps.deleteObject(key),
       } as unknown as BackendService,
@@ -76,7 +81,7 @@ export const makeSwiftBackend = (
       ...bucketOps,
       ...objectOpsReal,
       multipartMetadataStore,
-    };
+    } as unknown as BackendService;
 
     return backend;
   });
