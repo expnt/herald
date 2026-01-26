@@ -1,7 +1,4 @@
-import { Effect } from "effect";
 import type { S3Client as S3ClientSDK } from "@aws-sdk/client-s3";
-import type { MaterializedBucket } from "../../Domain/Config.ts";
-import { HeraldConfig } from "../../Config/Layer.ts";
 import {
   AccessDenied,
   type BackendError,
@@ -21,18 +18,18 @@ import {
   NoSuchKey,
   NoSuchUpload,
 } from "../../Services/Backend.ts";
-import { S3Client } from "./Client.ts";
 
 import type { KeyValueStore } from "@effect/platform";
+import type { S3HeaderService } from "../../Services/S3HeaderService.ts";
+import type { Checksum } from "../../Services/Checksum.ts";
 
-export interface S3BaseTarget {
+export interface S3Target {
   readonly client: S3ClientSDK;
   readonly bucketName: string;
   readonly name: string;
-}
-
-export interface S3Target extends S3BaseTarget {
   readonly multipartMetadataStore: KeyValueStore.KeyValueStore;
+  readonly headerService: S3HeaderService;
+  readonly checksumService: Checksum;
 }
 
 /**
@@ -40,17 +37,6 @@ export interface S3Target extends S3BaseTarget {
  */
 export function stripMinioMetadata(s: string): string {
   return s.replace(/\[minio_cache:[^\]]+\]/g, "");
-}
-
-/**
- * Safely extracts a header value from a record that might contain arrays.
- */
-export function extractHeader(
-  headers: Record<string, string | string[] | undefined>,
-  key: string,
-): string | undefined {
-  const val = headers[key] || headers[key.toLowerCase()];
-  return Array.isArray(val) ? val[0] : val;
 }
 
 /**
@@ -138,44 +124,3 @@ export function mapS3Error(e: unknown, bucketName?: string): BackendError {
     message: e instanceof Error ? `${e.name}: ${e.message}` : String(e),
   });
 }
-
-/**
- * Resolves the target bucket configuration and acquires the S3 client.
- * This ensures the backend remains a stateless proxy that picks up request-local configuration and clients.
- */
-export const getTarget = (
-  bucket: MaterializedBucket | { backend_id: string },
-): Effect.Effect<S3BaseTarget, BackendError, S3Client | HeraldConfig> =>
-  Effect.gen(function* () {
-    const s3Service = yield* S3Client;
-    const config = yield* HeraldConfig;
-
-    const resolveTargetBucket = (): MaterializedBucket => {
-      if ("bucket_name" in bucket) return bucket as MaterializedBucket;
-
-      const backendConfig = config.raw.backends[bucket.backend_id];
-      if (backendConfig && backendConfig.protocol === "s3") {
-        return {
-          name: "",
-          backend_id: bucket.backend_id,
-          protocol: "s3" as const,
-          endpoint: backendConfig.endpoint,
-          region: backendConfig.region,
-          bucket_name: "",
-          credentials: backendConfig.credentials,
-        };
-      }
-      throw new Error(`Backend ${bucket.backend_id} is not an S3 backend`);
-    };
-
-    const targetBucket = resolveTargetBucket();
-    const client = yield* s3Service.getClient(targetBucket).pipe(
-      Effect.mapError((e) => mapS3Error(e, targetBucket.name)),
-    );
-
-    return {
-      client,
-      bucketName: targetBucket.bucket_name,
-      name: targetBucket.name,
-    };
-  });

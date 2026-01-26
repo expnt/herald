@@ -1,26 +1,16 @@
-import { type Context, Either, Layer, Option, Schema } from "effect";
+import { Effect, Either, Layer, Option, Schema } from "effect";
+import { S3ClientFactory } from "../src/Backends/S3/Client.ts";
+import { SwiftClient } from "../src/Backends/Swift/Client.ts";
+import { HeraldConfig, parseConfig } from "../src/Config/Layer.ts";
 import {
   GlobalConfig,
   lookupBucket,
   resolveAuthConfig,
 } from "../src/Domain/Config.ts";
-import { Effect } from "effect";
+import { BackendResolver } from "../src/Services/BackendResolver.ts";
+import { Checksum } from "../src/Services/Checksum.ts";
+import { S3HeaderService } from "../src/Services/S3HeaderService.ts";
 import { assertEquals, EffectAssert, testEffect } from "./utils.ts";
-import {
-  BackendResolver,
-  BackendResolverLive,
-} from "../src/Services/BackendResolver.ts";
-import { HeraldConfig, parseConfig } from "../src/Config/Layer.ts";
-import { S3Client } from "../src/Backends/S3/Client.ts";
-import { SwiftClient } from "../src/Backends/Swift/Client.ts";
-import { ChecksumLive } from "../src/Services/Checksum.ts";
-import {
-  type S3HeaderService,
-  S3HeaderServiceLive,
-} from "../src/Services/S3HeaderService.ts";
-import type { Checksum } from "../src/Services/Checksum.ts";
-import type { S3Client as S3ClientSDK } from "@aws-sdk/client-s3";
-import { Backend } from "../src/Services/Backend.ts";
 
 interface TestCase {
   id: string;
@@ -464,11 +454,11 @@ interface ResolverTestCase {
   name: string;
   config: GlobalConfig;
   op: (
-    resolver: Context.Tag.Service<BackendResolver>,
+    resolver: BackendResolver,
   ) => Effect.Effect<
     unknown,
     unknown,
-    HeraldConfig | S3Client | SwiftClient | Checksum | S3HeaderService
+    HeraldConfig | S3ClientFactory | SwiftClient | Checksum | S3HeaderService
   >;
   expectedError?: string;
 }
@@ -487,13 +477,12 @@ const resolverCases: ResolverTestCase[] = [
       },
     },
     op: (resolver) =>
-      resolver.provideForBucket(
-        "any",
-        Effect.gen(function* () {
-          yield* Backend;
-          return "success";
-        }),
-      ),
+      Effect.gen(function* () {
+        yield* resolver.getLayerForBucket(
+          "any",
+        );
+        return "success";
+      }),
   },
   {
     id: "resolve_missing_bucket",
@@ -507,7 +496,12 @@ const resolverCases: ResolverTestCase[] = [
       },
     },
     op: (resolver) =>
-      resolver.provideForBucket("not-found", Effect.succeed("ok")),
+      Effect.gen(function* () {
+        yield* resolver.getLayerForBucket(
+          "not-found",
+        );
+        return "ok";
+      }),
     expectedError: "No configuration found for bucket: not-found",
   },
   {
@@ -523,7 +517,12 @@ const resolverCases: ResolverTestCase[] = [
       },
     },
     op: (resolver) =>
-      resolver.provideForBackendId("s3_main", Effect.succeed("ok")),
+      Effect.gen(function* () {
+        yield* resolver.getLayerForBucket(
+          "s3_main",
+        );
+        return "ok";
+      }),
   },
   {
     id: "resolve_missing_id",
@@ -532,7 +531,12 @@ const resolverCases: ResolverTestCase[] = [
       backends: {},
     },
     op: (resolver) =>
-      resolver.provideForBackendId("missing", Effect.succeed("ok")),
+      Effect.gen(function* () {
+        yield* resolver.getLayerForBucket(
+          "missing",
+        );
+        return "ok";
+      }),
     expectedError: "No configuration found for backend: missing",
   },
 ];
@@ -546,28 +550,16 @@ for (const tc of resolverCases) {
         resolveAuth: () => Option.none(),
         resolveAuthForBackendId: () => Option.none(),
       });
-
-      // Mock S3Client
-      const S3ClientLive = Layer.succeed(S3Client, {
-        getClient: () => Effect.succeed({} as S3ClientSDK),
-      });
-
-      // Mock SwiftClient
-      const SwiftClientLive = Layer.succeed(SwiftClient, {
-        getAuthMeta: () =>
-          Effect.succeed({ token: "test", storageUrl: "http://test" }),
-      });
-
       const program = Effect.gen(function* () {
         const resolver = yield* BackendResolver;
         return yield* tc.op(resolver);
       }).pipe(
-        Effect.provide(BackendResolverLive),
-        Effect.provide(ChecksumLive),
-        Effect.provide(S3HeaderServiceLive),
+        Effect.provide(BackendResolver.Default),
+        Effect.provide(Checksum.Default),
+        Effect.provide(S3HeaderService.Default),
         Effect.provide(HeraldConfigLive),
-        Effect.provide(S3ClientLive),
-        Effect.provide(SwiftClientLive),
+        Effect.provide(S3ClientFactory.Default),
+        Effect.provide(SwiftClient.Default),
         Effect.either,
       );
 

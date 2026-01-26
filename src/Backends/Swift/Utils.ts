@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 import {
   type BackendError,
   BucketAlreadyExists,
@@ -10,35 +9,23 @@ import {
   NoSuchBucket,
   NoSuchKey,
 } from "../../Services/Backend.ts";
-import type { MaterializedBucket } from "../../Domain/Config.ts";
-import { SwiftClient } from "./Client.ts";
 
-import type { KeyValueStore } from "@effect/platform";
-
-export interface SwiftBaseTarget {
-  readonly storageUrl: string;
-  readonly token: string;
-  readonly container: string;
-  readonly url: string;
-}
-
-export interface SwiftTarget extends SwiftBaseTarget {
-  readonly multipartMetadataStore: KeyValueStore.KeyValueStore;
-}
+import type { HttpClient } from "@effect/platform";
+import type { S3HeaderService } from "../../Services/S3HeaderService.ts";
+import type { Checksum } from "../../Services/Checksum.ts";
 
 export const INTERNAL_PREFIX = ".hrld/";
 export const MP_META_PREFIX = `${INTERNAL_PREFIX}mmp/`;
 export const MP_SEGMENTS_PREFIX = `${INTERNAL_PREFIX}msg/`;
 
-/**
- * Safely extracts a header value from a record that might contain arrays.
- */
-export function extractHeader(
-  headers: Record<string, string | string[] | undefined>,
-  key: string,
-): string | undefined {
-  const val = headers[key] || headers[key.toLowerCase()];
-  return Array.isArray(val) ? val[0] : val;
+export interface SwiftTarget {
+  readonly storageUrl: string;
+  readonly token: string;
+  readonly container: string;
+  readonly url: string;
+  readonly client: HttpClient.HttpClient;
+  readonly headerService: S3HeaderService;
+  readonly checksumService: Checksum;
 }
 
 export const mapError = (
@@ -82,30 +69,3 @@ export const mapError = (
       });
   }
 };
-
-/**
- * Resolves the target container and acquires the Swift token dynamically.
- */
-export const getTarget = (
-  bucket: MaterializedBucket | { backend_id: string },
-): Effect.Effect<SwiftBaseTarget, BackendError, SwiftClient> =>
-  Effect.gen(function* () {
-    const swiftClient = yield* SwiftClient;
-    const auth = yield* swiftClient.getAuthMeta(bucket).pipe(
-      Effect.mapError((e) => new InternalError({ message: e.message })),
-    );
-    const container = "bucket_name" in bucket ? bucket.bucket_name : "";
-    const encodedContainer = container ? encodeURIComponent(container) : "";
-    const res = {
-      storageUrl: auth.storageUrl,
-      token: auth.token,
-      container,
-      url: encodedContainer
-        ? `${auth.storageUrl}/${encodedContainer}`
-        : auth.storageUrl,
-    };
-    yield* Effect.logDebug(
-      `SwiftTarget resolved: url=[${res.url}] container=[${res.container}]`,
-    );
-    return res;
-  });

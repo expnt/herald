@@ -1,7 +1,7 @@
 import { Effect } from "effect";
-import { type HttpClient, HttpClientRequest } from "@effect/platform";
+import { HttpClientRequest } from "@effect/platform";
 import {
-  type BackendService,
+  type BackendShape,
   BucketAlreadyOwnedByYou,
   type BucketInfo,
   type ListObjectsResult,
@@ -15,16 +15,14 @@ export interface SwiftContainer {
 }
 
 export const makeBucketOps = (
-  target: SwiftTarget,
-  client: HttpClient.HttpClient,
+  { storageUrl, token, url, container, client }: SwiftTarget,
   objectOps: {
-    listObjects: BackendService["listObjects"];
-    deleteObject: BackendService["deleteObject"];
+    listObjects: BackendShape["listObjects"];
+    deleteObject: BackendShape["deleteObject"];
   },
 ) => ({
   listBuckets: () =>
     Effect.gen(function* () {
-      const { storageUrl, token } = target;
       const response = yield* client.execute(
         HttpClientRequest.get(`${storageUrl}?format=json`).pipe(
           HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
@@ -60,7 +58,6 @@ export const makeBucketOps = (
 
   createBucket: () =>
     Effect.gen(function* () {
-      const { url, token, container } = target;
       const response = yield* client.execute(
         HttpClientRequest.put(url).pipe(
           HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
@@ -94,8 +91,6 @@ export const makeBucketOps = (
 
   deleteBucket: () =>
     Effect.gen(function* () {
-      const { url, token, container } = target;
-
       // 1. Cleanup .herald/ and .hrld/ objects so bucket can be deleted
       yield* Effect.all(
         [".herald/", INTERNAL_PREFIX].map((prefix) =>
@@ -159,7 +154,6 @@ export const makeBucketOps = (
 
   headBucket: () =>
     Effect.gen(function* () {
-      const { url, token, container } = target;
       const response = yield* client.execute(
         HttpClientRequest.head(url).pipe(
           HttpClientRequest.setHeaders({ "X-Auth-Token": token }),

@@ -1,5 +1,5 @@
-import { Context, Layer } from "effect";
 import { HttpServerResponse } from "@effect/platform";
+import { Effect } from "effect";
 import {
   AccessDenied,
   BadDigest,
@@ -28,61 +28,12 @@ import {
 /**
  * This service centeralizes XML authoring logic.
  */
-export class S3Xml extends Context.Tag("S3Xml")<
-  S3Xml,
-  {
-    readonly formatError: (
+export class S3Xml extends Effect.Service<S3Xml>()("S3Xml", {
+  succeed: {
+    formatError: (
       e: unknown,
       isHead?: boolean,
-    ) => HttpServerResponse.HttpServerResponse;
-    readonly formatListBuckets: (
-      buckets: readonly BucketInfo[],
-      owner: OwnerInfo,
-    ) => HttpServerResponse.HttpServerResponse;
-    readonly formatListObjects: (
-      result: ListObjectsResult,
-    ) => HttpServerResponse.HttpServerResponse;
-    readonly formatListVersions: (
-      result: ListObjectsResult,
-    ) => HttpServerResponse.HttpServerResponse;
-    readonly formatListMultipartUploads: (
-      result: ListMultipartUploadsResult,
-    ) => HttpServerResponse.HttpServerResponse;
-    readonly formatInitiateMultipartUpload: (
-      bucket: string,
-      key: string,
-      uploadId: string,
-      checksumAlgorithm?: string,
-      checksumType?: string,
-    ) => HttpServerResponse.HttpServerResponse;
-    readonly formatCompleteMultipartUpload: (
-      result: {
-        location: string;
-        bucket: string;
-        key: string;
-        etag: string;
-        checksumAlgorithm?: string;
-        checksumType?: string;
-        checksumCRC32?: string;
-        checksumCRC32C?: string;
-        checksumCRC64NVME?: string;
-        checksumSHA1?: string;
-        checksumSHA256?: string;
-      },
-    ) => HttpServerResponse.HttpServerResponse;
-    readonly formatListParts: (
-      result: ListPartsResult,
-    ) => HttpServerResponse.HttpServerResponse;
-    readonly formatObjectAttributes: (
-      result: ObjectAttributes,
-    ) => HttpServerResponse.HttpServerResponse;
-  }
->() {}
-
-export const S3XmlLive = Layer.succeed(
-  S3Xml,
-  S3Xml.of({
-    formatError: (e, isHead = false) => {
+    ) => {
       let code = "InternalError";
       let message = "An internal error occurred";
       let status = 500;
@@ -180,8 +131,10 @@ export const S3XmlLive = Layer.succeed(
         },
       });
     },
-
-    formatListBuckets: (buckets, owner) => {
+    formatListBuckets: (
+      buckets: readonly BucketInfo[],
+      owner: OwnerInfo,
+    ) => {
       const bucketsXml = buckets.map((b) =>
         `<Bucket><Name>${b.name}</Name><CreationDate>${b.creationDate?.toISOString()}</CreationDate></Bucket>`
       ).join("");
@@ -195,8 +148,9 @@ export const S3XmlLive = Layer.succeed(
         },
       });
     },
-
-    formatListObjects: (result) => {
+    formatListObjects: (
+      result: ListObjectsResult,
+    ) => {
       const encode = (s: string) =>
         result.encodingType?.toLowerCase() === "url"
           ? encodeURIComponent(s).replace(/%2F/g, "/")
@@ -279,8 +233,9 @@ export const S3XmlLive = Layer.succeed(
         },
       });
     },
-
-    formatListVersions: (result) => {
+    formatListVersions: (
+      result: ListObjectsResult,
+    ) => {
       const encode = (s: string) =>
         result.encodingType?.toLowerCase() === "url"
           ? encodeURIComponent(s).replace(/%2F/g, "/")
@@ -350,8 +305,9 @@ export const S3XmlLive = Layer.succeed(
         },
       });
     },
-
-    formatListMultipartUploads: (result) => {
+    formatListMultipartUploads: (
+      result: ListMultipartUploadsResult,
+    ) => {
       const uploadsXml = result.uploads.map((u) =>
         `<Upload><Key>${u.key}</Key><UploadId>${u.uploadId}</UploadId><Initiator><ID>${u.initiator.id}</ID><DisplayName>${u.initiator.displayName}</DisplayName></Initiator><Owner><ID>${u.owner.id}</ID><DisplayName>${u.owner.displayName}</DisplayName></Owner><StorageClass>${u.storageClass}</StorageClass><Initiated>${u.initiated.toISOString()}</Initiated></Upload>`
       ).join("");
@@ -375,13 +331,12 @@ export const S3XmlLive = Layer.succeed(
         headers: { "Content-Type": "application/xml" },
       });
     },
-
     formatInitiateMultipartUpload: (
-      bucket,
-      key,
-      uploadId,
-      checksumAlgorithm,
-      checksumType,
+      bucket: string,
+      key: string,
+      uploadId: string,
+      checksumAlgorithm?: string,
+      checksumType?: string,
     ) => {
       const checksumAlgorithmXml = checksumAlgorithm
         ? `<ChecksumAlgorithm>${checksumAlgorithm.toUpperCase()}</ChecksumAlgorithm>`
@@ -398,8 +353,21 @@ export const S3XmlLive = Layer.succeed(
         },
       });
     },
-
-    formatCompleteMultipartUpload: (result) => {
+    formatCompleteMultipartUpload: (
+      result: {
+        location: string;
+        bucket: string;
+        key: string;
+        etag: string;
+        checksumAlgorithm?: string;
+        checksumType?: string;
+        checksumCRC32?: string;
+        checksumCRC32C?: string;
+        checksumCRC64NVME?: string;
+        checksumSHA1?: string;
+        checksumSHA256?: string;
+      },
+    ) => {
       const checksumAlgorithmXml = result.checksumAlgorithm
         ? `<ChecksumAlgorithm>${result.checksumAlgorithm.toUpperCase()}</ChecksumAlgorithm>`
         : "";
@@ -431,8 +399,9 @@ export const S3XmlLive = Layer.succeed(
         },
       });
     },
-
-    formatListParts: (result) => {
+    formatListParts: (
+      result: ListPartsResult,
+    ) => {
       const partsXml = result.parts.map((p) => {
         const checksumCRC32Xml = p.checksumCRC32
           ? `<ChecksumCRC32>${p.checksumCRC32}</ChecksumCRC32>`
@@ -464,8 +433,9 @@ export const S3XmlLive = Layer.succeed(
         },
       });
     },
-
-    formatObjectAttributes: (result) => {
+    formatObjectAttributes: (
+      result: ObjectAttributes,
+    ) => {
       const etagXml = result.etag ? `<ETag>${result.etag}</ETag>` : "";
       const storageClassXml = result.storageClass
         ? `<StorageClass>${result.storageClass}</StorageClass>`
@@ -554,5 +524,5 @@ export const S3XmlLive = Layer.succeed(
         },
       });
     },
-  }),
-);
+  },
+}) {}

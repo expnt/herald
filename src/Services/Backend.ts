@@ -331,105 +331,108 @@ export type BackendError =
   | InvalidBucketName
   | InvalidArgument;
 
-export interface BackendService {
-  readonly listBuckets: () => Effect.Effect<
-    { buckets: readonly BucketInfo[]; owner: OwnerInfo },
-    BackendError
-  >;
-  readonly createBucket: () => Effect.Effect<void, BackendError>;
-  readonly deleteBucket: () => Effect.Effect<void, BackendError>;
-  readonly headBucket: () => Effect.Effect<void, BackendError>;
-  readonly listObjects: (args: {
-    prefix?: string;
-    delimiter?: string;
-    marker?: string;
-    maxKeys?: number;
-    encodingType?: string;
-    continuationToken?: string;
-    startAfter?: string;
-    listType?: 1 | 2;
-  }) => Effect.Effect<ListObjectsResult, BackendError>;
-  readonly listVersions: (args: {
-    prefix?: string;
-    delimiter?: string;
-    keyMarker?: string;
-    versionIdMarker?: string;
-    maxKeys?: number;
-    encodingType?: string;
-  }) => Effect.Effect<ListObjectsResult, BackendError>;
-  readonly getObject: (
-    key: string,
-    headers: Record<string, string | string[] | undefined>,
-  ) => Effect.Effect<ObjectResponse, BackendError>;
-  readonly headObject: (
-    key: string,
-    headers: Record<string, string | string[] | undefined>,
-  ) => Effect.Effect<HeadObjectResult, BackendError>;
-  readonly putObject: (
-    key: string,
-    body: Stream.Stream<Uint8Array, Error>,
-    headers: Record<string, string | string[] | undefined>,
-  ) => Effect.Effect<PutObjectResult, BackendError>;
-  readonly deleteObject: (key: string) => Effect.Effect<void, BackendError>;
-  readonly deleteObjects: (
-    objects: readonly { key: string; versionId?: string }[],
-  ) => Effect.Effect<DeleteObjectsResult, BackendError>;
-  readonly getObjectAttributes: (
-    key: string,
-    attributes: readonly string[],
-    headers: Record<string, string | string[] | undefined>,
-  ) => Effect.Effect<ObjectAttributes, BackendError>;
+type ReadonlyKeys<T> = {
+  readonly [K in keyof T]: T[K];
+};
 
-  readonly multipartMetadataStore: KeyValueStore.KeyValueStore;
+export class Backend extends Context.Tag("BackendService")<
+  Backend,
+  ReadonlyKeys<{
+    listBuckets: () => Effect.Effect<
+      { buckets: readonly BucketInfo[]; owner: OwnerInfo },
+      BackendError
+    >;
+    createBucket: () => Effect.Effect<void, BackendError>;
+    deleteBucket: () => Effect.Effect<void, BackendError>;
+    headBucket: () => Effect.Effect<void, BackendError>;
+    listObjects: (args: {
+      prefix?: string;
+      delimiter?: string;
+      marker?: string;
+      maxKeys?: number;
+      encodingType?: string;
+      continuationToken?: string;
+      startAfter?: string;
+      listType?: 1 | 2;
+    }) => Effect.Effect<ListObjectsResult, BackendError>;
+    listVersions: (args: {
+      prefix?: string;
+      delimiter?: string;
+      keyMarker?: string;
+      versionIdMarker?: string;
+      maxKeys?: number;
+      encodingType?: string;
+    }) => Effect.Effect<ListObjectsResult, BackendError>;
+    getObject: (
+      key: string,
+      // FIXME: use parsed headers here
+      headers: Record<string, string | string[] | undefined>,
+    ) => Effect.Effect<ObjectResponse, BackendError>;
+    headObject: (
+      key: string,
+      headers: Record<string, string | string[] | undefined>,
+    ) => Effect.Effect<HeadObjectResult, BackendError>;
+    putObject: (
+      key: string,
+      body: Stream.Stream<Uint8Array, Error>,
+      headers: Record<string, string | string[] | undefined>,
+    ) => Effect.Effect<PutObjectResult, BackendError>;
+    deleteObject: (key: string) => Effect.Effect<void, BackendError>;
+    deleteObjects: (
+      objects: readonly { key: string; versionId?: string }[],
+    ) => Effect.Effect<DeleteObjectsResult, BackendError>;
+    getObjectAttributes: (
+      key: string,
+      attributes: readonly string[],
+      headers: Record<string, string | string[] | undefined>,
+    ) => Effect.Effect<ObjectAttributes, BackendError>;
 
-  // Multipart Upload
-  readonly createMultipartUpload: (
-    key: string,
-    headers: Record<string, string | string[] | undefined>,
-  ) => Effect.Effect<MultipartUploadResult, BackendError>;
-  readonly uploadPart: (
-    key: string,
-    uploadId: string,
-    partNumber: number,
-    body: Stream.Stream<Uint8Array, Error>,
-    headers: Record<string, string | string[] | undefined>,
-  ) => Effect.Effect<UploadPartResult, BackendError>;
-  readonly completeMultipartUpload: (
-    key: string,
-    uploadId: string,
-    parts: readonly {
-      etag: string;
-      partNumber: number;
-      checksumCRC32?: string;
-      checksumCRC32C?: string;
-      checksumCRC64NVME?: string;
-      checksumSHA1?: string;
-      checksumSHA256?: string;
-    }[],
-    metadata: Record<string, string>,
-    headers: Record<string, string | string[] | undefined>,
-  ) => Effect.Effect<CompleteMultipartUploadResult, BackendError>;
-  readonly abortMultipartUpload: (
-    key: string,
-    uploadId: string,
-  ) => Effect.Effect<void, BackendError>;
-  readonly listMultipartUploads: (args: {
-    prefix?: string;
-    delimiter?: string;
-    keyMarker?: string;
-    uploadIdMarker?: string;
-    maxUploads?: number;
-    encodingType?: string;
-  }) => Effect.Effect<ListMultipartUploadsResult, BackendError>;
-  readonly listParts: (
-    key: string,
-    uploadId: string,
-  ) => Effect.Effect<ListPartsResult, BackendError>;
-}
+    multipartMetadataStore: KeyValueStore.KeyValueStore;
 
-/**
- * Backend service represents a connection to a specific storage backend.
- * It is provided dynamically based on the request context (bucket or backend ID).
- */
-export class Backend
-  extends Context.Tag("Backend")<Backend, BackendService>() {}
+    // Multipart Upload
+    createMultipartUpload: (
+      key: string,
+      headers: Record<string, string | string[] | undefined>,
+    ) => Effect.Effect<MultipartUploadResult, BackendError>;
+    uploadPart: (
+      key: string,
+      uploadId: string,
+      partNumber: number,
+      body: Stream.Stream<Uint8Array, Error>,
+      headers: Record<string, string | string[] | undefined>,
+    ) => Effect.Effect<UploadPartResult, BackendError>;
+    completeMultipartUpload: (
+      key: string,
+      uploadId: string,
+      parts: readonly {
+        etag: string;
+        partNumber: number;
+        checksumCRC32?: string;
+        checksumCRC32C?: string;
+        checksumCRC64NVME?: string;
+        checksumSHA1?: string;
+        checksumSHA256?: string;
+      }[],
+      metadata: Record<string, string>,
+      headers: Record<string, string | string[] | undefined>,
+    ) => Effect.Effect<CompleteMultipartUploadResult, BackendError>;
+    abortMultipartUpload: (
+      key: string,
+      uploadId: string,
+    ) => Effect.Effect<void, BackendError>;
+    listMultipartUploads: (args: {
+      prefix?: string;
+      delimiter?: string;
+      keyMarker?: string;
+      uploadIdMarker?: string;
+      maxUploads?: number;
+      encodingType?: string;
+    }) => Effect.Effect<ListMultipartUploadsResult, BackendError>;
+    listParts: (
+      key: string,
+      uploadId: string,
+    ) => Effect.Effect<ListPartsResult, BackendError>;
+  }>
+>() {}
+
+export type BackendShape = Context.Tag.Service<Backend>;

@@ -1,21 +1,15 @@
-import { Effect } from "effect";
 import { HttpClient } from "@effect/platform";
-import type {
-  BackendError,
-  BackendService,
-  ListObjectsResult,
-  ObjectResponse,
-  PutObjectResult,
-} from "../../Services/Backend.ts";
-import type { MaterializedBucket } from "../../Domain/Config.ts";
-import { makeBucketOps } from "./Buckets.ts";
-import { makeObjectOps } from "./Objects.ts";
-import { getTarget, MP_META_PREFIX } from "./Utils.ts";
-import type { SwiftClient } from "./Client.ts";
-import { makeBackendKeyValueStore } from "../../Services/BackendKeyValueStore.ts";
 import type { Stream } from "effect";
-import type { Checksum } from "../../Services/Checksum.ts";
-import type { S3HeaderService } from "../../Services/S3HeaderService.ts";
+import { Effect } from "effect";
+import type { MaterializedBucket } from "../../Domain/Config.ts";
+import { Backend, InternalError } from "../../Services/Backend.ts";
+import { makeBackendKeyValueStore } from "../../Services/BackendKeyValueStore.ts";
+import { Checksum } from "../../Services/Checksum.ts";
+import { S3HeaderService } from "../../Services/S3HeaderService.ts";
+import { makeBucketOps } from "./Buckets.ts";
+import { SwiftClient } from "./Client.ts";
+import { makeObjectOps } from "./Objects.ts";
+import { MP_META_PREFIX } from "./Utils.ts";
 
 /**
  * Creates a Swift-specific Backend implementation for a given configuration context.
@@ -24,14 +18,31 @@ import type { S3HeaderService } from "../../Services/S3HeaderService.ts";
  */
 export const makeSwiftBackend = (
   bucket: MaterializedBucket | { backend_id: string },
-): Effect.Effect<
-  BackendService,
-  BackendError,
-  SwiftClient | HttpClient.HttpClient | Checksum | S3HeaderService
-> =>
+) =>
   Effect.gen(function* () {
-    const target = yield* getTarget(bucket);
+    const swiftClient = yield* SwiftClient;
     const client = yield* HttpClient.HttpClient;
+    const headerService = yield* S3HeaderService;
+    const checksumService = yield* Checksum;
+    const auth = yield* swiftClient.getAuthMeta(bucket).pipe(
+      Effect.mapError((e) => new InternalError({ message: e.message })),
+    );
+    const container = "bucket_name" in bucket ? bucket.bucket_name : "";
+    const encodedContainer = container ? encodeURIComponent(container) : "";
+    const target = {
+      storageUrl: auth.storageUrl,
+      token: auth.token,
+      container,
+      url: encodedContainer
+        ? `${auth.storageUrl}/${encodedContainer}`
+        : auth.storageUrl,
+      client,
+      headerService,
+      checksumService,
+    };
+    yield* Effect.logDebug(
+      `SwiftTarget resolved: url=[${target.url}] container=[${target.container}]`,
+    );
 
     // Create a temporary objectOps to satisfy the store's requirement
     // But we need the real one for the backend.
@@ -41,47 +52,27 @@ export const makeSwiftBackend = (
     let objectOps: ReturnType<typeof makeObjectOps>;
     const multipartMetadataStore = makeBackendKeyValueStore(
       {
-        listObjects: (args: {
-          prefix?: string;
-          delimiter?: string;
-          marker?: string;
-          maxKeys?: number;
-          encodingType?: string;
-          continuationToken?: string;
-          startAfter?: string;
-          listType?: 1 | 2;
-        }): Effect.Effect<ListObjectsResult, BackendError> =>
-          objectOps.listObjects(args),
         getObject: (
           key: string,
           headers: Record<string, string | string[] | undefined>,
-        ): Effect.Effect<ObjectResponse, BackendError, S3HeaderService> =>
-          objectOps.getObject(key, headers),
+        ) => objectOps.getObject(key, headers),
         putObject: (
           key: string,
           stream: Stream.Stream<Uint8Array, Error>,
           headers: Record<string, string | string[] | undefined>,
-        ): Effect.Effect<
-          PutObjectResult,
-          BackendError,
-          Checksum | S3HeaderService
-        > => objectOps.putObject(key, stream, headers),
-        deleteObject: (key: string): Effect.Effect<void, BackendError> =>
-          objectOps.deleteObject(key),
-      } as unknown as BackendService,
+        ) => objectOps.putObject(key, stream, headers),
+        deleteObject: (key: string) => objectOps.deleteObject(key),
+      },
       MP_META_PREFIX,
     );
 
-    const fullTarget = { ...target, multipartMetadataStore };
-    const objectOpsReal = makeObjectOps(fullTarget, client);
+    const objectOpsReal = makeObjectOps(target);
     objectOps = objectOpsReal;
-    const bucketOps = makeBucketOps(fullTarget, client, objectOpsReal);
+    const bucketOps = makeBucketOps(target, objectOpsReal);
 
-    const backend: BackendService = {
+    return Backend.of({
       ...bucketOps,
       ...objectOpsReal,
       multipartMetadataStore,
-    } as unknown as BackendService;
-
-    return backend;
+    });
   });

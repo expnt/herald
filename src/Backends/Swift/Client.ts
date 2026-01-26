@@ -1,22 +1,12 @@
-import { Cache, Context, Effect, Layer, Schema } from "effect";
 import { HttpClient, HttpClientRequest } from "@effect/platform";
-import type { MaterializedBucket } from "../../Domain/Config.ts";
-import type { SwiftConfig } from "../../Domain/Config.ts";
+import { Cache, Effect, Schema } from "effect";
 import { HeraldConfig } from "../../Config/Layer.ts";
+import type { MaterializedBucket, SwiftConfig } from "../../Domain/Config.ts";
 
 export interface SwiftAuthMeta {
   readonly token: string;
   readonly storageUrl: string;
 }
-
-export class SwiftClient extends Context.Tag("SwiftClient")<
-  SwiftClient,
-  {
-    readonly getAuthMeta: (
-      bucket: MaterializedBucket | { backend_id: string },
-    ) => Effect.Effect<SwiftAuthMeta, Error, never>;
-  }
->() {}
 
 const SwiftEndpoint = Schema.Struct({
   region: Schema.String,
@@ -35,9 +25,8 @@ const SwiftTokenResponse = Schema.Struct({
   }),
 });
 
-export const SwiftClientLive = Layer.effect(
-  SwiftClient,
-  Effect.gen(function* () {
+export class SwiftClient extends Effect.Service<SwiftClient>()("SwiftClient", {
+  effect: Effect.gen(function* () {
     const appConfig = yield* HeraldConfig;
     const client = yield* HttpClient.HttpClient;
 
@@ -209,10 +198,10 @@ export const SwiftClientLive = Layer.effect(
       timeToLive: "50 minutes", // Swift tokens usually last 1h
     });
 
-    return SwiftClient.of({
+    return {
       getAuthMeta: (
         bucket: MaterializedBucket | { backend_id: string },
-      ) => {
+      ): Effect.Effect<SwiftAuthMeta, Error, never> => {
         let backend_id: string;
         let config: Schema.Schema.Type<typeof SwiftConfig>;
 
@@ -236,6 +225,6 @@ export const SwiftClientLive = Layer.effect(
 
         return cache.get(config);
       },
-    });
+    };
   }),
-);
+}) {}

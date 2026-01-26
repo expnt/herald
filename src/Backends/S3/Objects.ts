@@ -1,4 +1,3 @@
-import { Chunk, Effect, Option, Stream } from "effect";
 import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
@@ -19,8 +18,8 @@ import {
   PutObjectCommand,
   UploadPartCommand,
 } from "@aws-sdk/client-s3";
+import { Chunk, Effect, Option, Stream } from "effect";
 import {
-  type BackendError,
   type CommonPrefix,
   type CompleteMultipartUploadResult,
   type HeadObjectResult,
@@ -28,22 +27,16 @@ import {
   InvalidRequest,
   type ListObjectsResult,
   type MultipartUploadResult,
-  type ObjectAttributes,
   type ObjectInfo,
   type ObjectResponse,
-  type PutObjectResult,
   type UploadPartResult,
 } from "../../Services/Backend.ts";
+import { normalizeHeaders } from "../../Services/S3HeaderService.ts";
 import type {
   ChecksumAlgorithm,
   ChecksumType,
 } from "../../Services/S3Schema.ts";
 import { mapS3Error, type S3Target, stripMinioMetadata } from "./Utils.ts";
-import {
-  normalizeHeaders,
-  S3HeaderService,
-} from "../../Services/S3HeaderService.ts";
-import { Checksum } from "../../Services/Checksum.ts";
 
 interface S3ChecksumFields {
   readonly ChecksumCRC32?: string;
@@ -65,7 +58,9 @@ const mapS3ChecksumsToResult = (result: S3ChecksumFields) => ({
   checksumSHA256: result.ChecksumSHA256,
 });
 
-export const makeObjectOps = (target: S3Target) => ({
+export const makeObjectOps = (
+  { client, bucketName, headerService, checksumService }: S3Target,
+) => ({
   listObjects: (args: {
     prefix?: string;
     delimiter?: string;
@@ -77,7 +72,6 @@ export const makeObjectOps = (target: S3Target) => ({
     listType?: 1 | 2;
   }) =>
     Effect.gen(function* () {
-      const { client, bucketName } = target;
       if (args.listType === 2) {
         const result = yield* Effect.tryPromise({
           try: () =>
@@ -180,7 +174,6 @@ export const makeObjectOps = (target: S3Target) => ({
     encodingType?: string;
   }) =>
     Effect.gen(function* () {
-      const { client, bucketName } = target;
       const result = yield* Effect.tryPromise({
         try: () =>
           client.send(
@@ -250,10 +243,8 @@ export const makeObjectOps = (target: S3Target) => ({
   getObject: (
     key: string,
     headers: Record<string, string | string[] | undefined>,
-  ): Effect.Effect<ObjectResponse, BackendError, S3HeaderService> =>
+  ) =>
     Effect.gen(function* () {
-      const { client, bucketName } = target;
-      const headerService = yield* S3HeaderService;
       const normalized = normalizeHeaders(headers);
       const { s3Params } = headerService.fromRequestHeaders(headers);
 
@@ -350,10 +341,8 @@ export const makeObjectOps = (target: S3Target) => ({
   headObject: (
     key: string,
     headers: Record<string, string | string[] | undefined>,
-  ): Effect.Effect<HeadObjectResult, BackendError, S3HeaderService> =>
+  ) =>
     Effect.gen(function* () {
-      const { client, bucketName } = target;
-      const headerService = yield* S3HeaderService;
       const { s3Params } = headerService.fromRequestHeaders(headers);
 
       const commandInput = {
@@ -403,14 +392,8 @@ export const makeObjectOps = (target: S3Target) => ({
     key: string,
     bodyStream: Stream.Stream<Uint8Array, Error>,
     headers: Record<string, string | string[] | undefined>,
-  ): Effect.Effect<
-    PutObjectResult,
-    BackendError,
-    Checksum | S3HeaderService
-  > =>
+  ) =>
     Effect.gen(function* () {
-      const { client, bucketName } = target;
-      const headerService = yield* S3HeaderService;
       const { checksums, metadata, s3Params } = headerService
         .fromRequestHeaders(headers);
       const _normalized = normalizeHeaders(headers);
@@ -424,7 +407,6 @@ export const makeObjectOps = (target: S3Target) => ({
         }]`,
       );
 
-      const checksumService = yield* Checksum;
       const validatedStream = yield* checksumService.validate(
         bodyStream,
         checksums,
@@ -489,7 +471,6 @@ export const makeObjectOps = (target: S3Target) => ({
 
   deleteObject: (key: string) =>
     Effect.gen(function* () {
-      const { client, bucketName } = target;
       yield* Effect.tryPromise({
         try: () =>
           client.send(
@@ -504,7 +485,6 @@ export const makeObjectOps = (target: S3Target) => ({
 
   deleteObjects: (objects: readonly { key: string; versionId?: string }[]) =>
     Effect.gen(function* () {
-      const { client, bucketName } = target;
       const result = yield* Effect.tryPromise({
         try: () =>
           client.send(
@@ -535,10 +515,8 @@ export const makeObjectOps = (target: S3Target) => ({
     key: string,
     attributes: readonly string[],
     headers: Record<string, string | string[] | undefined>,
-  ): Effect.Effect<ObjectAttributes, BackendError, S3HeaderService> =>
+  ) =>
     Effect.gen(function* () {
-      const { client, bucketName } = target;
-      const headerService = yield* S3HeaderService;
       const { s3Params } = headerService.fromRequestHeaders(headers);
 
       // Map attribute names to what S3 SDK expects (case-sensitive)
@@ -626,11 +604,8 @@ export const makeObjectOps = (target: S3Target) => ({
   createMultipartUpload: (
     key: string,
     headers: Record<string, string | string[] | undefined>,
-  ): Effect.Effect<MultipartUploadResult, BackendError, S3HeaderService> =>
+  ) =>
     Effect.gen(function* () {
-      const { client, bucketName } = target;
-      const headerService = yield* S3HeaderService;
-
       const { checksums, metadata } = headerService.fromRequestHeaders(headers);
       const normalized = normalizeHeaders(headers);
 
@@ -659,21 +634,12 @@ export const makeObjectOps = (target: S3Target) => ({
     partNumber: number,
     bodyStream: Stream.Stream<Uint8Array, Error>,
     headers: Record<string, string | string[] | undefined>,
-  ): Effect.Effect<
-    UploadPartResult,
-    BackendError,
-    Checksum | S3HeaderService
-  > =>
+  ) =>
     Effect.gen(function* () {
-      const { client, bucketName } = target;
-      const headerService = yield* S3HeaderService;
-
       const { checksums, s3Params } = headerService.fromRequestHeaders(headers);
-      const _normalized = normalizeHeaders(headers);
 
       const contentLength = s3Params.contentLength;
 
-      const checksumService = yield* Checksum;
       const validatedStream = yield* checksumService.validate(
         bodyStream,
         checksums,
@@ -748,15 +714,8 @@ export const makeObjectOps = (target: S3Target) => ({
     }[],
     _metadata: Record<string, string>,
     headers: Record<string, string | string[] | undefined>,
-  ): Effect.Effect<
-    CompleteMultipartUploadResult,
-    BackendError,
-    S3HeaderService
-  > =>
+  ) =>
     Effect.gen(function* () {
-      const { client, bucketName } = target;
-      const headerService = yield* S3HeaderService;
-
       const { checksums } = headerService.fromRequestHeaders(headers);
 
       const result = yield* Effect.tryPromise({
@@ -817,7 +776,6 @@ export const makeObjectOps = (target: S3Target) => ({
 
   abortMultipartUpload: (key: string, uploadId: string) =>
     Effect.gen(function* () {
-      const { client, bucketName } = target;
       yield* Effect.tryPromise({
         try: () =>
           client.send(
@@ -840,7 +798,6 @@ export const makeObjectOps = (target: S3Target) => ({
     encodingType?: string;
   }) =>
     Effect.gen(function* () {
-      const { client, bucketName } = target;
       const result = yield* Effect.tryPromise({
         try: () =>
           client.send(
@@ -890,7 +847,6 @@ export const makeObjectOps = (target: S3Target) => ({
 
   listParts: (key: string, uploadId: string) =>
     Effect.gen(function* () {
-      const { client, bucketName } = target;
       const result = yield* Effect.tryPromise({
         try: () =>
           client.send(

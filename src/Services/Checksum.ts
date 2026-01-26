@@ -1,8 +1,8 @@
-import { Context, Effect, Layer, Stream } from "effect";
-import { createHash } from "node:crypto";
+import { Effect, Stream } from "effect";
 import { Buffer } from "node:buffer";
-import type { ChecksumAlgorithm, ChecksumHeaders } from "./S3Schema.ts";
+import { createHash } from "node:crypto";
 import { BadDigest, type InvalidRequest } from "./Backend.ts";
+import type { ChecksumAlgorithm, ChecksumHeaders } from "./S3Schema.ts";
 
 /**
  * CRC32 implementation for S3 (IEEE 802.3)
@@ -44,28 +44,12 @@ function crc32c(data: Uint8Array, previous = 0) {
   return (crc ^ -1) >>> 0;
 }
 
-export class Checksum extends Context.Tag("Checksum")<
-  Checksum,
-  {
-    readonly calculate: (
+export class Checksum extends Effect.Service<Checksum>()("Checksum", {
+  succeed: {
+    calculate: (
       stream: Stream.Stream<Uint8Array, Error>,
       algorithm: ChecksumAlgorithm,
-    ) => Effect.Effect<string, Error>;
-
-    readonly validate: (
-      stream: Stream.Stream<Uint8Array, Error>,
-      expected: ChecksumHeaders,
-    ) => Effect.Effect<
-      Stream.Stream<Uint8Array, Error>,
-      BadDigest | InvalidRequest
-    >;
-  }
->() {}
-
-export const ChecksumLive = Layer.succeed(
-  Checksum,
-  Checksum.of({
-    calculate: (stream, algorithm) =>
+    ): Effect.Effect<string, Error> =>
       Effect.gen(function* () {
         const algo = algorithm.toUpperCase();
         let currentCRC32 = 0;
@@ -101,7 +85,13 @@ export const ChecksumLive = Layer.succeed(
         );
       }),
 
-    validate: (stream, expected) =>
+    validate: (
+      stream: Stream.Stream<Uint8Array, Error>,
+      expected: ChecksumHeaders,
+    ): Effect.Effect<
+      Stream.Stream<Uint8Array, Error>,
+      BadDigest | InvalidRequest
+    > =>
       Effect.gen(function* () {
         const algo = expected.algorithm;
         if (!algo) return stream;
@@ -154,5 +144,5 @@ export const ChecksumLive = Layer.succeed(
           })),
         );
       }),
-  }),
-);
+  },
+}) {}

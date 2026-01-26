@@ -1,7 +1,7 @@
 import { Chunk, Effect, Option, Stream } from "effect";
 import { KeyValueStore } from "@effect/platform";
 import { SystemError } from "@effect/platform/Error";
-import type { BackendService } from "./Backend.ts";
+import type { BackendShape } from "./Backend.ts";
 
 const collectChunks = (chunks: Chunk.Chunk<Uint8Array>) => {
   const totalLength = Chunk.reduce(
@@ -25,9 +25,9 @@ const collectChunks = (chunks: Chunk.Chunk<Uint8Array>) => {
  */
 export const makeBackendKeyValueStore = (
   ops: {
-    getObject: BackendService["getObject"];
-    putObject: BackendService["putObject"];
-    deleteObject: BackendService["deleteObject"];
+    getObject: BackendShape["getObject"];
+    putObject: BackendShape["putObject"];
+    deleteObject: BackendShape["deleteObject"];
   },
   prefix: string,
 ): KeyValueStore.KeyValueStore =>

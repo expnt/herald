@@ -3,12 +3,12 @@ import { Config, Effect, Layer, Logger, LogLevel, Option, Scope } from "effect";
 import { HttpHeraldLive } from "../src/Http.ts";
 import { HeraldConfig } from "../src/Config/Layer.ts";
 import { lookupBucket } from "../src/Domain/Config.ts";
-import { BackendResolverLive } from "../src/Services/BackendResolver.ts";
-import { S3ClientLive } from "../src/Backends/S3/Client.ts";
-import { SwiftClient, SwiftClientLive } from "../src/Backends/Swift/Client.ts";
-import { S3XmlLive } from "../src/Services/S3Xml.ts";
-import { ChecksumLive } from "../src/Services/Checksum.ts";
-import { S3HeaderServiceLive } from "../src/Services/S3HeaderService.ts";
+import { BackendResolver } from "../src/Services/BackendResolver.ts";
+import { S3ClientFactory } from "../src/Backends/S3/Client.ts";
+import { SwiftClient } from "../src/Backends/Swift/Client.ts";
+import { S3Xml } from "../src/Services/S3Xml.ts";
+import { Checksum } from "../src/Services/Checksum.ts";
+import { S3HeaderService } from "../src/Services/S3HeaderService.ts";
 import { HttpApiBuilder, HttpServer } from "@effect/platform";
 import { FetchHttpClient, HttpClient } from "@effect/platform";
 import type { GlobalConfig } from "../src/Domain/Config.ts";
@@ -118,12 +118,12 @@ export const makeBenchHarness = (
     });
 
     const ApiWithRequirements = HttpHeraldLive.pipe(
-      Layer.provide(BackendResolverLive),
-      Layer.provide(S3ClientLive),
-      Layer.provide(SwiftClientLive),
-      Layer.provide(S3XmlLive),
-      Layer.provide(ChecksumLive),
-      Layer.provide(S3HeaderServiceLive),
+      Layer.provide(BackendResolver.Default),
+      Layer.provide(S3ClientFactory.Default),
+      Layer.provide(SwiftClient.Default),
+      Layer.provide(S3Xml.Default),
+      Layer.provide(Checksum.Default),
+      Layer.provide(S3HeaderService.Default),
       Layer.provide(HeraldConfigLive),
       Layer.provide(FetchHttpClient.layer),
       Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, {
@@ -209,7 +209,7 @@ export const makeBenchHarness = (
     };
   }).pipe(
     // We need to provide the requirements for SwiftClient and HttpClient
-    Effect.provide(SwiftClientLive),
+    Effect.provide(SwiftClient.Default),
     Effect.provide(FetchHttpClient.layer),
     Effect.provide(Layer.succeed(FetchHttpClient.RequestInit, {
       // @ts-ignore: duplex is required for streaming body in fetch

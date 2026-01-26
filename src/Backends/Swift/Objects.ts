@@ -1,7 +1,6 @@
+import { HttpClientRequest } from "@effect/platform";
 import { Effect, Schedule, Stream } from "effect";
-import { type HttpClient, HttpClientRequest } from "@effect/platform";
 import {
-  type BackendError,
   BadDigest,
   type CommonPrefix,
   type CompleteMultipartUploadResult,
@@ -23,17 +22,13 @@ import {
   type PutObjectResult,
   type UploadPartResult,
 } from "../../Services/Backend.ts";
+import { normalizeHeaders } from "../../Services/S3HeaderService.ts";
 import {
   mapError,
   MP_META_PREFIX,
   MP_SEGMENTS_PREFIX,
   type SwiftTarget,
 } from "./Utils.ts";
-import {
-  normalizeHeaders,
-  S3HeaderService,
-} from "../../Services/S3HeaderService.ts";
-import { Checksum } from "../../Services/Checksum.ts";
 
 export interface SwiftObject {
   readonly name?: string;
@@ -45,8 +40,15 @@ export interface SwiftObject {
 }
 
 export const makeObjectOps = (
-  target: SwiftTarget,
-  client: HttpClient.HttpClient,
+  {
+    container,
+    storageUrl: _,
+    token,
+    url,
+    client,
+    headerService,
+    checksumService,
+  }: SwiftTarget,
 ) => {
   const listObjects = (args: {
     prefix?: string;
@@ -59,7 +61,6 @@ export const makeObjectOps = (
     listType?: 1 | 2;
   }) =>
     Effect.gen(function* () {
-      const { url, token, container } = target;
       const limit = args.maxKeys ?? 1000;
       const query = new URLSearchParams({ format: "json" });
       if (args.prefix) query.set("prefix", args.prefix);
@@ -136,6 +137,94 @@ export const makeObjectOps = (
         keyCount: contents.length + commonPrefixes.length,
       } satisfies ListObjectsResult;
     });
+  const headObject = (
+    key: string,
+    headers: Record<string, string | string[] | undefined>,
+  ) =>
+    Effect.gen(function* () {
+      const encodedKey = key.split("/").map(encodeURIComponent).join("/");
+      const swiftHeaders: Record<string, string> = {
+        "X-Auth-Token": token,
+      };
+      const response = yield* client.execute(
+        HttpClientRequest.head(`${url}/${encodedKey}`).pipe(
+          HttpClientRequest.setHeaders(swiftHeaders),
+        ),
+      ).pipe(
+        Effect.mapError((e) => mapError(500, String(e), container)),
+      );
+
+      if (response.status < 200 || response.status >= 300) {
+        const message = yield* response.text.pipe(
+          Effect.orElseSucceed(() => "Error"),
+        );
+        return yield* Effect.fail(
+          mapError(
+            response.status,
+            message || "Error",
+            container,
+            "HEAD",
+            key,
+          ),
+        );
+      }
+
+      const { metadata, s3Headers, checksums, partsCount } = headerService
+        .fromSwiftHeaders(response.headers);
+
+      const contentLengthHeader = response.headers["content-length"];
+      const contentLength = Array.isArray(contentLengthHeader)
+        ? parseInt(contentLengthHeader[0] || "0")
+        : parseInt(contentLengthHeader || "0");
+
+      const etagHeader = response.headers["etag"];
+      const etag = Array.isArray(etagHeader) ? etagHeader[0] : etagHeader;
+
+      const lastModifiedHeader = response.headers["last-modified"];
+      const lastModified = Array.isArray(lastModifiedHeader)
+        ? lastModifiedHeader[0]
+        : lastModifiedHeader;
+
+      const { s3Params } = headerService.fromRequestHeaders(headers);
+      const checksumMode = s3Params.checksumMode === "ENABLED";
+
+      if (checksumMode) {
+        Object.assign(
+          s3Headers,
+          headerService.toResponseHeaders({
+            checksumAlgorithm: checksums.algorithm,
+            checksumCRC32: checksums.crc32,
+            checksumCRC32C: checksums.crc32c,
+            checksumCRC64NVME: checksums.crc64nvme,
+            checksumSHA1: checksums.sha1,
+            checksumSHA256: checksums.sha256,
+            checksumType: checksums.type,
+            metadata: {},
+            headers: {},
+            partsCount,
+          }),
+        );
+      }
+
+      return {
+        contentType: (Array.isArray(response.headers["content-type"])
+          ? response.headers["content-type"][0]
+          : response.headers["content-type"]) || undefined,
+        contentLength,
+        etag: etag || undefined,
+        lastModified: lastModified ? new Date(lastModified) : undefined,
+        metadata,
+        headers: s3Headers,
+        checksumAlgorithm: checksums.algorithm,
+        checksumCRC32: checksums.crc32,
+        checksumCRC32C: checksums.crc32c,
+        checksumCRC64NVME: checksums.crc64nvme,
+        checksumSHA1: checksums.sha1,
+        checksumSHA256: checksums.sha256,
+        checksumType: checksums.type,
+        partsCount,
+      } satisfies HeadObjectResult;
+    });
 
   return {
     listObjects: (args: {
@@ -179,8 +268,6 @@ export const makeObjectOps = (
       headers: Record<string, string | string[] | undefined>,
     ) =>
       Effect.gen(function* () {
-        const { url, token, container } = target;
-        const headerService = yield* S3HeaderService;
         const encodedKey = key.split("/").map(encodeURIComponent).join("/");
         const swiftHeaders: Record<string, string> = {
           "X-Auth-Token": token,
@@ -300,111 +387,16 @@ export const makeObjectOps = (
         } satisfies ObjectResponse;
       }),
 
-    headObject: (
-      key: string,
-      headers: Record<string, string | string[] | undefined>,
-    ) =>
-      Effect.gen(function* () {
-        const { url, token, container } = target;
-        const headerService = yield* S3HeaderService;
-        const encodedKey = key.split("/").map(encodeURIComponent).join("/");
-        const swiftHeaders: Record<string, string> = {
-          "X-Auth-Token": token,
-        };
-        const response = yield* client.execute(
-          HttpClientRequest.head(`${url}/${encodedKey}`).pipe(
-            HttpClientRequest.setHeaders(swiftHeaders),
-          ),
-        ).pipe(
-          Effect.mapError((e) => mapError(500, String(e), container)),
-        );
-
-        if (response.status < 200 || response.status >= 300) {
-          const message = yield* response.text.pipe(
-            Effect.orElseSucceed(() => "Error"),
-          );
-          return yield* Effect.fail(
-            mapError(
-              response.status,
-              message || "Error",
-              container,
-              "HEAD",
-              key,
-            ),
-          );
-        }
-
-        const { metadata, s3Headers, checksums, partsCount } = headerService
-          .fromSwiftHeaders(response.headers);
-
-        const contentLengthHeader = response.headers["content-length"];
-        const contentLength = Array.isArray(contentLengthHeader)
-          ? parseInt(contentLengthHeader[0] || "0")
-          : parseInt(contentLengthHeader || "0");
-
-        const etagHeader = response.headers["etag"];
-        const etag = Array.isArray(etagHeader) ? etagHeader[0] : etagHeader;
-
-        const lastModifiedHeader = response.headers["last-modified"];
-        const lastModified = Array.isArray(lastModifiedHeader)
-          ? lastModifiedHeader[0]
-          : lastModifiedHeader;
-
-        const { s3Params } = headerService.fromRequestHeaders(headers);
-        const checksumMode = s3Params.checksumMode === "ENABLED";
-
-        if (checksumMode) {
-          Object.assign(
-            s3Headers,
-            headerService.toResponseHeaders({
-              checksumAlgorithm: checksums.algorithm,
-              checksumCRC32: checksums.crc32,
-              checksumCRC32C: checksums.crc32c,
-              checksumCRC64NVME: checksums.crc64nvme,
-              checksumSHA1: checksums.sha1,
-              checksumSHA256: checksums.sha256,
-              checksumType: checksums.type,
-              metadata: {},
-              headers: {},
-              partsCount,
-            }),
-          );
-        }
-
-        return {
-          contentType: (Array.isArray(response.headers["content-type"])
-            ? response.headers["content-type"][0]
-            : response.headers["content-type"]) || undefined,
-          contentLength,
-          etag: etag || undefined,
-          lastModified: lastModified ? new Date(lastModified) : undefined,
-          metadata,
-          headers: s3Headers,
-          checksumAlgorithm: checksums.algorithm,
-          checksumCRC32: checksums.crc32,
-          checksumCRC32C: checksums.crc32c,
-          checksumCRC64NVME: checksums.crc64nvme,
-          checksumSHA1: checksums.sha1,
-          checksumSHA256: checksums.sha256,
-          checksumType: checksums.type,
-          partsCount,
-        } satisfies HeadObjectResult;
-      }),
+    headObject,
 
     putObject: (
       key: string,
       stream: Stream.Stream<Uint8Array, Error>,
       headers: Record<string, string | string[] | undefined>,
-    ): Effect.Effect<
-      PutObjectResult,
-      BackendError,
-      Checksum | S3HeaderService
-    > => {
-      const { url, token, container } = target;
+    ) => {
       const encodedKey = key.split("/").map(encodeURIComponent).join("/");
 
       return Effect.gen(function* () {
-        const headerService = yield* S3HeaderService;
         const { checksums, metadata } = headerService.fromRequestHeaders(
           headers,
         );
@@ -422,7 +414,6 @@ export const makeObjectOps = (
           swiftHeaders["Content-Length"] = String(contentLength);
         }
 
-        const checksumService = yield* Checksum;
         const validatedStream = yield* checksumService.validate(
           stream,
           checksums,
@@ -505,7 +496,6 @@ export const makeObjectOps = (
 
     deleteObject: (key: string) =>
       Effect.gen(function* () {
-        const { url, token, container } = target;
         const encodedKey = key.split("/").map(encodeURIComponent).join("/");
 
         // Try SLO delete first (recursive)
@@ -571,8 +561,6 @@ export const makeObjectOps = (
 
     deleteObjects: (objects: readonly { key: string; versionId?: string }[]) =>
       Effect.gen(function* () {
-        const { url, token, container } = target;
-
         const results = yield* Effect.all(
           objects.map((obj) =>
             Effect.gen(function* () {
@@ -654,7 +642,7 @@ export const makeObjectOps = (
       headers: Record<string, string | string[] | undefined>,
     ) =>
       Effect.gen(function* () {
-        const head = yield* makeObjectOps(target, client).headObject(
+        const head = yield* headObject(
           key,
           { "x-amz-checksum-mode": "ENABLED", ...headers },
         );
@@ -704,9 +692,8 @@ export const makeObjectOps = (
     createMultipartUpload: (
       _key: string,
       headers: Record<string, string | string[] | undefined>,
-    ): Effect.Effect<MultipartUploadResult, BackendError, S3HeaderService> =>
+    ) =>
       Effect.gen(function* () {
-        const headerService = yield* S3HeaderService;
         const uploadId = yield* Effect.try({
           try: () => crypto.randomUUID(),
           catch: (e) => new InternalError({ message: String(e) }),
@@ -725,17 +712,11 @@ export const makeObjectOps = (
       partNumber: number,
       body: Stream.Stream<Uint8Array, Error>,
       headers: Record<string, string | string[] | undefined>,
-    ): Effect.Effect<
-      UploadPartResult,
-      BackendError,
-      Checksum | S3HeaderService
-    > =>
+    ) =>
       Effect.gen(function* () {
-        const headerService = yield* S3HeaderService;
         const { checksums, metadata } = headerService.fromRequestHeaders(
           headers,
         );
-        const { url, token, container } = target;
         const segmentKey = `${MP_SEGMENTS_PREFIX}${uploadId}/${partNumber}`;
         const encodedSegmentKey = segmentKey.split("/").map(encodeURIComponent)
           .join("/");
@@ -745,7 +726,6 @@ export const makeObjectOps = (
           ...headerService.toSwiftHeaders(metadata, checksums),
         };
 
-        const checksumService = yield* Checksum;
         const validatedStream = yield* checksumService.validate(
           body,
           checksums,
@@ -840,11 +820,7 @@ export const makeObjectOps = (
       }[],
       metadata: Record<string, string>,
       headers: Record<string, string | string[] | undefined>,
-    ): Effect.Effect<
-      CompleteMultipartUploadResult,
-      BackendError,
-      S3HeaderService
-    > =>
+    ) =>
       Effect.gen(function* () {
         if (parts.length === 0) {
           return yield* Effect.fail(
@@ -853,8 +829,6 @@ export const makeObjectOps = (
             }),
           );
         }
-        const { url, token, container } = target;
-        const headerService = yield* S3HeaderService;
         const encodedKey = key.split("/").map(encodeURIComponent).join("/");
 
         // Fetch segment info to get sizes
@@ -989,10 +963,8 @@ export const makeObjectOps = (
     abortMultipartUpload: (
       key: string,
       uploadId: string,
-    ): Effect.Effect<void, BackendError> =>
+    ) =>
       Effect.gen(function* () {
-        const { url, token } = target;
-
         // 1. Delete the segments
         let marker: string | undefined = undefined;
         while (true) {
@@ -1039,9 +1011,8 @@ export const makeObjectOps = (
       uploadIdMarker?: string;
       maxUploads?: number;
       encodingType?: string;
-    }): Effect.Effect<ListMultipartUploadsResult, BackendError> =>
+    }) =>
       Effect.gen(function* () {
-        const { container } = target;
         const prefix = `${MP_META_PREFIX}${args.prefix ?? ""}`;
         const marker = args.keyMarker
           ? `${MP_META_PREFIX}${args.keyMarker}/${args.uploadIdMarker ?? ""}`
@@ -1087,10 +1058,8 @@ export const makeObjectOps = (
     listParts: (
       key: string,
       uploadId: string,
-    ): Effect.Effect<ListPartsResult, BackendError> =>
+    ) =>
       Effect.gen(function* () {
-        const { url, token, container } = target;
-
         // Check if upload exists by checking for metadata object
         const metaKey = `${MP_META_PREFIX}${key}/${uploadId}`;
         const encodedMetaKey = metaKey.split("/").map(encodeURIComponent).join(
