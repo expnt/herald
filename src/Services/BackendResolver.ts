@@ -1,12 +1,11 @@
 import { Cache, Effect, Option } from "effect";
 import { makeS3Backend } from "../Backends/S3/Backend.ts";
 import { makeSwiftBackend } from "../Backends/Swift/Backend.ts";
-import { HeraldConfig, HeraldConfigLive } from "../Config/Layer.ts";
+import { HeraldConfig } from "../Config/Layer.ts";
 import type { MaterializedBucket } from "../Domain/Config.ts";
 
 export class BackendResolver
   extends Effect.Service<BackendResolver>()("BackendResolver", {
-    dependencies: [HeraldConfigLive],
     effect: Effect.gen(function* () {
       const config = yield* HeraldConfig;
 

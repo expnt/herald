@@ -13,52 +13,71 @@ export class RequestContext extends Context.Tag("RequestContext")<
   }
 >() {}
 
-export class S3RequestParser
-  extends Effect.Service<S3RequestParser>()("S3RequestParser", {
-    effect: Effect.gen(function* () {
-      const { bucket } = yield* RequestContext;
-      const request = yield* HttpServerRequest.HttpServerRequest;
-      const urlResult = Url.fromString(request.url, "http://localhost");
-      if (Either.isLeft(urlResult)) {
-        return yield* Effect.fail(
-          new InternalError({ message: String(urlResult.left) }),
-        );
-      }
-      const url = urlResult.right;
-      const headerService = yield* S3HeaderService;
+export interface S3RequestData {
+  readonly s3Params: S3QueryParams & Record<string, unknown>;
+  readonly headers: ReturnType<
+    typeof S3HeaderService.Service.fromRequestHeaders
+  >;
+  readonly key: string;
+}
 
-      return {
-        params: yield* Effect.cached(Effect.gen(function* () {
-          const paramsRecord: Record<string, string> = {};
-          url.searchParams.forEach((value, key) => {
-            paramsRecord[key] = value;
-          });
-          return yield* Schema.decodeUnknown(S3QueryParams)(paramsRecord).pipe(
-            Effect.mapError((e) => new InternalError({ message: String(e) })),
-          );
-        })),
-        headers: yield* Effect.cached(Effect.sync(function () {
-          return headerService.fromRequestHeaders(request.headers);
-        })),
-        key: yield* Effect.cached(Effect.sync(() => {
-          const [pathOnly] = url.pathname.split("?");
+export const S3RequestParser = Effect.gen(function* () {
+  const { bucket } = yield* RequestContext;
+  const request = yield* HttpServerRequest.HttpServerRequest;
+  const urlResult = Url.fromString(request.url, "http://localhost");
+  if (Either.isLeft(urlResult)) {
+    return yield* Effect.fail(
+      new InternalError({ message: String(urlResult.left) }),
+    );
+  }
+  const url = urlResult.right;
+  const headerService = yield* S3HeaderService;
 
-          const bucketPrefixWithSlash = `/${bucket}/`;
-          const bucketPrefixNoSlash = `/${bucket}`;
+  const paramsRecord: Record<string, string> = {};
+  url.searchParams.forEach((value, key) => {
+    paramsRecord[key] = value;
+  });
 
-          if (pathOnly.startsWith(bucketPrefixWithSlash)) {
-            return decodeURIComponent(
-              pathOnly.substring(bucketPrefixWithSlash.length),
-            );
-          } else if (pathOnly === bucketPrefixNoSlash) {
-            return "";
-          }
-          return "";
-        })),
-      } as const;
+  const s3Params = yield* Schema.decodeUnknown(S3QueryParams)(paramsRecord, {
+    onExcessProperty: "ignore",
+  }).pipe(
+    Effect.mapError((e) => {
+      return new InternalError({ message: String(e) });
     }),
-    dependencies: [],
-  }) {}
+  );
+
+  const parsedHeaders = headerService.fromRequestHeaders(request.headers);
+
+  const [pathOnly] = url.pathname.split("?");
+  const bucketPrefixWithSlash = `/${bucket}/`;
+  const bucketPrefixNoSlash = `/${bucket}`;
+
+  let key = "";
+  if (pathOnly.startsWith(bucketPrefixWithSlash)) {
+    key = decodeURIComponent(
+      pathOnly.substring(bucketPrefixWithSlash.length),
+    );
+  } else if (pathOnly === bucketPrefixNoSlash) {
+    key = "";
+  }
+
+  return {
+    s3Params: {
+      ...s3Params,
+      ...(parsedHeaders.s3Params.uploadId
+        ? { uploadId: parsedHeaders.s3Params.uploadId }
+        : {}),
+      ...(parsedHeaders.s3Params.partNumber
+        ? { partNumber: parsedHeaders.s3Params.partNumber }
+        : {}),
+      ...(parsedHeaders.s3Params.contentLength !== undefined
+        ? { contentLength: parsedHeaders.s3Params.contentLength }
+        : {}),
+    },
+    headers: parsedHeaders,
+    key,
+  } as S3RequestData;
+});
 
 /**
  * Common S3 Query Parameters Schema

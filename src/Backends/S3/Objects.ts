@@ -1,35 +1,30 @@
 import {
-  AbortMultipartUploadCommand,
-  CompleteMultipartUploadCommand,
-  CreateMultipartUploadCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
   GetObjectAttributesCommand,
   GetObjectCommand,
   HeadObjectCommand,
-  ListMultipartUploadsCommand,
   ListObjectsCommand,
   type ListObjectsCommandOutput,
   ListObjectsV2Command,
   type ListObjectsV2CommandOutput,
   ListObjectVersionsCommand,
-  ListPartsCommand,
   type ObjectAttributes as S3ObjectAttributes,
   PutObjectCommand,
-  UploadPartCommand,
 } from "@aws-sdk/client-s3";
 import { Chunk, Effect, Option, Stream } from "effect";
+import { Readable } from "node:stream";
+import type sweb from "node:stream/web";
 import {
+  type BackendError,
+  BadDigest,
   type CommonPrefix,
-  type CompleteMultipartUploadResult,
   type HeadObjectResult,
   InternalError,
   InvalidRequest,
   type ListObjectsResult,
-  type MultipartUploadResult,
   type ObjectInfo,
   type ObjectResponse,
-  type UploadPartResult,
 } from "../../Services/Backend.ts";
 import { normalizeHeaders } from "../../Services/S3HeaderService.ts";
 import type {
@@ -325,7 +320,6 @@ export const makeObjectOps = (
           ...mapS3ChecksumsToResult(result as S3ChecksumFields),
           metadata,
           headers: {},
-          stream: Stream.empty,
           partsCount: result.PartsCount,
           contentLength: result.ContentLength,
           contentType: result.ContentType,
@@ -401,64 +395,113 @@ export const makeObjectOps = (
       const contentType = _normalized["content-type"] as string;
       const contentLength = s3Params.contentLength;
 
-      yield* Effect.logDebug(
-        `PutObject key=[${key}] checksums: algo=[${checksums.algorithm}] sha256=[${checksums.sha256}] crc32=[${checksums.crc32}] crc32c=[${checksums.crc32c}] headers=[${
-          JSON.stringify(_normalized)
-        }]`,
-      );
-
-      const validatedStream = yield* checksumService.validate(
+      const validatedStream = (yield* checksumService.validate(
         bodyStream,
         checksums,
-      );
-
-      const body = (contentLength !== undefined && contentLength > 1024 * 1024)
-        ? Stream.toReadableStream(validatedStream.pipe(
-          Stream.mapError((e) => new Error(String(e))),
-        ))
-        : yield* Effect.gen(function* () {
-          const chunks = yield* Stream.runCollect(validatedStream).pipe(
-            Effect.mapError((e) => {
-              if (e instanceof InvalidRequest) return e;
-              return new InternalError({ message: String(e) });
+      )).pipe(
+        Stream.catchAll((e) => {
+          // Preserve BadDigest and InvalidRequest errors from checksum validation
+          if (e instanceof BadDigest || e instanceof InvalidRequest) {
+            return Stream.fail(e as BackendError);
+          }
+          return Stream.fail(
+            new InternalError({
+              message: `error on checksum stream: ${String(e)}`,
             }),
           );
-          const totalLength = Chunk.reduce(
-            chunks,
-            0,
-            (acc, chunk) => acc + chunk.length,
-          );
-          const body = new Uint8Array(totalLength);
-          let offset = 0;
-          for (const chunk of chunks) {
-            body.set(chunk, offset);
-            offset += chunk.length;
-          }
-          return body;
-        });
-
-      yield* Effect.logDebug(
-        `PutObject key=[${key}] streaming body (contentLength=${contentLength})`,
+        }),
       );
+
+      const isSmall = contentLength !== undefined &&
+        contentLength < 1024 * 1024;
+
+      const body = isSmall
+        ? yield* Stream.runCollect(validatedStream).pipe(
+          Effect.map((chunks) => {
+            const total = Chunk.reduce(chunks, 0, (acc, c) => acc + c.length);
+            const res = new Uint8Array(total);
+            let off = 0;
+            for (const c of chunks) {
+              res.set(c, off);
+              off += c.length;
+            }
+            return res;
+          }),
+          Effect.mapError((e) => {
+            if (e instanceof InvalidRequest) return e;
+            if (e instanceof BadDigest) return e;
+            return new InternalError({
+              message: `error collecting body stream into memory: ${String(e)}`,
+            });
+          }),
+        )
+        : Readable.fromWeb(
+          Stream.toReadableStream(validatedStream) as sweb.ReadableStream,
+        );
 
       const result = yield* Effect.tryPromise({
-        try: () =>
-          client.send(
-            new PutObjectCommand({
-              Bucket: bucketName,
-              Key: key,
-              Body: body, // SDK accepts ReadableStream or Uint8Array
-              ContentType: contentType,
-              ContentLength: contentLength,
-              Metadata: metadata,
-              ChecksumAlgorithm: checksums.algorithm,
-              ChecksumCRC32: checksums.crc32,
-              ChecksumCRC32C: checksums.crc32c,
-              ChecksumCRC64NVME: checksums.crc64nvme,
-              ChecksumSHA1: checksums.sha1,
-              ChecksumSHA256: checksums.sha256,
-            }),
-          ),
+        try: () => {
+          const command = new PutObjectCommand({
+            Bucket: bucketName,
+            Key: key,
+            Body: body,
+            ContentType: contentType,
+            ContentLength: contentLength,
+            Metadata: metadata,
+          });
+
+          // If it's a Node stream, add an error handler to prevent uncaught exceptions
+          // from the stream itself, as we handle failures through the send() promise.
+          if (body instanceof Readable) {
+            body.on("error", () => {});
+          }
+
+          // Remove checksum middlewares to prevent them from trying to hash the stream twice
+          command.middlewareStack.remove("flexibleChecksumsMiddleware");
+          command.middlewareStack.remove("getChecksumMiddleware");
+
+          // Manually inject validated checksums
+          if (
+            checksums.sha256 || checksums.sha1 || checksums.crc32 ||
+            checksums.crc32c || checksums.crc64nvme || !isSmall
+          ) {
+            command.middlewareStack.add(
+              (next) => (args) => {
+                const request = args.request as {
+                  headers: Record<string, string>;
+                  duplex?: string;
+                };
+                if (!isSmall) {
+                  request.duplex = "half";
+                  request.headers["x-amz-content-sha256"] = "UNSIGNED-PAYLOAD";
+                  if (contentLength !== undefined) {
+                    request.headers["content-length"] = String(contentLength);
+                  }
+                }
+                if (checksums.sha256) {
+                  request.headers["x-amz-checksum-sha256"] = checksums.sha256;
+                }
+                if (checksums.sha1) {
+                  request.headers["x-amz-checksum-sha1"] = checksums.sha1;
+                }
+                if (checksums.crc32) {
+                  request.headers["x-amz-checksum-crc32"] = checksums.crc32;
+                }
+                if (checksums.crc32c) {
+                  request.headers["x-amz-checksum-crc32c"] = checksums.crc32c;
+                }
+                if (checksums.crc64nvme) {
+                  request.headers["x-amz-checksum-crc64nvme"] =
+                    checksums.crc64nvme;
+                }
+                return next(args);
+              },
+              { step: "build", name: "ManualChecksumInjection" },
+            );
+          }
+
+          return client.send(command);
+        },
         catch: (e) => mapS3Error(e, bucketName),
       });
 
@@ -532,12 +575,6 @@ export const makeObjectOps = (
         })
         .filter((a): a is S3ObjectAttributes => a !== undefined);
 
-      yield* Effect.logDebug(
-        `getObjectAttributes key=[${key}] s3Attributes=[${
-          s3Attributes.join(",")
-        }]`,
-      );
-
       if (s3Attributes.length === 0) {
         // If no recognized attributes, return a sensible default or fail?
         // S3 requires at least one.
@@ -598,299 +635,6 @@ export const makeObjectOps = (
           : undefined,
         objectSize: result.ObjectSize,
         storageClass: result.StorageClass,
-      };
-    }),
-
-  createMultipartUpload: (
-    key: string,
-    headers: Record<string, string | string[] | undefined>,
-  ) =>
-    Effect.gen(function* () {
-      const { checksums, metadata } = headerService.fromRequestHeaders(headers);
-      const normalized = normalizeHeaders(headers);
-
-      const command = new CreateMultipartUploadCommand({
-        Bucket: bucketName,
-        Key: key,
-        Metadata: metadata,
-        ContentType: normalized["content-type"] as string,
-        ChecksumAlgorithm: checksums.algorithm,
-        ChecksumType: checksums.type,
-      });
-      const response = yield* Effect.tryPromise({
-        try: () => client.send(command),
-        catch: (e) => mapS3Error(e, bucketName),
-      });
-      return {
-        uploadId: response.UploadId!,
-        checksumAlgorithm: response.ChecksumAlgorithm,
-        checksumType: response.ChecksumType,
-      } satisfies MultipartUploadResult;
-    }),
-
-  uploadPart: (
-    key: string,
-    uploadId: string,
-    partNumber: number,
-    bodyStream: Stream.Stream<Uint8Array, Error>,
-    headers: Record<string, string | string[] | undefined>,
-  ) =>
-    Effect.gen(function* () {
-      const { checksums, s3Params } = headerService.fromRequestHeaders(headers);
-
-      const contentLength = s3Params.contentLength;
-
-      const validatedStream = yield* checksumService.validate(
-        bodyStream,
-        checksums,
-      );
-
-      const body = yield* Effect.gen(function* () {
-        const chunks = yield* Stream.runCollect(validatedStream).pipe(
-          Effect.mapError((e) => {
-            if (e instanceof InvalidRequest) return e;
-            return new InternalError({ message: String(e) });
-          }),
-        );
-        const totalLength = Chunk.reduce(
-          chunks,
-          0,
-          (acc, chunk) => acc + chunk.length,
-        );
-        const body = new Uint8Array(totalLength);
-        let offset = 0;
-        for (const chunk of chunks) {
-          body.set(chunk, offset);
-          offset += chunk.length;
-        }
-        return body;
-      });
-
-      const result = yield* Effect.tryPromise({
-        try: () =>
-          client.send(
-            new UploadPartCommand({
-              Bucket: bucketName,
-              Key: key,
-              UploadId: uploadId,
-              PartNumber: partNumber,
-              Body: body, // SDK accepts ReadableStream or Uint8Array
-              ContentLength: contentLength,
-              ChecksumAlgorithm: checksums.algorithm,
-              ChecksumCRC32: checksums.crc32,
-              ChecksumCRC32C: checksums.crc32c,
-              ChecksumCRC64NVME: checksums.crc64nvme,
-              ChecksumSHA1: checksums.sha1,
-              ChecksumSHA256: checksums.sha256,
-            }),
-          ),
-        catch: (e) => mapS3Error(e, bucketName),
-      });
-
-      if (!result.ETag) {
-        return yield* Effect.fail(
-          new InternalError({
-            message: "S3 returned empty ETag for UploadPart",
-          }),
-        );
-      }
-      return {
-        etag: result.ETag,
-        ...mapS3ChecksumsToResult(result as S3ChecksumFields),
-      } satisfies UploadPartResult;
-    }),
-
-  completeMultipartUpload: (
-    key: string,
-    uploadId: string,
-    parts: readonly {
-      etag: string;
-      partNumber: number;
-      checksumCRC32?: string;
-      checksumCRC32C?: string;
-      checksumCRC64NVME?: string;
-      checksumSHA1?: string;
-      checksumSHA256?: string;
-    }[],
-    _metadata: Record<string, string>,
-    headers: Record<string, string | string[] | undefined>,
-  ) =>
-    Effect.gen(function* () {
-      const { checksums } = headerService.fromRequestHeaders(headers);
-
-      const result = yield* Effect.tryPromise({
-        try: () =>
-          client.send(
-            new CompleteMultipartUploadCommand({
-              Bucket: bucketName,
-              Key: key,
-              UploadId: uploadId,
-              MultipartUpload: {
-                Parts: parts.map((p) => ({
-                  ETag: p.etag,
-                  PartNumber: p.partNumber,
-                  ChecksumCRC32: p.checksumCRC32,
-                  ChecksumCRC32C: p.checksumCRC32C,
-                  ChecksumCRC64NVME: p.checksumCRC64NVME,
-                  ChecksumSHA1: p.checksumSHA1,
-                  ChecksumSHA256: p.checksumSHA256,
-                })),
-              },
-              ChecksumCRC32: checksums.crc32,
-              ChecksumCRC32C: checksums.crc32c,
-              ChecksumCRC64NVME: checksums.crc64nvme,
-              ChecksumSHA1: checksums.sha1,
-              ChecksumSHA256: checksums.sha256,
-              ChecksumType: checksums.type,
-            }),
-          ),
-        catch: (e) => mapS3Error(e, bucketName),
-      });
-
-      if (
-        !result.Location || !result.Bucket || !result.Key ||
-        !result.ETag
-      ) {
-        return yield* Effect.fail(
-          new InternalError({
-            message: "S3 returned incomplete CompleteMultipartUploadResult",
-          }),
-        );
-      }
-      const checksumResult = result as S3ChecksumFields;
-      return {
-        location: result.Location,
-        bucket: result.Bucket,
-        key: result.Key,
-        etag: result.ETag,
-        versionId: result.VersionId,
-        checksumAlgorithm: checksumResult.ChecksumAlgorithm,
-        checksumType: checksumResult.ChecksumType,
-        checksumCRC32: result.ChecksumCRC32,
-        checksumCRC32C: result.ChecksumCRC32C,
-        checksumCRC64NVME: result.ChecksumCRC64NVME,
-        checksumSHA1: result.ChecksumSHA1,
-        checksumSHA256: result.ChecksumSHA256,
-      } satisfies CompleteMultipartUploadResult;
-    }),
-
-  abortMultipartUpload: (key: string, uploadId: string) =>
-    Effect.gen(function* () {
-      yield* Effect.tryPromise({
-        try: () =>
-          client.send(
-            new AbortMultipartUploadCommand({
-              Bucket: bucketName,
-              Key: key,
-              UploadId: uploadId,
-            }),
-          ),
-        catch: (e) => mapS3Error(e, bucketName),
-      });
-    }),
-
-  listMultipartUploads: (args: {
-    prefix?: string;
-    delimiter?: string;
-    keyMarker?: string;
-    uploadIdMarker?: string;
-    maxUploads?: number;
-    encodingType?: string;
-  }) =>
-    Effect.gen(function* () {
-      const result = yield* Effect.tryPromise({
-        try: () =>
-          client.send(
-            new ListMultipartUploadsCommand({
-              Bucket: bucketName,
-              Prefix: args.prefix,
-              Delimiter: args.delimiter,
-              KeyMarker: args.keyMarker,
-              UploadIdMarker: args.uploadIdMarker,
-              MaxUploads: args.maxUploads,
-              EncodingType: args.encodingType as "url" | undefined,
-            }),
-          ),
-        catch: (e) => mapS3Error(e, bucketName),
-      });
-
-      return {
-        bucket: result.Bucket ?? bucketName,
-        prefix: result.Prefix,
-        keyMarker: result.KeyMarker,
-        uploadIdMarker: result.UploadIdMarker,
-        nextKeyMarker: result.NextKeyMarker,
-        nextUploadIdMarker: result.NextUploadIdMarker,
-        maxUploads: result.MaxUploads ?? 1000,
-        delimiter: result.Delimiter,
-        isTruncated: result.IsTruncated ?? false,
-        encodingType: result.EncodingType ?? "",
-        uploads: (result.Uploads ?? []).map((u) => ({
-          key: u.Key ?? "",
-          uploadId: u.UploadId ?? "",
-          owner: {
-            id: u.Owner?.ID ?? "",
-            displayName: u.Owner?.DisplayName ?? "",
-          },
-          initiator: {
-            id: u.Initiator?.ID ?? "",
-            displayName: u.Initiator?.DisplayName ?? "",
-          },
-          storageClass: u.StorageClass ?? "STANDARD",
-          initiated: u.Initiated ?? new Date(),
-        })),
-        commonPrefixes: (result.CommonPrefixes ?? []).map((cp) => ({
-          prefix: cp.Prefix ?? "",
-        })),
-      };
-    }),
-
-  listParts: (key: string, uploadId: string) =>
-    Effect.gen(function* () {
-      const result = yield* Effect.tryPromise({
-        try: () =>
-          client.send(
-            new ListPartsCommand({
-              Bucket: bucketName,
-              Key: key,
-              UploadId: uploadId,
-            }),
-          ),
-        catch: (e) => mapS3Error(e, bucketName),
-      });
-
-      return {
-        bucket: result.Bucket ?? bucketName,
-        key: result.Key ?? key,
-        uploadId: result.UploadId ?? uploadId,
-        owner: {
-          id: result.Owner?.ID ?? "",
-          displayName: result.Owner?.DisplayName ?? "",
-        },
-        initiator: {
-          id: result.Initiator?.ID ?? "",
-          displayName: result.Initiator?.DisplayName ?? "",
-        },
-        storageClass: result.StorageClass ?? "STANDARD",
-        partNumberMarker: result.PartNumberMarker
-          ? parseInt(String(result.PartNumberMarker))
-          : 0,
-        nextPartNumberMarker: result.NextPartNumberMarker
-          ? parseInt(String(result.NextPartNumberMarker))
-          : 0,
-        maxParts: result.MaxParts ?? 1000,
-        isTruncated: result.IsTruncated ?? false,
-        parts: (result.Parts ?? []).map((p) => ({
-          partNumber: p.PartNumber ?? 0,
-          lastModified: p.LastModified ?? new Date(),
-          etag: p.ETag ?? "",
-          size: p.Size ?? 0,
-          checksumCRC32: p.ChecksumCRC32,
-          checksumCRC32C: p.ChecksumCRC32C,
-          checksumCRC64NVME: p.ChecksumCRC64NVME,
-          checksumSHA1: p.ChecksumSHA1,
-          checksumSHA256: p.ChecksumSHA256,
-        })),
       };
     }),
 });

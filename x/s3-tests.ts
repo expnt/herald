@@ -228,40 +228,40 @@ bucket prefix = herald-${backend}-{random}-
 user_id = main
 display_name = main
 email = main@example.com
-access_key = ${s3AccessKey}
-secret_key = ${s3SecretKey}
+access_key = main
+secret_key = main
 
 [s3 alt]
 user_id = alt
 display_name = alt
 email = alt@example.com
-access_key = ${s3AccessKey}
-secret_key = ${s3SecretKey}
+access_key = alt
+secret_key = alt
 
 [s3 tenant]
 user_id = tenant
 display_name = tenant
 email = tenant@example.com
-access_key = ${s3AccessKey}
-secret_key = ${s3SecretKey}
+access_key = tenant
+secret_key = tenant
 tenant = testx
 
 [iam]
 email = iam@example.com
 user_id = iam
-access_key = ${s3AccessKey}
-secret_key = ${s3SecretKey}
+access_key = iam
+secret_key = iam
 display_name = iam
 
 [iam root]
-access_key = ${s3AccessKey}
-secret_key = ${s3SecretKey}
+access_key = iam_root
+secret_key = iam_root
 user_id = iam_root
 email = iam_root@example.com
 
 [iam alt root]
-access_key = ${s3AccessKey}
-secret_key = ${s3SecretKey}
+access_key = iam_alt_root
+secret_key = iam_alt_root
 user_id = iam_alt_root
 email = iam_alt_root@example.com
 `;

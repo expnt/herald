@@ -1,7 +1,11 @@
 import { Chunk, Effect, Option, Stream } from "effect";
 import { KeyValueStore } from "@effect/platform";
 import { SystemError } from "@effect/platform/Error";
-import type { BackendShape } from "./Backend.ts";
+import type {
+  BackendError,
+  ObjectResponse,
+  PutObjectResult,
+} from "./Backend.ts";
 
 const collectChunks = (chunks: Chunk.Chunk<Uint8Array>) => {
   const totalLength = Chunk.reduce(
@@ -25,9 +29,16 @@ const collectChunks = (chunks: Chunk.Chunk<Uint8Array>) => {
  */
 export const makeBackendKeyValueStore = (
   ops: {
-    getObject: BackendShape["getObject"];
-    putObject: BackendShape["putObject"];
-    deleteObject: BackendShape["deleteObject"];
+    getObject: (
+      key: string,
+      headers: Record<string, string | string[] | undefined>,
+    ) => Effect.Effect<ObjectResponse, BackendError>;
+    putObject: (
+      key: string,
+      stream: Stream.Stream<Uint8Array, Error>,
+      headers: Record<string, string | string[] | undefined>,
+    ) => Effect.Effect<PutObjectResult, BackendError>;
+    deleteObject: (key: string) => Effect.Effect<void, BackendError>;
   },
   prefix: string,
 ): KeyValueStore.KeyValueStore =>
@@ -35,11 +46,14 @@ export const makeBackendKeyValueStore = (
     get: (key) => {
       return ops.getObject(`${prefix}${key}`, {}).pipe(
         Effect.flatMap((res) => Stream.runCollect(res.stream)),
-        Effect.map((chunks) => {
+        Effect.map((chunks: Chunk.Chunk<Uint8Array>) => {
           const all = collectChunks(chunks);
           return Option.some(new TextDecoder().decode(all));
         }),
-        Effect.catchTag("NoSuchKey", () => Effect.succeed(Option.none())),
+        Effect.catchIf(
+          (e) => (e as { _tag?: string })._tag === "NoSuchKey",
+          () => Effect.succeed(Option.none()),
+        ),
         Effect.catchAll((e) =>
           Effect.fail(
             new SystemError({
@@ -57,11 +71,14 @@ export const makeBackendKeyValueStore = (
     getUint8Array: (key) => {
       return ops.getObject(`${prefix}${key}`, {}).pipe(
         Effect.flatMap((res) => Stream.runCollect(res.stream)),
-        Effect.map((chunks) => {
+        Effect.map((chunks: Chunk.Chunk<Uint8Array>) => {
           const all = collectChunks(chunks);
           return Option.some(all);
         }),
-        Effect.catchTag("NoSuchKey", () => Effect.succeed(Option.none())),
+        Effect.catchIf(
+          (e) => (e as { _tag?: string })._tag === "NoSuchKey",
+          () => Effect.succeed(Option.none()),
+        ),
         Effect.catchAll((e) =>
           Effect.fail(
             new SystemError({

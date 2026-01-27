@@ -1,11 +1,12 @@
 import { S3Client as S3ClientSDK } from "@aws-sdk/client-s3";
+//import { FetchHttpHandler } from "@smithy/fetch-http-handler";
+import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { Cache, Effect } from "effect";
-import { HeraldConfig, HeraldConfigLive } from "../../Config/Layer.ts";
+import { HeraldConfig } from "../../Config/Layer.ts";
 import type { MaterializedBucket } from "../../Domain/Config.ts";
 
 export class S3ClientFactory
   extends Effect.Service<S3ClientFactory>()("S3ClientFactory", {
-    dependencies: [HeraldConfigLive],
     effect: Effect.gen(function* () {
       const appConfig = yield* HeraldConfig;
 
@@ -67,6 +68,10 @@ export class S3ClientFactory
                 }
                 : undefined,
               forcePathStyle: true,
+              // we must rely on the node impl due to https://github.com/aws/aws-sdk-js-v3/issues/6770
+              requestHandler: new NodeHttpHandler(),
+              // requestStreamBufferSize: 64 * 1024,
+              // requestHandler: new NodeHttpHandler(),
               // requestChecksumCalculation: "WHEN_REQUIRED",
               // responseChecksumValidation: "WHEN_REQUIRED",
             });

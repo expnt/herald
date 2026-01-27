@@ -13,9 +13,9 @@ export const createBucket = Effect.gen(function* () {
     `createBucket bucket=[${bucket}] url=[${request.url}]`,
   );
 
-  const params = yield* parser.params;
+  const { s3Params } = parser;
 
-  if (params.acl !== undefined) {
+  if (s3Params.acl !== undefined) {
     // PutBucketAcl
     // Check for canned ACL validity if present
     const cannedAcl = request.headers["x-amz-acl"];
@@ -33,10 +33,10 @@ export const createBucket = Effect.gen(function* () {
     }
 
     // For now, we just return 200 OK if the bucket exists
-    yield* backend.headBucket();
+    yield* backend.headBucket(bucket);
     return HttpServerResponse.text("", { status: 200 });
   }
 
-  yield* backend.createBucket();
+  yield* backend.createBucket(bucket, request.headers);
   return HttpServerResponse.text("", { status: 200 });
 });

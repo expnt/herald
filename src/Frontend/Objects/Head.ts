@@ -9,13 +9,11 @@ import { S3RequestParser } from "../Utils.ts";
 export const headObject = Effect.gen(function* () {
   const backend = yield* Backend;
   const request = yield* HttpServerRequest.HttpServerRequest;
-  const parser = yield* S3RequestParser;
-  const key = yield* parser.key;
-  const params = yield* parser.params;
+  const { key, s3Params } = yield* S3RequestParser;
 
   const combinedHeaders = { ...request.headers };
-  if (params.partNumber) {
-    combinedHeaders["x-amz-part-number"] = String(params.partNumber);
+  if (s3Params.partNumber) {
+    combinedHeaders["x-amz-part-number"] = String(s3Params.partNumber);
   }
 
   const result = yield* backend.headObject(key, combinedHeaders);

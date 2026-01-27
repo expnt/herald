@@ -6,7 +6,7 @@ import { lookupBucket, resolveAuthConfig } from "../src/Domain/Config.ts";
 import { BackendResolver } from "../src/Services/BackendResolver.ts";
 import { S3ClientFactory } from "../src/Backends/S3/Client.ts";
 import { SwiftClient } from "../src/Backends/Swift/Client.ts";
-import { S3Xml } from "../src/Services/S3Xml.ts";
+import { S3XmlLive } from "../src/Services/S3Xml.ts";
 import { Checksum } from "../src/Services/Checksum.ts";
 import { S3HeaderService } from "../src/Services/S3HeaderService.ts";
 import { HttpApiBuilder, HttpServer } from "@effect/platform";
@@ -95,7 +95,7 @@ export const makeTestHarness = (
       Layer.provide(BackendResolver.Default),
       Layer.provide(S3ClientFactory.Default),
       Layer.provide(SwiftClient.Default),
-      Layer.provide(S3Xml.Default),
+      Layer.provide(S3XmlLive),
       Layer.provide(Checksum.Default),
       Layer.provide(S3HeaderService.Default),
       Layer.provide(HeraldConfigLive),
@@ -332,7 +332,7 @@ export const makeTestHarness = (
  */
 export const testEffect = <E>(
   name: string,
-  effect: (t: Deno.TestContext) => Effect.Effect<void, E, unknown>,
+  effect: (t: Deno.TestContext) => Effect.Effect<void, E, never>,
   options?: Omit<Deno.TestDefinition, "name" | "fn">,
 ) => {
   Deno.test({

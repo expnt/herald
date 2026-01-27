@@ -6,6 +6,7 @@ import { makeNoopKeyValueStore } from "../../Services/NoopKeyValueStore.ts";
 import { makeBucketOps } from "./Buckets.ts";
 import { S3ClientFactory } from "./Client.ts";
 import { makeObjectOps } from "./Objects.ts";
+import { makeMultipartOps } from "./Multipart.ts";
 import { mapS3Error } from "./Utils.ts";
 import { S3HeaderService } from "../../Services/S3HeaderService.ts";
 import { Checksum } from "../../Services/Checksum.ts";
@@ -59,6 +60,6 @@ export const makeS3Backend = (
     return Backend.of({
       ...makeBucketOps(target),
       ...makeObjectOps(target),
-      multipartMetadataStore,
+      ...makeMultipartOps(target),
     });
   });

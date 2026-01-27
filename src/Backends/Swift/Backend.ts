@@ -9,6 +9,7 @@ import { S3HeaderService } from "../../Services/S3HeaderService.ts";
 import { makeBucketOps } from "./Buckets.ts";
 import { SwiftClient } from "./Client.ts";
 import { makeObjectOps } from "./Objects.ts";
+import { makeMultipartOps } from "./Multipart.ts";
 import { MP_META_PREFIX } from "./Utils.ts";
 
 /**
@@ -40,9 +41,6 @@ export const makeSwiftBackend = (
       headerService,
       checksumService,
     };
-    yield* Effect.logDebug(
-      `SwiftTarget resolved: url=[${target.url}] container=[${target.container}]`,
-    );
 
     // Create a temporary objectOps to satisfy the store's requirement
     // But we need the real one for the backend.
@@ -69,10 +67,15 @@ export const makeSwiftBackend = (
     const objectOpsReal = makeObjectOps(target);
     objectOps = objectOpsReal;
     const bucketOps = makeBucketOps(target, objectOpsReal);
+    const multipartOps = makeMultipartOps(
+      target,
+      multipartMetadataStore,
+      objectOpsReal,
+    );
 
     return Backend.of({
       ...bucketOps,
       ...objectOpsReal,
-      multipartMetadataStore,
+      ...multipartOps,
     });
   });

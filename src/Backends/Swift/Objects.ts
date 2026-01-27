@@ -1,34 +1,23 @@
-import { HttpClientRequest } from "@effect/platform";
-import { Effect, Schedule, Stream } from "effect";
+import { HttpClientRequest, type HttpClientResponse } from "@effect/platform";
+import { type Chunk, Effect, Stream } from "effect";
+import type {
+  BackendError,
+  CommonPrefix,
+  DeleteObjectsResult,
+  HeadObjectResult,
+  ListObjectsResult,
+  ObjectAttributes,
+  ObjectInfo,
+  ObjectResponse,
+  PutObjectResult,
+} from "../../Services/Backend.ts";
 import {
   BadDigest,
-  type CommonPrefix,
-  type CompleteMultipartUploadResult,
-  type DeleteObjectsResult,
-  type HeadObjectResult,
   InternalError,
-  InvalidPart,
   InvalidRequest,
-  type ListMultipartUploadsResult,
-  type ListObjectsResult,
-  type ListPartsResult,
-  type MultipartUploadInfo,
-  type MultipartUploadResult,
-  NoSuchUpload,
-  type ObjectAttributes,
-  type ObjectInfo,
-  type ObjectResponse,
-  type PartInfo,
-  type PutObjectResult,
-  type UploadPartResult,
 } from "../../Services/Backend.ts";
 import { normalizeHeaders } from "../../Services/S3HeaderService.ts";
-import {
-  mapError,
-  MP_META_PREFIX,
-  MP_SEGMENTS_PREFIX,
-  type SwiftTarget,
-} from "./Utils.ts";
+import { mapError, type SwiftTarget } from "./Utils.ts";
 
 export interface SwiftObject {
   readonly name?: string;
@@ -59,7 +48,7 @@ export const makeObjectOps = (
     continuationToken?: string;
     startAfter?: string;
     listType?: 1 | 2;
-  }) =>
+  }): Effect.Effect<ListObjectsResult, BackendError> =>
     Effect.gen(function* () {
       const limit = args.maxKeys ?? 1000;
       const query = new URLSearchParams({ format: "json" });
@@ -70,13 +59,14 @@ export const makeObjectOps = (
       if (args.continuationToken) query.set("marker", args.continuationToken);
       if (args.startAfter) query.set("marker", args.startAfter);
 
-      const response = yield* client.execute(
-        HttpClientRequest.get(`${url}?${query.toString()}`).pipe(
-          HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-        ),
-      ).pipe(
-        Effect.mapError((e) => mapError(500, String(e), container)),
-      );
+      const response: HttpClientResponse.HttpClientResponse = yield* client
+        .execute(
+          HttpClientRequest.get(`${url}?${query.toString()}`).pipe(
+            HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+          ),
+        ).pipe(
+          Effect.mapError((e) => mapError(500, String(e), container)),
+        );
 
       if (response.status < 200 || response.status >= 300) {
         const message = yield* response.text.pipe(
@@ -140,19 +130,20 @@ export const makeObjectOps = (
   const headObject = (
     key: string,
     headers: Record<string, string | string[] | undefined>,
-  ) =>
+  ): Effect.Effect<HeadObjectResult, BackendError> =>
     Effect.gen(function* () {
       const encodedKey = key.split("/").map(encodeURIComponent).join("/");
       const swiftHeaders: Record<string, string> = {
         "X-Auth-Token": token,
       };
-      const response = yield* client.execute(
-        HttpClientRequest.head(`${url}/${encodedKey}`).pipe(
-          HttpClientRequest.setHeaders(swiftHeaders),
-        ),
-      ).pipe(
-        Effect.mapError((e) => mapError(500, String(e), container)),
-      );
+      const response: HttpClientResponse.HttpClientResponse = yield* client
+        .execute(
+          HttpClientRequest.head(`${url}/${encodedKey}`).pipe(
+            HttpClientRequest.setHeaders(swiftHeaders),
+          ),
+        ).pipe(
+          Effect.mapError((e) => mapError(500, String(e), container)),
+        );
 
       if (response.status < 200 || response.status >= 300) {
         const message = yield* response.text.pipe(
@@ -227,16 +218,7 @@ export const makeObjectOps = (
     });
 
   return {
-    listObjects: (args: {
-      prefix?: string;
-      delimiter?: string;
-      marker?: string;
-      maxKeys?: number;
-      encodingType?: string;
-      continuationToken?: string;
-      startAfter?: string;
-      listType?: 1 | 2;
-    }) => listObjects(args),
+    listObjects,
 
     listVersions: (args: {
       prefix?: string;
@@ -298,13 +280,14 @@ export const makeObjectOps = (
           );
         }
 
-        const response = yield* client.execute(
-          HttpClientRequest.get(`${url}/${encodedKey}`).pipe(
-            HttpClientRequest.setHeaders(swiftHeaders),
-          ),
-        ).pipe(
-          Effect.mapError((e) => mapError(500, String(e), container)),
-        );
+        const response: HttpClientResponse.HttpClientResponse = yield* client
+          .execute(
+            HttpClientRequest.get(`${url}/${encodedKey}`).pipe(
+              HttpClientRequest.setHeaders(swiftHeaders),
+            ),
+          ).pipe(
+            Effect.mapError((e) => mapError(500, String(e), container)),
+          );
 
         if (response.status < 200 || response.status >= 300) {
           const message = yield* response.text.pipe(
@@ -352,7 +335,6 @@ export const makeObjectOps = (
               checksumType: checksums.type,
               metadata: {},
               headers: {},
-              stream: Stream.empty,
               partsCount,
             }),
           );
@@ -409,58 +391,94 @@ export const makeObjectOps = (
           ...headerService.toSwiftHeaders(metadata, checksums),
         };
 
-        const contentLength = normalized["content-length"];
+        const contentLength = normalized["content-length"]
+          ? parseInt(normalized["content-length"])
+          : undefined;
         if (contentLength) {
           swiftHeaders["Content-Length"] = String(contentLength);
         }
 
-        const validatedStream = yield* checksumService.validate(
+        const validatedStream = (yield* checksumService.validate(
           stream,
           checksums,
+        )).pipe(
+          Stream.catchAll((e) => {
+            // Preserve BadDigest and InvalidRequest errors from checksum validation
+            if (e instanceof BadDigest || e instanceof InvalidRequest) {
+              return Stream.fail(e as BackendError);
+            }
+            return Stream.fail(
+              new InternalError({
+                message: `error on checksum stream: ${String(e)}`,
+              }),
+            );
+          }),
         );
+
+        // Align with S3: buffer small files (< 1MB) and validate before HTTP request
+        const bodyStream = (false as boolean) // (contentLength !== undefined && contentLength < 1024 * 1024)
+          ? yield* Effect.gen(function* () {
+            // Buffer small files: consume stream to trigger validation BEFORE HTTP request
+            const chunks: Chunk.Chunk<Uint8Array> = yield* Stream.runCollect(
+              validatedStream,
+            ).pipe(
+              Effect.mapError((e) => {
+                // Preserve BadDigest and InvalidRequest errors
+                if (e instanceof BadDigest || e instanceof InvalidRequest) {
+                  return e;
+                }
+                return new InternalError({ message: String(e) });
+              }),
+            );
+            // Recreate stream from chunks for HTTP request
+            return Stream.fromIterable(chunks);
+          })
+          : validatedStream;
 
         const request = HttpClientRequest.put(`${url}/${encodedKey}`).pipe(
           HttpClientRequest.setHeaders(swiftHeaders),
-          HttpClientRequest.bodyStream(validatedStream.pipe(
-            Stream.mapError((e) => {
-              if (e instanceof InvalidRequest) return e;
-              return e;
-            }),
-          )),
+          HttpClientRequest.bodyStream(bodyStream),
         );
 
-        const response = yield* client.execute(request).pipe(
-          Effect.retry({
-            while: (e) => {
-              const s = String(e);
-              return (s.includes("Transport error") ||
-                s.includes("ECONNRESET")); // &&
-              // !s.includes("Invalid checksum provided") &&
-              // !s.includes("InvalidRequest");
-            },
-            schedule: Schedule.exponential("100 millis").pipe(
-              Schedule.compose(Schedule.recurs(3)),
+        const response: HttpClientResponse.HttpClientResponse = yield* client
+          .execute(request).pipe(
+            Effect.catchAll(
+              (
+                e,
+              ): Effect.Effect<
+                HttpClientResponse.HttpClientResponse,
+                BackendError
+              > => {
+                // Check for BadDigest in the error message or cause
+                const errorStr = String(e);
+                if (
+                  errorStr.includes("BadDigest") ||
+                  errorStr.includes("checksum mismatch") ||
+                  errorStr.includes("Checksum mismatch")
+                ) {
+                  return Effect.fail(new BadDigest({ message: errorStr }));
+                }
+                if (e && typeof e === "object" && "cause" in e) {
+                  const cause = (e as { cause?: unknown }).cause;
+                  if (
+                    cause instanceof BadDigest ||
+                    cause instanceof InvalidRequest
+                  ) {
+                    return Effect.fail(cause);
+                  }
+                  const causeStr = String(cause);
+                  if (
+                    causeStr.includes("BadDigest") ||
+                    causeStr.includes("checksum mismatch") ||
+                    causeStr.includes("Checksum mismatch")
+                  ) {
+                    return Effect.fail(new BadDigest({ message: causeStr }));
+                  }
+                }
+                return Effect.fail(mapError(500, errorStr, container));
+              },
             ),
-          }),
-          Effect.catchAll((e) => {
-            if (e instanceof InvalidRequest || e instanceof BadDigest) {
-              return Effect.fail(e);
-            }
-            const s = String(e);
-            if (
-              s.includes("Invalid checksum provided") ||
-              s.includes("InvalidRequest") ||
-              s.includes("Transport error")
-            ) {
-              return Effect.fail(
-                new BadDigest({
-                  message: "Invalid checksum provided.",
-                }),
-              );
-            }
-            return Effect.fail(mapError(500, s, container));
-          }),
-        );
+          );
 
         if (response.status < 200 || response.status >= 300) {
           const message = yield* response.text.pipe(
@@ -499,17 +517,20 @@ export const makeObjectOps = (
         const encodedKey = key.split("/").map(encodeURIComponent).join("/");
 
         // Try SLO delete first (recursive)
-        const response = yield* client.execute(
-          HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
-            HttpClientRequest.setHeaders({
-              "X-Auth-Token": token,
-              "X-Static-Large-Object": "true",
-            }),
-            HttpClientRequest.setUrlParams({ "multipart-manifest": "delete" }),
-          ),
-        ).pipe(
-          Effect.mapError((e) => mapError(500, String(e), container)),
-        );
+        const response: HttpClientResponse.HttpClientResponse = yield* client
+          .execute(
+            HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
+              HttpClientRequest.setHeaders({
+                "X-Auth-Token": token,
+                "X-Static-Large-Object": "true",
+              }),
+              HttpClientRequest.setUrlParams({
+                "multipart-manifest": "delete",
+              }),
+            ),
+          ).pipe(
+            Effect.mapError((e) => mapError(500, String(e), container)),
+          );
 
         const responseBody = yield* response.text.pipe(
           Effect.orElseSucceed(() => ""),
@@ -520,13 +541,14 @@ export const makeObjectOps = (
           (response.status === 200 && responseBody.includes("Not an SLO"))
         ) {
           // Not an SLO, try regular delete
-          const regResponse = yield* client.execute(
-            HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
-              HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-            ),
-          ).pipe(
-            Effect.mapError((e) => mapError(500, String(e), container)),
-          );
+          const regResponse: HttpClientResponse.HttpClientResponse =
+            yield* client.execute(
+              HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
+                HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+              ),
+            ).pipe(
+              Effect.mapError((e) => mapError(500, String(e), container)),
+            );
 
           if (regResponse.status < 200 || regResponse.status >= 300) {
             if (regResponse.status === 404) return;
@@ -559,7 +581,9 @@ export const makeObjectOps = (
         }
       }),
 
-    deleteObjects: (objects: readonly { key: string; versionId?: string }[]) =>
+    deleteObjects: (
+      objects: readonly { key: string; versionId?: string }[],
+    ) =>
       Effect.gen(function* () {
         const results = yield* Effect.all(
           objects.map((obj) =>
@@ -568,19 +592,20 @@ export const makeObjectOps = (
                 .join(
                   "/",
                 );
-              let response = yield* client.execute(
-                HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
-                  HttpClientRequest.setHeaders({
-                    "X-Auth-Token": token,
-                    "X-Static-Large-Object": "true",
-                  }),
-                  HttpClientRequest.setUrlParams({
-                    "multipart-manifest": "delete",
-                  }),
-                ),
-              ).pipe(
-                Effect.mapError((e) => mapError(500, String(e), container)),
-              );
+              let response: HttpClientResponse.HttpClientResponse =
+                yield* client.execute(
+                  HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
+                    HttpClientRequest.setHeaders({
+                      "X-Auth-Token": token,
+                      "X-Static-Large-Object": "true",
+                    }),
+                    HttpClientRequest.setUrlParams({
+                      "multipart-manifest": "delete",
+                    }),
+                  ),
+                ).pipe(
+                  Effect.mapError((e) => mapError(500, String(e), container)),
+                );
 
               const responseBody = yield* response.text.pipe(
                 Effect.orElseSucceed(() => ""),
@@ -687,429 +712,6 @@ export const makeObjectOps = (
         };
 
         return result;
-      }),
-
-    createMultipartUpload: (
-      _key: string,
-      headers: Record<string, string | string[] | undefined>,
-    ) =>
-      Effect.gen(function* () {
-        const uploadId = yield* Effect.try({
-          try: () => crypto.randomUUID(),
-          catch: (e) => new InternalError({ message: String(e) }),
-        });
-        const { checksums } = headerService.fromRequestHeaders(headers);
-        return {
-          uploadId,
-          checksumAlgorithm: checksums.algorithm,
-          checksumType: checksums.type,
-        } satisfies MultipartUploadResult;
-      }),
-
-    uploadPart: (
-      _key: string,
-      uploadId: string,
-      partNumber: number,
-      body: Stream.Stream<Uint8Array, Error>,
-      headers: Record<string, string | string[] | undefined>,
-    ) =>
-      Effect.gen(function* () {
-        const { checksums, metadata } = headerService.fromRequestHeaders(
-          headers,
-        );
-        const segmentKey = `${MP_SEGMENTS_PREFIX}${uploadId}/${partNumber}`;
-        const encodedSegmentKey = segmentKey.split("/").map(encodeURIComponent)
-          .join("/");
-
-        const swiftHeaders: Record<string, string> = {
-          "X-Auth-Token": token,
-          ...headerService.toSwiftHeaders(metadata, checksums),
-        };
-
-        const validatedStream = yield* checksumService.validate(
-          body,
-          checksums,
-        );
-
-        const response = yield* client.execute(
-          HttpClientRequest.put(`${url}/${encodedSegmentKey}`).pipe(
-            HttpClientRequest.setHeaders(swiftHeaders),
-            HttpClientRequest.bodyStream(validatedStream.pipe(
-              Stream.mapError((e) => {
-                if (e instanceof InvalidRequest) return e;
-                return e;
-              }),
-            )),
-          ),
-        ).pipe(
-          Effect.retry({
-            while: (e) => {
-              const s = String(e);
-              return (s.includes("Transport error") ||
-                s.includes("ECONNRESET")) &&
-                !s.includes("Invalid checksum provided") &&
-                !s.includes("InvalidRequest");
-            },
-            schedule: Schedule.exponential("100 millis").pipe(
-              Schedule.compose(Schedule.recurs(3)),
-            ),
-          }),
-          Effect.catchAll((e) => {
-            if (
-              e instanceof InvalidRequest || e instanceof BadDigest
-            ) return Effect.fail(e);
-            const s = String(e);
-            if (
-              s.includes("Invalid checksum provided") ||
-              s.includes("InvalidRequest") ||
-              s.includes("Transport error")
-            ) {
-              return Effect.fail(
-                new BadDigest({
-                  message: "Invalid checksum provided.",
-                }),
-              );
-            }
-            return Effect.fail(mapError(500, s, container));
-          }),
-        );
-
-        if (response.status < 200 || response.status >= 300) {
-          const message = yield* response.text.pipe(
-            Effect.orElseSucceed(() => "Error"),
-          );
-          return yield* Effect.fail(
-            mapError(
-              response.status,
-              message || "Error",
-              container,
-              "PUT",
-              segmentKey,
-            ),
-          );
-        }
-
-        const etagHeader = response.headers["etag"];
-        const etagValue = Array.isArray(etagHeader)
-          ? etagHeader[0]
-          : etagHeader;
-
-        return {
-          etag: etagValue || "",
-          checksumAlgorithm: checksums.algorithm,
-          checksumType: checksums.type,
-          checksumCRC32: checksums.crc32,
-          checksumCRC32C: checksums.crc32c,
-          checksumCRC64NVME: checksums.crc64nvme,
-          checksumSHA1: checksums.sha1,
-          checksumSHA256: checksums.sha256,
-        } satisfies UploadPartResult;
-      }),
-
-    completeMultipartUpload: (
-      key: string,
-      uploadId: string,
-      parts: readonly {
-        etag: string;
-        partNumber: number;
-        checksumCRC32?: string;
-        checksumCRC32C?: string;
-        checksumCRC64NVME?: string;
-        checksumSHA1?: string;
-        checksumSHA256?: string;
-      }[],
-      metadata: Record<string, string>,
-      headers: Record<string, string | string[] | undefined>,
-    ) =>
-      Effect.gen(function* () {
-        if (parts.length === 0) {
-          return yield* Effect.fail(
-            new InvalidPart({
-              message: "At least one part must be specified.",
-            }),
-          );
-        }
-        const encodedKey = key.split("/").map(encodeURIComponent).join("/");
-
-        // Fetch segment info to get sizes
-        const segmentMap = new Map<string, ObjectInfo>();
-        const buildSegmentMap = Effect.gen(function* () {
-          segmentMap.clear();
-          let segmentMarker: string | undefined = undefined;
-          while (true) {
-            const segmentsResult: ListObjectsResult = yield* listObjects({
-              prefix: `${MP_SEGMENTS_PREFIX}${uploadId}/`,
-              marker: segmentMarker,
-            });
-            for (const c of segmentsResult.contents) {
-              segmentMap.set(c.key, c);
-            }
-            if (!segmentsResult.isTruncated || !segmentsResult.nextMarker) {
-              break;
-            }
-            segmentMarker = segmentsResult.nextMarker;
-          }
-
-          // Verify all parts are present
-          for (const p of parts) {
-            const segmentKey =
-              `${MP_SEGMENTS_PREFIX}${uploadId}/${p.partNumber}`;
-            if (!segmentMap.has(segmentKey)) {
-              return yield* Effect.fail(
-                new NoSuchUpload({
-                  uploadId,
-                  message: `Part ${p.partNumber} not found in segment listing`,
-                }),
-              );
-            }
-          }
-        });
-
-        // Retry with exponential backoff for eventual consistency
-        yield* buildSegmentMap.pipe(
-          Effect.retry({
-            while: (e) => e instanceof NoSuchUpload,
-            schedule: Schedule.exponential("100 millis").pipe(
-              Schedule.compose(Schedule.recurs(4)),
-            ),
-          }),
-        );
-
-        // 1. Build SLO manifest
-        const manifest = [];
-        for (const p of parts) {
-          const segmentKey = `${MP_SEGMENTS_PREFIX}${uploadId}/${p.partNumber}`;
-          const info = segmentMap.get(segmentKey)!;
-          manifest.push({
-            path: `/${container}/${segmentKey}`,
-            etag: p.etag.replace(/"/g, ""),
-            size_bytes: info.size,
-          });
-        }
-
-        // 2. PUT SLO manifest
-        const { checksums } = headerService.fromRequestHeaders(headers);
-        const swiftHeaders: Record<string, string> = {
-          "X-Auth-Token": token,
-          "Content-Type": (metadata["content-type"] ||
-            "application/octet-stream") as string,
-          ...headerService.toSwiftHeaders(metadata, checksums),
-        };
-
-        const body = new TextEncoder().encode(JSON.stringify(manifest));
-
-        const request = HttpClientRequest.put(`${url}/${encodedKey}`).pipe(
-          HttpClientRequest.setUrlParams({ "multipart-manifest": "put" }),
-          HttpClientRequest.bodyUint8Array(body),
-          HttpClientRequest.setHeaders({
-            ...swiftHeaders,
-            "X-Static-Large-Object": "true",
-            "Content-Length": String(body.length),
-          }),
-        );
-
-        const response = yield* client.execute(request).pipe(
-          Effect.mapError((e) => {
-            return mapError(500, String(e), container);
-          }),
-        );
-
-        if (response.status < 200 || response.status >= 300) {
-          const message = yield* response.text.pipe(
-            Effect.orElseSucceed(() => "Error"),
-          );
-          return yield* Effect.fail(
-            mapError(
-              response.status,
-              message || "Error",
-              container,
-              "PUT",
-              key,
-            ),
-          );
-        }
-
-        const etagHeader = response.headers["etag"];
-        const etagValue = Array.isArray(etagHeader)
-          ? etagHeader[0]
-          : etagHeader;
-
-        // 3. Delete the metadata object
-        const metaKey = `${MP_META_PREFIX}${key}/${uploadId}`;
-        const encodedMetaKey = metaKey.split("/").map(encodeURIComponent).join(
-          "/",
-        );
-        yield* client.execute(
-          HttpClientRequest.del(`${url}/${encodedMetaKey}`).pipe(
-            HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-          ),
-        ).pipe(Effect.ignore);
-
-        return {
-          location: `${url}/${encodedKey}`,
-          bucket: container,
-          key,
-          etag: etagValue || "",
-          checksumAlgorithm: checksums.algorithm,
-          checksumType: checksums.type || "COMPOSITE",
-          checksumCRC32: checksums.crc32,
-          checksumCRC32C: checksums.crc32c,
-          checksumCRC64NVME: checksums.crc64nvme,
-          checksumSHA1: checksums.sha1,
-          checksumSHA256: checksums.sha256,
-        } satisfies CompleteMultipartUploadResult;
-      }),
-
-    abortMultipartUpload: (
-      key: string,
-      uploadId: string,
-    ) =>
-      Effect.gen(function* () {
-        // 1. Delete the segments
-        let marker: string | undefined = undefined;
-        while (true) {
-          const segmentsResult: ListObjectsResult = yield* listObjects({
-            prefix: `${MP_SEGMENTS_PREFIX}${uploadId}/`,
-            marker,
-          });
-
-          yield* Effect.all(
-            segmentsResult.contents.map((content) => {
-              const encodedKey = content.key.split("/").map(encodeURIComponent)
-                .join("/");
-              return client.execute(
-                HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
-                  HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-                ),
-              ).pipe(Effect.ignore);
-            }),
-            { concurrency: 10 },
-          );
-
-          if (!segmentsResult.isTruncated || !segmentsResult.nextMarker) {
-            break;
-          }
-          marker = segmentsResult.nextMarker;
-        }
-
-        // 2. Delete the metadata object
-        const metaKey = `${MP_META_PREFIX}${key}/${uploadId}`;
-        const encodedMetaKey = metaKey.split("/").map(encodeURIComponent).join(
-          "/",
-        );
-        yield* client.execute(
-          HttpClientRequest.del(`${url}/${encodedMetaKey}`).pipe(
-            HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-          ),
-        ).pipe(Effect.ignore);
-      }),
-
-    listMultipartUploads: (args: {
-      prefix?: string;
-      delimiter?: string;
-      keyMarker?: string;
-      uploadIdMarker?: string;
-      maxUploads?: number;
-      encodingType?: string;
-    }) =>
-      Effect.gen(function* () {
-        const prefix = `${MP_META_PREFIX}${args.prefix ?? ""}`;
-        const marker = args.keyMarker
-          ? `${MP_META_PREFIX}${args.keyMarker}/${args.uploadIdMarker ?? ""}`
-          : undefined;
-
-        const metaResult = yield* listObjects({
-          prefix,
-          delimiter: args.delimiter,
-          maxKeys: args.maxUploads,
-          marker,
-        });
-
-        const uploads: MultipartUploadInfo[] = metaResult.contents.map((c) => {
-          const parts = c.key.substring(MP_META_PREFIX.length).split("/");
-          const uploadId = parts.pop()!;
-          const key = parts.join("/");
-          return {
-            key,
-            uploadId,
-            owner: { id: "swift", displayName: "Swift User" },
-            initiator: { id: "swift", displayName: "Swift User" },
-            storageClass: "STANDARD",
-            initiated: c.lastModified!,
-          };
-        });
-
-        return {
-          bucket: container,
-          prefix: args.prefix,
-          keyMarker: args.keyMarker,
-          uploadIdMarker: args.uploadIdMarker,
-          maxUploads: args.maxUploads ?? 1000,
-          delimiter: args.delimiter,
-          isTruncated: metaResult.isTruncated,
-          uploads,
-          commonPrefixes: metaResult.commonPrefixes.map((cp) => ({
-            prefix: cp.prefix.substring(MP_META_PREFIX.length),
-          })),
-          encodingType: args.encodingType,
-        } satisfies ListMultipartUploadsResult;
-      }),
-
-    listParts: (
-      key: string,
-      uploadId: string,
-    ) =>
-      Effect.gen(function* () {
-        // Check if upload exists by checking for metadata object
-        const metaKey = `${MP_META_PREFIX}${key}/${uploadId}`;
-        const encodedMetaKey = metaKey.split("/").map(encodeURIComponent).join(
-          "/",
-        );
-        const metaResponse = yield* client.execute(
-          HttpClientRequest.head(`${url}/${encodedMetaKey}`).pipe(
-            HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-          ),
-        ).pipe(
-          Effect.mapError((e) => mapError(500, String(e), container)),
-        );
-
-        if (metaResponse.status === 404) {
-          return yield* Effect.fail(
-            new NoSuchUpload({
-              uploadId,
-              message:
-                `The specified upload does not exist. The upload ID may be invalid, or the upload may have been aborted or completed.`,
-            }),
-          );
-        }
-
-        const segmentsResult = yield* listObjects({
-          prefix: `${MP_SEGMENTS_PREFIX}${uploadId}/`,
-        });
-
-        const parts: PartInfo[] = segmentsResult.contents.map((c) => {
-          const partNumber = parseInt(c.key.split("/").pop() || "0");
-          return {
-            partNumber,
-            lastModified: c.lastModified,
-            etag: c.etag,
-            size: c.size,
-          };
-        });
-
-        return {
-          bucket: container,
-          key,
-          uploadId,
-          owner: { id: "swift", displayName: "Swift User" },
-          initiator: { id: "swift", displayName: "Swift User" },
-          storageClass: "STANDARD",
-          partNumberMarker: 0,
-          nextPartNumberMarker: 0,
-          maxParts: 1000,
-          isTruncated: false,
-          parts,
-        } satisfies ListPartsResult;
       }),
   };
 };

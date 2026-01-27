@@ -1,4 +1,5 @@
 import { Effect, Either, Layer, Option, Schema } from "effect";
+import { FetchHttpClient } from "@effect/platform";
 import { S3ClientFactory } from "../src/Backends/S3/Client.ts";
 import { SwiftClient } from "../src/Backends/Swift/Client.ts";
 import { HeraldConfig, parseConfig } from "../src/Config/Layer.ts";
@@ -472,6 +473,7 @@ const resolverCases: ResolverTestCase[] = [
         s3_main: {
           protocol: "s3",
           endpoint: "http://s3.amazonaws.com",
+          region: "us-east-1",
           buckets: "*",
         },
       },
@@ -512,13 +514,14 @@ const resolverCases: ResolverTestCase[] = [
         s3_main: {
           protocol: "s3",
           endpoint: "http://s3.amazonaws.com",
+          region: "us-east-1",
           buckets: "*",
         },
       },
     },
     op: (resolver) =>
       Effect.gen(function* () {
-        yield* resolver.getLayerForBucket(
+        yield* resolver.getLayerForBackend(
           "s3_main",
         );
         return "ok";
@@ -532,7 +535,7 @@ const resolverCases: ResolverTestCase[] = [
     },
     op: (resolver) =>
       Effect.gen(function* () {
-        yield* resolver.getLayerForBucket(
+        yield* resolver.getLayerForBackend(
           "missing",
         );
         return "ok";
@@ -557,9 +560,10 @@ for (const tc of resolverCases) {
         Effect.provide(BackendResolver.Default),
         Effect.provide(Checksum.Default),
         Effect.provide(S3HeaderService.Default),
-        Effect.provide(HeraldConfigLive),
         Effect.provide(S3ClientFactory.Default),
         Effect.provide(SwiftClient.Default),
+        Effect.provide(FetchHttpClient.layer),
+        Effect.provide(HeraldConfigLive),
         Effect.either,
       );
 

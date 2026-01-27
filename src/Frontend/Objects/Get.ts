@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import { Backend, InvalidRequest } from "../../Services/Backend.ts";
 import { S3Xml } from "../../Services/S3Xml.ts";
 import { S3RequestParser } from "../Utils.ts";
+import { listParts } from "../Multipart/Get.ts";
 
 /**
  * Handler for GetObjectAttributes (GET /:bucket/*?attributes)
@@ -11,18 +12,47 @@ export const getObjectAttributes = () =>
   Effect.gen(function* () {
     const backend = yield* Backend;
     const request = yield* HttpServerRequest.HttpServerRequest;
-    const parser = yield* S3RequestParser;
-    const key = yield* parser.key;
-    const { objectAttributes } = yield* parser.headers;
+    const { key, headers, s3Params } = yield* S3RequestParser;
+
+    // Attributes can come from query parameter ?attributes=... or header x-amz-object-attributes
+    const attributesFromQuery = s3Params.attributes
+      ? s3Params.attributes.split(",").map((a) => a.trim()).filter((a) =>
+        a !== ""
+      )
+      : [];
+    const attributesFromHeader = headers.objectAttributes;
+    // Deduplicate attributes
+    const allAttributes = Array.from(
+      new Set([...attributesFromQuery, ...attributesFromHeader]),
+    );
+    // #region agent log
+    fetch("http://127.0.0.1:7242/ingest/72b12113-1956-40fa-93e1-a5c755ed9c35", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location: "Frontend/Objects/Get.ts:23",
+        message: "Frontend getObjectAttributes: parsed attributes",
+        data: {
+          attributesFromQuery,
+          attributesFromHeader,
+          allAttributes: Array.from(allAttributes),
+        },
+        timestamp: Date.now(),
+        sessionId: "debug-session",
+        runId: "run1",
+        hypothesisId: "getattr",
+      }),
+    }).catch(() => {});
+    // #endregion
 
     yield* Effect.logDebug(
       `getObjectAttributes key=[${key}] attributes=[${
-        objectAttributes.join(",")
+        allAttributes.join(",")
       }]`,
     );
     const s3Xml = yield* S3Xml;
 
-    if (objectAttributes.length === 0) {
+    if (allAttributes.length === 0) {
       return s3Xml.formatError(
         new InvalidRequest({
           message: "At least one attribute must be specified.",
@@ -32,7 +62,7 @@ export const getObjectAttributes = () =>
 
     const result = yield* backend.getObjectAttributes(
       key,
-      objectAttributes,
+      allAttributes,
       request.headers,
     );
     return s3Xml.formatObjectAttributes(result);
@@ -44,29 +74,18 @@ export const getObjectAttributes = () =>
  */
 export const getObject = Effect.gen(function* () {
   const backend = yield* Backend;
-  const parser = yield* S3RequestParser;
-  const key = yield* parser.key;
-  const params = yield* parser.params;
+  const { key, s3Params } = yield* S3RequestParser;
   const request = yield* HttpServerRequest.HttpServerRequest;
 
-  const s3Xml = yield* S3Xml;
-
-  if (params.attributes !== undefined) {
+  if (s3Params.attributes !== undefined) {
     return yield* getObjectAttributes();
   }
 
-  if (params.uploadId) {
-    // List Parts
-    const result = yield* backend.listParts(key, params.uploadId);
-    return s3Xml.formatListParts(result);
+  if (s3Params.uploadId) {
+    return yield* listParts;
   }
 
-  const combinedHeaders = { ...request.headers };
-  if (params.partNumber) {
-    combinedHeaders["x-amz-part-number"] = String(params.partNumber);
-  }
-
-  const result = yield* backend.getObject(key, combinedHeaders);
+  const result = yield* backend.getObject(key, request.headers);
   const status = (request.headers["range"] || request.headers["Range"])
     ? 206
     : 200;

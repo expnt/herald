@@ -1,70 +1,74 @@
-import { Effect } from "effect";
 import {
   CreateBucketCommand,
   DeleteBucketCommand,
   HeadBucketCommand,
   ListBucketsCommand,
-  type ListBucketsCommandOutput,
 } from "@aws-sdk/client-s3";
-import { type BucketInfo, InternalError } from "../../Services/Backend.ts";
+import { Effect } from "effect";
+import type { BucketInfo, ListBucketsResult } from "../../Services/Backend.ts";
 import { mapS3Error, type S3Target } from "./Utils.ts";
 
-export const makeBucketOps = ({ client, name, bucketName }: S3Target) => ({
+export const makeBucketOps = (
+  { client, bucketName }: S3Target,
+) => ({
   listBuckets: () =>
     Effect.gen(function* () {
       const result = yield* Effect.tryPromise({
-        try: () =>
-          client.send(new ListBucketsCommand({})) as Promise<
-            ListBucketsCommandOutput
-          >,
-        catch: (e) => mapS3Error(e, name),
+        try: () => client.send(new ListBucketsCommand({})),
+        catch: (e) => mapS3Error(e, bucketName),
       });
-
-      const buckets: BucketInfo[] = [];
-      for (const bucket of (result.Buckets ?? [])) {
-        if (bucket.Name === undefined) {
-          return yield* Effect.fail(
-            new InternalError({
-              message: "S3 returned bucket without Name",
-            }),
-          );
-        }
-        buckets.push({
-          name: bucket.Name,
-          creationDate: bucket.CreationDate,
-        });
-      }
 
       return {
-        buckets,
+        buckets: (result.Buckets ?? []).map((b): BucketInfo => ({
+          name: b.Name ?? "",
+          creationDate: b.CreationDate ?? new Date(),
+        })),
         owner: {
-          id: result.Owner?.ID ?? "unknown-owner-id",
-          displayName: result.Owner?.DisplayName ?? "unknown-owner-name",
+          id: result.Owner?.ID ?? "unknown",
+          displayName: result.Owner?.DisplayName ?? "unknown",
         },
-      };
+      } satisfies ListBucketsResult;
     }),
 
-  createBucket: () =>
+  createBucket: (
+    name: string,
+    _headers: Record<string, string | string[] | undefined>,
+  ) =>
     Effect.gen(function* () {
       yield* Effect.tryPromise({
-        try: () => client.send(new CreateBucketCommand({ Bucket: bucketName })),
-        catch: (e) => mapS3Error(e, bucketName),
+        try: () =>
+          client.send(
+            new CreateBucketCommand({
+              Bucket: name,
+            }),
+          ),
+        catch: (e) => mapS3Error(e, name),
       });
     }),
 
-  deleteBucket: () =>
+  deleteBucket: (name: string) =>
     Effect.gen(function* () {
       yield* Effect.tryPromise({
-        try: () => client.send(new DeleteBucketCommand({ Bucket: bucketName })),
-        catch: (e) => mapS3Error(e, bucketName),
+        try: () =>
+          client.send(
+            new DeleteBucketCommand({
+              Bucket: name,
+            }),
+          ),
+        catch: (e) => mapS3Error(e, name),
       });
     }),
 
-  headBucket: () =>
+  headBucket: (name: string) =>
     Effect.gen(function* () {
       yield* Effect.tryPromise({
-        try: () => client.send(new HeadBucketCommand({ Bucket: bucketName })),
-        catch: (e) => mapS3Error(e, bucketName),
+        try: () =>
+          client.send(
+            new HeadBucketCommand({
+              Bucket: name,
+            }),
+          ),
+        catch: (e) => mapS3Error(e, name),
       });
     }),
 });
