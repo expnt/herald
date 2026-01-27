@@ -7,8 +7,8 @@ import {
   UploadPartCommand,
 } from "@aws-sdk/client-s3";
 import { Effect, Stream } from "effect";
-import { Readable } from "node:stream";
-import type sweb from "node:stream/web";
+import { Readable } from "node-stream";
+import type sweb from "node-stream/web";
 import {
   type CompleteMultipartUploadResult,
   InternalError,
@@ -330,7 +330,7 @@ export const makeMultipartOps = (
         maxUploads: result.MaxUploads ?? 1000,
         delimiter: result.Delimiter,
         isTruncated: result.IsTruncated ?? false,
-        encodingType: result.EncodingType ?? "",
+        encodingType: result.EncodingType ?? args.encodingType,
         uploads: (result.Uploads ?? []).map((u) => ({
           key: u.Key ?? "",
           uploadId: u.UploadId ?? "",

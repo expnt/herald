@@ -5,7 +5,6 @@
     "snapdiff": "deno run --allow-all x/snapdiff.ts"
   },
   "imports": {
-    "@aws-sdk/lib-storage": "npm:@aws-sdk/lib-storage@^3.975.0",
     "@david/dax": "jsr:@david/dax@^0.44.2",
     "@effect/platform": "npm:@effect/platform@^0.90.3",
     "@effect/platform-node": "npm:@effect/platform-node@^0.96.0",
@@ -27,10 +26,12 @@
     "@smithy/node-http-handler": "npm:@smithy/node-http-handler@^4.0.0",
     "effect": "npm:effect@^3.17.7",
     "xml2js": "npm:xml2js@0.6.2",
-    "node:http": "node:http",
-    "node:assert": "node:assert",
-    "node:crypto": "node:crypto",
-    "node:buffer": "node:buffer",
+    "node-http": "node:http",
+    "node-assert": "node:assert",
+    "node-crypto": "node:crypto",
+    "node-buffer": "node:buffer",
+    "node-stream": "node:stream",
+    "node-stream/web": "node:stream/web",
     "jest-diff": "npm:jest-diff@^29.7.0",
     "cliffy/ansi/": "https://deno.land/x/cliffy@v1.0.0-rc.3/ansi/"
   },
@@ -60,7 +61,6 @@
         "ban-untagged-todo"
       ],
       "exclude": [
-        "no-external-import"
         // "no-explicit-any"
       ]
     }

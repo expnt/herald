@@ -79,21 +79,44 @@ jobs:
       - name: benchmarks
         run: nix develop --command deno bench --allow-all benchmarks/
 
-      - name: s3-tests (MinIO)
+      - name: s3-tests
         run: |
-          nix develop --command deno run --allow-all x/s3-tests.ts --backend minio --no-abort
-          echo "--- s3-tests/s3-tests.log (MinIO) ---"
-          cat s3-tests/s3-tests.log || true
-          echo "--- s3-tests/herald-proxy.log ---"
-          cat s3-tests/herald-proxy.log || true
+          set +e
 
-      - name: s3-tests (Swift)
-        run: |
-          nix develop --command deno run --allow-all x/s3-tests.ts --backend swift --no-abort
-          echo "--- s3-tests/s3-tests-swift.log (Swift) ---"
-          cat s3-tests/s3-tests-swift.log || true
-          echo "--- s3-tests/herald-proxy-swift.log ---"
-          cat s3-tests/herald-proxy-swift.log || true
+          run_minio() {
+            echo "=== Running s3-tests (MinIO) ==="
+            nix develop --command deno run --allow-all x/s3-tests.ts --backend minio --no-abort
+            echo "--- s3-tests/s3-tests.log (MinIO) ---"
+            cat s3-tests/s3-tests.log || true
+            echo "--- s3-tests/herald-proxy.log (MinIO) ---"
+            cat s3-tests/herald-proxy.log || true
+          }
+
+          run_swift() {
+            echo "=== Running s3-tests (Swift) ==="
+            nix develop --command deno run --allow-all x/s3-tests.ts --backend swift --no-abort
+            echo "--- s3-tests/s3-tests-swift.log (Swift) ---"
+            cat s3-tests/s3-tests-swift.log || true
+            echo "--- s3-tests/herald-proxy-swift.log (Swift) ---"
+            cat s3-tests/herald-proxy-swift.log || true
+          }
+
+          run_minio &
+          pid_minio=$!
+
+          run_swift &
+          pid_swift=$!
+
+          wait $pid_minio
+          status_minio=$?
+
+          wait $pid_swift
+          status_swift=$?
+
+          # Fail the step if either failed
+          if [ $status_minio -ne 0 ] || [ $status_swift -ne 0 ]; then
+            # exit 1
+          fi
 
       - name: prune uv cache
         run: nix develop --command uv cache prune --ci

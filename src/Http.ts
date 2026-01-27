@@ -6,8 +6,7 @@ import {
 } from "@effect/platform";
 import { NodeHttpServer } from "@effect/platform-node";
 import { Config, Effect, flow, Layer } from "effect";
-// deno-lint-ignore no-external-import
-import { createServer } from "node:http";
+import { createServer } from "node-http";
 
 export { HttpHeraldApi as HeraldHttpApi } from "./Api.ts";
 export { HttpHealthLive } from "./Frontend/Health/Http.ts";

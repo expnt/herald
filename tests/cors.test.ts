@@ -164,8 +164,7 @@ testEffect("cors/middleware/preflight", () =>
     );
 
     const response = yield* middleware.pipe(
-      // deno-lint-ignore no-explicit-any
-      Effect.provideService(HeraldConfig, heraldConfig as any),
+      Effect.provideService(HeraldConfig, heraldConfig),
       Effect.provideService(HttpServerRequest.HttpServerRequest, request),
     );
 
@@ -209,8 +208,7 @@ testEffect("cors/middleware/headers", () =>
     const middleware = corsMiddleware(handler);
 
     const response = yield* middleware.pipe(
-      // deno-lint-ignore no-explicit-any
-      Effect.provideService(HeraldConfig, heraldConfig as any),
+      Effect.provideService(HeraldConfig, heraldConfig),
       Effect.provideService(HttpServerRequest.HttpServerRequest, request),
     );
 

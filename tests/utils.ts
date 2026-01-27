@@ -170,20 +170,8 @@ export const makeTestHarness = (
       url: string | URL | Request,
       init?: RequestInit,
     ) => {
-      if (Deno.env.get("DEBUG_FETCH")) {
-        // deno-lint-ignore no-console
-        console.log(`FETCH: ${init?.method || "GET"} ${url}`);
-        if (init?.headers) {
-          // deno-lint-ignore no-console
-          console.log(`HEADERS: ${JSON.stringify(init.headers)}`);
-        }
-      }
       try {
         const res = await fetch(url, init);
-        if (Deno.env.get("DEBUG_FETCH")) {
-          // deno-lint-ignore no-console
-          console.log(`RESPONSE: ${res.status}`);
-        }
         const hasBody = res.status !== 204 && res.status !== 205 &&
           res.status !== 304;
         let body = "";

@@ -13,8 +13,8 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { Chunk, Effect, Option, Stream } from "effect";
-import { Readable } from "node:stream";
-import type sweb from "node:stream/web";
+import { Readable } from "node-stream";
+import type sweb from "node-stream/web";
 import {
   type BackendError,
   BadDigest,

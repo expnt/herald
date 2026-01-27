@@ -143,21 +143,26 @@ export function verifyIncomingSigV4(
       let signingDate: Date | undefined;
 
       if (amzDate) {
-        // format: YYYYMMDDTHHMMSSZ
-        const year = amzDate.substring(0, 4);
-        const month = amzDate.substring(4, 6);
-        const day = amzDate.substring(6, 8);
-        const hour = amzDate.substring(9, 11);
-        const min = amzDate.substring(11, 13);
-        const sec = amzDate.substring(13, 15);
-        signingDate = new Date(
-          `${year}-${month}-${day}T${hour}:${min}:${sec}Z`,
-        );
+        // format: YYYYMMDDTHHMMSSZ (minimum 15 characters needed for extraction)
+        if (amzDate.length >= 15) {
+          const year = amzDate.substring(0, 4);
+          const month = amzDate.substring(4, 6);
+          const day = amzDate.substring(6, 8);
+          const hour = amzDate.substring(9, 11);
+          const min = amzDate.substring(11, 13);
+          const sec = amzDate.substring(13, 15);
+          signingDate = new Date(
+            `${year}-${month}-${day}T${hour}:${min}:${sec}Z`,
+          );
+        }
       } else if (dateHeader) {
         signingDate = new Date(dateHeader);
       } else if (hasSigInQuery) {
         const amzDateQuery = queryParams.get("X-Amz-Date");
-        if (amzDateQuery && typeof amzDateQuery === "string") {
+        if (
+          amzDateQuery && typeof amzDateQuery === "string" &&
+          amzDateQuery.length >= 15
+        ) {
           const year = amzDateQuery.substring(0, 4);
           const month = amzDateQuery.substring(4, 6);
           const day = amzDateQuery.substring(6, 8);

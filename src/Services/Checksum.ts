@@ -1,6 +1,6 @@
 import { Effect, Stream } from "effect";
-import { Buffer } from "node:buffer";
-import { createHash } from "node:crypto";
+import { Buffer } from "node-buffer";
+import { createHash } from "node-crypto";
 import { BadDigest, type InvalidRequest } from "./Backend.ts";
 import type { ChecksumAlgorithm, ChecksumHeaders } from "./S3Schema.ts";
 
@@ -52,32 +52,44 @@ export class Checksum extends Effect.Service<Checksum>()("Checksum", {
     ): Effect.Effect<string, Error> =>
       Effect.gen(function* () {
         const algo = algorithm.toUpperCase();
-        let currentCRC32 = 0;
-        let currentCRC32C = 0;
-        const sha256 = createHash("sha256");
-        const sha1 = createHash("sha1");
+        let sha256: ReturnType<typeof createHash> | undefined;
+        let sha1: ReturnType<typeof createHash> | undefined;
+        let currentCRC32: number | undefined;
+        let currentCRC32C: number | undefined;
 
         yield* Stream.runForEach(stream, (chunk) =>
           Effect.sync(() => {
-            if (algo === "SHA256") sha256.update(chunk);
-            else if (algo === "SHA1") sha1.update(chunk);
-            else if (algo === "CRC32") {
+            if (algo === "SHA256") {
+              if (!sha256) sha256 = createHash("sha256");
+              sha256.update(chunk);
+            } else if (algo === "SHA1") {
+              if (!sha1) sha1 = createHash("sha1");
+              sha1.update(chunk);
+            } else if (algo === "CRC32") {
+              if (currentCRC32 === undefined) currentCRC32 = 0;
               currentCRC32 = crc32(chunk, currentCRC32);
             } else if (algo === "CRC32C") {
+              if (currentCRC32C === undefined) currentCRC32C = 0;
               currentCRC32C = crc32c(chunk, currentCRC32C);
             }
           }));
 
-        if (algo === "SHA256") return sha256.digest("base64");
-        if (algo === "SHA1") return sha1.digest("base64");
+        if (algo === "SHA256") {
+          if (!sha256) sha256 = createHash("sha256");
+          return sha256.digest("base64");
+        }
+        if (algo === "SHA1") {
+          if (!sha1) sha1 = createHash("sha1");
+          return sha1.digest("base64");
+        }
         if (algo === "CRC32") {
           const buf = Buffer.alloc(4);
-          buf.writeUInt32BE(currentCRC32, 0);
+          buf.writeUInt32BE(currentCRC32 ?? 0, 0);
           return buf.toString("base64");
         }
         if (algo === "CRC32C") {
           const buf = Buffer.alloc(4);
-          buf.writeUInt32BE(currentCRC32C, 0);
+          buf.writeUInt32BE(currentCRC32C ?? 0, 0);
           return buf.toString("base64");
         }
         return yield* Effect.fail(
@@ -97,39 +109,76 @@ export class Checksum extends Effect.Service<Checksum>()("Checksum", {
         if (!algo) return stream;
         yield* Effect.logDebug(`Validating checksum with algorithm: ${algo}`);
 
-        const expectedValue = expected.sha256 || expected.sha1 ||
-          expected.crc32 || expected.crc32c || expected.crc64nvme;
+        const algoUpper = algo.toUpperCase();
+        let expectedValue: string | undefined;
+        switch (algoUpper) {
+          case "SHA256":
+            expectedValue = expected.sha256;
+            break;
+          case "SHA1":
+            expectedValue = expected.sha1;
+            break;
+          case "CRC32":
+            expectedValue = expected.crc32;
+            break;
+          case "CRC32C":
+            expectedValue = expected.crc32c;
+            break;
+          case "CRC64NVME":
+            expectedValue = expected.crc64nvme;
+            break;
+          default:
+            yield* Effect.logDebug(
+              `Unsupported checksum algorithm: ${algo}, returning original stream`,
+            );
+            return stream;
+        }
 
-        if (!expectedValue) return stream;
+        if (!expectedValue) {
+          yield* Effect.logDebug(
+            `Expected checksum value missing for algorithm ${algo}, returning original stream`,
+          );
+          return stream;
+        }
 
-        let currentCRC32 = 0;
-        let currentCRC32C = 0;
-        const sha256 = createHash("sha256");
-        const sha1 = createHash("sha1");
+        let sha256: ReturnType<typeof createHash> | undefined;
+        let sha1: ReturnType<typeof createHash> | undefined;
+        let currentCRC32: number | undefined;
+        let currentCRC32C: number | undefined;
 
         return stream.pipe(
           Stream.tap((chunk) =>
             Effect.sync(() => {
-              if (algo === "SHA256") sha256.update(chunk);
-              else if (algo === "SHA1") sha1.update(chunk);
-              else if (algo === "CRC32") {
+              if (algoUpper === "SHA256") {
+                if (!sha256) sha256 = createHash("sha256");
+                sha256.update(chunk);
+              } else if (algoUpper === "SHA1") {
+                if (!sha1) sha1 = createHash("sha1");
+                sha1.update(chunk);
+              } else if (algoUpper === "CRC32") {
+                if (currentCRC32 === undefined) currentCRC32 = 0;
                 currentCRC32 = crc32(chunk, currentCRC32);
-              } else if (algo === "CRC32C") {
+              } else if (algoUpper === "CRC32C") {
+                if (currentCRC32C === undefined) currentCRC32C = 0;
                 currentCRC32C = crc32c(chunk, currentCRC32C);
               }
             })
           ),
           Stream.onEnd(Effect.gen(function* () {
             let calculated = "";
-            if (algo === "SHA256") calculated = sha256.digest("base64");
-            else if (algo === "SHA1") calculated = sha1.digest("base64");
-            else if (algo === "CRC32") {
+            if (algoUpper === "SHA256") {
+              if (!sha256) sha256 = createHash("sha256");
+              calculated = sha256.digest("base64");
+            } else if (algoUpper === "SHA1") {
+              if (!sha1) sha1 = createHash("sha1");
+              calculated = sha1.digest("base64");
+            } else if (algoUpper === "CRC32") {
               const buf = Buffer.alloc(4);
-              buf.writeUInt32BE(currentCRC32, 0);
+              buf.writeUInt32BE(currentCRC32 ?? 0, 0);
               calculated = buf.toString("base64");
-            } else if (algo === "CRC32C") {
+            } else if (algoUpper === "CRC32C") {
               const buf = Buffer.alloc(4);
-              buf.writeUInt32BE(currentCRC32C, 0);
+              buf.writeUInt32BE(currentCRC32C ?? 0, 0);
               calculated = buf.toString("base64");
             }
 

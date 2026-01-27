@@ -130,11 +130,13 @@ const specs: {
           body1.length + body2.length + body3.length,
         );
       } catch (e) {
-        // If it's a 405 or 400 it might not be supported, ignore for now
-        // unless we are sure it should work.
-        if (Deno.env.get("DEBUG_TESTS")) {
+        if ((e as { Code: string }).Code == "InvalidArgument") {
+          // If it's a 405 or 400 it might not be supported, ignore for now
+          // unless we are sure it should work.
           // deno-lint-ignore no-console
-          console.log("GetObjectAttributes failed (possibly unsupported):", e);
+          console.log("GetObjectAttributes failed (unsupported)");
+        } else {
+          throw e;
         }
       }
     },

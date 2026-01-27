@@ -447,7 +447,27 @@ export const makeS3Xml = Effect.sync(() => {
         : "";
 
       const objectPartsXml = result.objectParts
-        ? `<ObjectParts><TotalPartsCount>${result.objectParts.totalPartsCount}</TotalPartsCount><PartNumberMarker>${result.objectParts.partNumberMarker}</PartNumberMarker><NextPartNumberMarker>${result.objectParts.nextPartNumberMarker}</NextPartNumberMarker><MaxParts>${result.objectParts.maxParts}</MaxParts><IsTruncated>${result.objectParts.isTruncated}</IsTruncated>${
+        ? `<ObjectParts>${
+          result.objectParts.totalPartsCount !== undefined
+            ? `<TotalPartsCount>${result.objectParts.totalPartsCount}</TotalPartsCount>`
+            : ""
+        }${
+          result.objectParts.partNumberMarker !== undefined
+            ? `<PartNumberMarker>${result.objectParts.partNumberMarker}</PartNumberMarker>`
+            : ""
+        }${
+          result.objectParts.nextPartNumberMarker !== undefined
+            ? `<NextPartNumberMarker>${result.objectParts.nextPartNumberMarker}</NextPartNumberMarker>`
+            : ""
+        }${
+          result.objectParts.maxParts !== undefined
+            ? `<MaxParts>${result.objectParts.maxParts}</MaxParts>`
+            : ""
+        }${
+          result.objectParts.isTruncated !== undefined
+            ? `<IsTruncated>${result.objectParts.isTruncated}</IsTruncated>`
+            : ""
+        }${
           (result.objectParts.parts ?? []).map((p) =>
             `<Part><PartNumber>${p.partNumber}</PartNumber><Size>${p.size}</Size><ChecksumCRC32>${
               p.checksumCRC32 ?? ""
