@@ -106,10 +106,23 @@ export class S3HeaderService
       } => {
         const normalized = normalizeHeaders(raw);
 
-        // Extract Checksums
+        // Extract Checksums; infer algorithm when only a single checksum header is present (e.g. PostObject x-amz-checksum-sha256)
+        const explicitAlgo = normalized["x-amz-checksum-algorithm"] ??
+          normalized["x-amz-sdk-checksum-algorithm"];
+        const inferredAlgo = !explicitAlgo &&
+          (normalized["x-amz-checksum-sha256"] != null
+            ? "SHA256"
+            : normalized["x-amz-checksum-sha1"] != null
+            ? "SHA1"
+            : normalized["x-amz-checksum-crc32"] != null
+            ? "CRC32"
+            : normalized["x-amz-checksum-crc32c"] != null
+            ? "CRC32C"
+            : normalized["x-amz-checksum-crc64nvme"] != null
+            ? "CRC64NVME"
+            : undefined);
         const checksumInput = {
-          algorithm: normalized["x-amz-checksum-algorithm"] ??
-            normalized["x-amz-sdk-checksum-algorithm"],
+          algorithm: explicitAlgo ?? inferredAlgo,
           sha256: normalized["x-amz-checksum-sha256"],
           sha1: normalized["x-amz-checksum-sha1"],
           crc32: normalized["x-amz-checksum-crc32"],
@@ -220,6 +233,47 @@ export class S3HeaderService
           : undefined;
 
         return { metadata, s3Headers, checksums, partsCount };
+      },
+
+      /**
+       * Build putObject request headers from PostObject form fields.
+       * Returns the same header names that fromRequestHeaders reads, so backend
+       * logic (checksum validation, etc.) is shared with PUT object.
+       */
+      formFieldsToPutHeaders: (
+        fields: Record<string, string>,
+        contentLength: number,
+      ): Record<string, string> => {
+        const get = (name: string): string | undefined => {
+          const lower = name.toLowerCase();
+          const key = Object.keys(fields).find((k) =>
+            k.toLowerCase() === lower
+          );
+          return key ? fields[key] : undefined;
+        };
+        const headers: Record<string, string> = {
+          "Content-Length": String(contentLength),
+        };
+        const contentType = get("Content-Type") ?? get("content-type");
+        if (contentType) headers["Content-Type"] = contentType;
+        const acl = get("acl");
+        if (acl) headers["x-amz-acl"] = acl;
+        const sha256 = get("x-amz-checksum-sha256");
+        if (sha256) headers["x-amz-checksum-sha256"] = sha256;
+        const sha1 = get("x-amz-checksum-sha1");
+        if (sha1) headers["x-amz-checksum-sha1"] = sha1;
+        const crc32 = get("x-amz-checksum-crc32");
+        if (crc32) headers["x-amz-checksum-crc32"] = crc32;
+        const crc32c = get("x-amz-checksum-crc32c");
+        if (crc32c) headers["x-amz-checksum-crc32c"] = crc32c;
+        const crc64nvme = get("x-amz-checksum-crc64nvme");
+        if (crc64nvme) headers["x-amz-checksum-crc64nvme"] = crc64nvme;
+        for (const [k, v] of Object.entries(fields)) {
+          if (k.toLowerCase().startsWith("x-amz-meta-") && v !== undefined) {
+            headers[k] = v;
+          }
+        }
+        return headers;
       },
 
       /**

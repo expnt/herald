@@ -77,7 +77,7 @@ export const makeS3Router = (prefix = "") =>
         );
       });
 
-    const router = (HttpRouter.empty as HttpRouter.HttpRouter<unknown, unknown>)
+    const router = HttpRouter.empty
       .pipe(
         HttpRouter.get(
           "/health",

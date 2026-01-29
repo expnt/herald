@@ -25,7 +25,7 @@
  *   s3-tests/s3-tests.log: Full pytest output
  */
 
-import { Config, Effect, Logger, LogLevel, Option } from "effect";
+import { Config, Effect, Layer, Logger, LogLevel, Option } from "effect";
 import * as path from "@std/path";
 import { $ } from "@david/dax";
 import * as colors from "@std/fmt/colors";
@@ -171,13 +171,23 @@ const program = Effect.gen(function* () {
     }).pipe(Effect.orDie)
   );
 
-  const logLevel = yield* Config.string("HERALD_LOG_LEVEL").pipe(
-    Config.withDefault("INFO"),
-  );
+  // Bootstrap: write one line so we know the file path is correct and writable
+  yield* Effect.sync(() => {
+    Deno.writeTextFileSync(
+      proxyLogPath,
+      `${
+        new Date().toISOString()
+      } Herald proxy log started (path=${proxyLogPath})\n`,
+      { append: true },
+    );
+  });
+
   const minLogLevel = LogLevel.Debug;
 
-  // Create a custom logging layer that writes to file synchronously
-  const FileLoggingLive = Logger.replace(
+  // Create a custom logging layer that writes to file synchronously.
+  // Merge order: minimumLogLevel first so the runtime accepts Debug, then our
+  // file logger so it is the one used (not the default console).
+  const fileLogger = Logger.replace(
     Logger.defaultLogger,
     Logger.make(({ message, logLevel: currentLogLevel }) => {
       const timestamp = new Date().toISOString();
@@ -193,11 +203,20 @@ const program = Effect.gen(function* () {
       }
     }),
   );
+  const FileLoggingLive = Layer.mergeAll(
+    Logger.minimumLogLevel(minLogLevel),
+    fileLogger,
+  ) as Layer.Layer<never, never, never>;
 
   // Provide the file logger to the test harness (the proxy)
   const h = yield* makeTestHarness(activeConfig, FileLoggingLive);
 
   const port = new URL(h.proxyUrl).port;
+
+  // Prove the file logger works in this process (writes to herald-proxy.log)
+  yield* Effect.logDebug(`Herald proxy listening on port ${port}`).pipe(
+    Effect.provide(FileLoggingLive),
+  );
 
   // Parse remaining filtering arguments
   const tags = Deno.env.get("S3TEST_TAGS") ?? DEFAULT_TAGS;
@@ -227,8 +246,8 @@ bucket prefix = herald-${backend}-{random}-
 user_id = main
 display_name = main
 email = main@example.com
-access_key = main
-secret_key = main
+access_key = minioadmin
+secret_key = minioadmin
 
 [s3 alt]
 user_id = alt

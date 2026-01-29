@@ -146,9 +146,12 @@ implementation.
       - [ ] **404 Not Found**: Ensure `NoSuchKey` and `NoSuchBucket` return 404
       with correct XML body. - [ ] **403 Forbidden**: Ensure `AccessDenied`
       returns 403.
-- [ ] **Method POST Support**: Fix "Method POST for key [] not implemented"
-      errors at the bucket root level for authenticated requests. _(Focus tests:
-      `test_post_object_authenticated_request`)_
+- [~] **Method POST Support (PostObject)**: S3 PostObject (POST at bucket root
+  with multipart/form-data, policy + signature) is implemented. Authenticated
+  form uploads return 204/200/201; invalid policy/signature return 403. (e.g.
+  `test_post_object_authenticated_request`). Fix harness logging and debug
+  first. _(Focus tests: `test_post_object_authenticated_request`; unit tests in
+  `tests/postobject.test.ts`)_
 - [ ] **Multipart Reliability**: Address `502 Bad Gateway` errors occurring
       during `CreateMultipartUpload` and other multipart operations. _(Focus
       tests: `test_multipart_upload`)_

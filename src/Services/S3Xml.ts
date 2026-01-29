@@ -68,6 +68,12 @@ export class S3Xml extends Context.Tag("S3Xml")<
     formatDeleteObjects: (
       result: DeleteObjectsResult,
     ) => HttpServerResponse.HttpServerResponse;
+    formatPostResponse: (args: {
+      location: string;
+      bucket: string;
+      key: string;
+      etag: string;
+    }) => HttpServerResponse.HttpServerResponse;
   }
 >() {}
 
@@ -420,6 +426,19 @@ export const makeS3Xml = Effect.sync(() => {
       const xml =
         `<?xml version="1.0" encoding="UTF-8"?><DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">${deletedXml}${errorsXml}</DeleteResult>`;
       return HttpServerResponse.text(xml, {
+        headers: { "Content-Type": "application/xml" },
+      });
+    },
+
+    formatPostResponse: (args) => {
+      const xml =
+        `<?xml version="1.0" encoding="UTF-8"?><PostResponse xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Location>${
+          encode(args.location)
+        }</Location><Bucket>${encode(args.bucket)}</Bucket><Key>${
+          encode(args.key)
+        }</Key><ETag>${encode(args.etag)}</ETag></PostResponse>`;
+      return HttpServerResponse.text(xml, {
+        status: 201,
         headers: { "Content-Type": "application/xml" },
       });
     },

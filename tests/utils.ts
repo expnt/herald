@@ -339,11 +339,14 @@ export const testEffect = <E>(
   });
 };
 
+export type ProxyTestContext = { baseUrl: string };
+
 export type ProxyTestCase = {
   name: string;
   config: GlobalConfig;
   fn: (
     client: S3Client,
+    context?: ProxyTestContext,
   ) => Promise<void> | Effect.Effect<void, unknown, never>;
   beforeAll?: (
     client: S3Client,
@@ -352,6 +355,8 @@ export type ProxyTestCase = {
     client: S3Client,
   ) => Promise<void> | Effect.Effect<void, unknown, never>;
   ignore?: boolean;
+  /** When true, skip only the Swift runner (Baseline and Proxy still run). */
+  ignoreSwift?: boolean;
   only?: boolean;
   skipSnapshot?: boolean;
 };
@@ -372,7 +377,7 @@ function baselineRunner(tc: ProxyTestCase, t: Deno.TestContext) {
     }
 
     const resultEffect = Effect.gen(function* () {
-      const result = tc.fn(h.client);
+      const result = tc.fn(h.client, { baseUrl: h.minioUrl });
       if (Effect.isEffect(result)) {
         yield* result;
       } else {
@@ -494,7 +499,7 @@ function proxyRunner(tc: ProxyTestCase, t: Deno.TestContext) {
     }
 
     const resultEffect = Effect.gen(function* () {
-      const result = tc.fn(h.proxyClient);
+      const result = tc.fn(h.proxyClient, { baseUrl: h.proxyUrl });
       if (Effect.isEffect(result)) {
         yield* result;
       } else {
@@ -685,7 +690,7 @@ function swiftRunner(tc: ProxyTestCase, t: Deno.TestContext) {
     }
 
     const resultEffect = Effect.gen(function* () {
-      const result = tc.fn(h.proxyClient);
+      const result = tc.fn(h.proxyClient, { baseUrl: h.proxyUrl });
       if (Effect.isEffect(result)) {
         yield* result;
       } else {
@@ -807,7 +812,7 @@ export function harness(cases: ProxyTestCase[]) {
       only: tc.only,
     });
     testEffect(`${namePrefix}Swift/${tc.name}`, (t) => swiftRunner(tc, t), {
-      ignore: tc.ignore,
+      ignore: tc.ignore ?? tc.ignoreSwift,
       only: tc.only,
     });
   }
