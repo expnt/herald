@@ -55,10 +55,14 @@ export const getObjectAttributes = () =>
  */
 export const getObject = Effect.gen(function* () {
   const backend = yield* Backend;
-  const { key, s3Params } = yield* S3RequestParser;
+  const { key, s3Params, headers } = yield* S3RequestParser;
   const request = yield* HttpServerRequest.HttpServerRequest;
 
-  if (s3Params.attributes !== undefined) {
+  // Route to getObjectAttributes if attributes are specified in query or header
+  if (
+    s3Params.attributes !== undefined ||
+    (headers.objectAttributes && headers.objectAttributes.length > 0)
+  ) {
     return yield* getObjectAttributes();
   }
 

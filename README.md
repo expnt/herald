@@ -303,3 +303,8 @@ operations. The following are **not** currently supported (or are partial):
 
 For the full list of missing functionality and focus tests (from the s3-tests
 suite), see [TODO.md](TODO.md).
+
+## Prior art
+
+- https://github.com/gaul/s3proxy
+- https://github.com/ceph/s3-tests

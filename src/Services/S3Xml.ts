@@ -22,6 +22,7 @@ import {
   type ListObjectsResult,
   type ListPartsResult,
   MalformedXML,
+  MethodNotAllowed,
   type MultipartUploadResult,
   NoSuchBucket,
   NoSuchKey,
@@ -153,6 +154,10 @@ export const makeS3Xml = Effect.sync(() => {
         code = "MalformedXML";
         message = err.message;
         status = 400;
+      } else if (err instanceof MethodNotAllowed) {
+        code = "MethodNotAllowed";
+        message = err.message;
+        status = 405;
       } else if (err instanceof DeleteObjectsError) {
         // Multi-object delete errors are returned in the body, but the response status is 200
         // Wait, S3 documentation says 200 OK even if some deletes fail.
@@ -290,9 +295,11 @@ export const makeS3Xml = Effect.sync(() => {
 
     formatListParts: (result: ListPartsResult) => {
       const partsXml = result.parts.map((p) =>
-        `<Part><PartNumber>${p.partNumber}</PartNumber><LastModified>${
-          p.lastModified?.toISOString() || ""
-        }</LastModified><ETag>${p.etag}</ETag><Size>${p.size}</Size></Part>`
+        `<Part><PartNumber>${p.partNumber}</PartNumber>${
+          p.lastModified !== undefined
+            ? `<LastModified>${p.lastModified.toISOString()}</LastModified>`
+            : ""
+        }<ETag>${p.etag}</ETag><Size>${p.size}</Size></Part>`
       ).join("");
 
       const xml =

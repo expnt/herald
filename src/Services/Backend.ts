@@ -80,6 +80,10 @@ export class MalformedXML extends Data.TaggedError("MalformedXML")<{
   readonly message: string;
 }> {}
 
+export class MethodNotAllowed extends Data.TaggedError("MethodNotAllowed")<{
+  readonly message: string;
+}> {}
+
 export class DeleteObjectsError extends Data.TaggedError("DeleteObjectsError")<{
   readonly errors: readonly {
     readonly key: string;
@@ -106,6 +110,7 @@ export type BackendError =
   | InvalidBucketName
   | InvalidArgument
   | MalformedXML
+  | MethodNotAllowed
   | HttpClientError.HttpClientError
   | DeleteObjectsError;
 

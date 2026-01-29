@@ -390,9 +390,9 @@ export const makeObjectOps = (
     Effect.gen(function* () {
       const { checksums, metadata, s3Params } = headerService
         .fromRequestHeaders(headers);
-      const _normalized = normalizeHeaders(headers);
+      const normalized = normalizeHeaders(headers);
 
-      const contentType = _normalized["content-type"] as string;
+      const contentType = normalized["content-type"]!;
       const contentLength = s3Params.contentLength;
 
       const validatedStream = (yield* checksumService.validate(

@@ -12,9 +12,14 @@ config:
       protocol: s3
       endpoint: http://minio.herald:9000
       region: us-east-1
+      # IMPORTANT: Do not use hard-coded credentials in production!
+      # Supply real credentials via:
+      #   - Kubernetes Secret referenced in extraEnvFrom (recommended)
+      #   - Environment variables (HERALD_<BACKEND>_ACCESS_KEY_ID, HERALD_<BACKEND>_SECRET_ACCESS_KEY)
+      #   - Or override these values via Helm --set or values file
       credentials:
-        accessKeyId: "minioadmin"
-        secretAccessKey: "minioadmin"
+        accessKeyId: "<REPLACE_ME>"
+        secretAccessKey: "<REPLACE_ME>"
       buckets: "*"
   # Optional: cors, auth (accessKeysRefs) at root or per backend/bucket
 

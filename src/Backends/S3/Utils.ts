@@ -7,6 +7,7 @@ import {
   EntityTooSmall,
   InternalError,
   InvalidArgument,
+  InvalidBucketName,
   InvalidPart,
   InvalidPartOrder,
   InvalidRequest,
@@ -85,7 +86,9 @@ export const mapS3Error = (
     case "BucketNotEmpty":
       return new BucketNotEmpty({ bucket, message });
     case "InvalidBucketName":
-      return new InternalError({ message: `Invalid bucket name: ${bucket}` });
+      return new InvalidBucketName({
+        message: `Invalid bucket name: ${bucket}`,
+      });
     case "InvalidArgument":
       return new InvalidArgument({ message });
     case "NoSuchUpload":

@@ -4,7 +4,7 @@ import {
   HttpServerResponse,
 } from "@effect/platform";
 import { Effect, Layer } from "effect";
-import { Backend, NoSuchBucket } from "../Services/Backend.ts";
+import { Backend, MethodNotAllowed } from "../Services/Backend.ts";
 import { BackendResolver } from "../Services/BackendResolver.ts";
 import { S3Xml } from "../Services/S3Xml.ts";
 import { RequestContext } from "./Utils.ts";
@@ -121,8 +121,7 @@ export const makeS3Router = (prefix = "") =>
               return yield* frontHandler(postObject);
             }
             return yield* Effect.fail(
-              new NoSuchBucket({
-                bucket: "",
+              new MethodNotAllowed({
                 message:
                   `Method ${request.method} not implemented for bucket operations`,
               }),
@@ -145,8 +144,7 @@ export const makeS3Router = (prefix = "") =>
               return yield* frontHandler(headObject);
             }
             return yield* Effect.fail(
-              new NoSuchBucket({
-                bucket: "",
+              new MethodNotAllowed({
                 message: `Method ${request.method} not implemented`,
               }),
             );

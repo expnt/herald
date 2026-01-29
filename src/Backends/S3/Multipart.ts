@@ -10,6 +10,7 @@ import { Effect, Stream } from "effect";
 import { Readable } from "node-stream";
 import type sweb from "node-stream/web";
 import {
+  BadDigest,
   type CompleteMultipartUploadResult,
   InternalError,
   InvalidRequest,
@@ -101,6 +102,7 @@ export const makeMultipartOps = (
       const body = Readable.fromWeb(
         Stream.toReadableStream(validatedStream.pipe(
           Stream.mapError((e) => {
+            if (e instanceof BadDigest) return e;
             if (e instanceof InvalidRequest) return e;
             return new InternalError({ message: String(e) });
           }),

@@ -9,22 +9,6 @@ export const createBucket = Effect.gen(function* () {
   const parser = yield* S3RequestParser;
   const { bucket } = yield* RequestContext;
 
-  // #region agent log
-  fetch("http://127.0.0.1:7242/ingest/72b12113-1956-40fa-93e1-a5c755ed9c35", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      location: "Buckets/Create.ts:7",
-      message: "createBucket entry",
-      data: { bucket, url: request.url },
-      timestamp: Date.now(),
-      sessionId: "debug-session",
-      runId: "run1",
-      hypothesisId: "E",
-    }),
-  }).catch(() => {});
-  // #endregion
-
   yield* Effect.logDebug(
     `createBucket bucket=[${bucket}] url=[${request.url}]`,
   );
@@ -53,62 +37,6 @@ export const createBucket = Effect.gen(function* () {
     return HttpServerResponse.text("", { status: 200 });
   }
 
-  // #region agent log
-  fetch("http://127.0.0.1:7242/ingest/72b12113-1956-40fa-93e1-a5c755ed9c35", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      location: "Buckets/Create.ts:40",
-      message: "Calling backend.createBucket",
-      data: { bucket },
-      timestamp: Date.now(),
-      sessionId: "debug-session",
-      runId: "run1",
-      hypothesisId: "E",
-    }),
-  }).catch(() => {});
-  // #endregion
-  yield* backend.createBucket(bucket, request.headers).pipe(
-    Effect.tapError((err) => {
-      // #region agent log
-      fetch(
-        "http://127.0.0.1:7242/ingest/72b12113-1956-40fa-93e1-a5c755ed9c35",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            location: "Buckets/Create.ts:44",
-            message: "backend.createBucket error",
-            data: {
-              bucket,
-              errorType: err?.constructor?.name,
-              errorMessage: err instanceof Error ? err.message : String(err),
-            },
-            timestamp: Date.now(),
-            sessionId: "debug-session",
-            runId: "run1",
-            hypothesisId: "D",
-          }),
-        },
-      ).catch(() => {});
-      // #endregion
-      return Effect.void;
-    }),
-  );
-  // #region agent log
-  fetch("http://127.0.0.1:7242/ingest/72b12113-1956-40fa-93e1-a5c755ed9c35", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      location: "Buckets/Create.ts:50",
-      message: "backend.createBucket success",
-      data: { bucket },
-      timestamp: Date.now(),
-      sessionId: "debug-session",
-      runId: "run1",
-      hypothesisId: "E",
-    }),
-  }).catch(() => {});
-  // #endregion
+  yield* backend.createBucket(bucket, request.headers);
   return HttpServerResponse.text("", { status: 200 });
 });

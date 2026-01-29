@@ -93,7 +93,13 @@ export const makeMultipartOps = (
           Effect.tapError((e) =>
             Effect.logError(`metadataStore.set failed: ${e}`)
           ),
-          Effect.ignore,
+          Effect.mapError((e) =>
+            new InternalError({
+              message: `Failed to persist multipart upload metadata: ${
+                String(e)
+              }`,
+            })
+          ),
         );
 
         return {
@@ -449,19 +455,38 @@ export const makeMultipartOps = (
           marker,
         });
 
-        const uploads: MultipartUploadInfo[] = metaResult.contents.map((c) => {
-          const parts = c.key.substring(MP_META_PREFIX.length).split("/");
-          const uploadId = parts.pop()!;
+        const uploads: MultipartUploadInfo[] = [];
+        for (const c of metaResult.contents) {
+          // Remove prefix and split by "/"
+          const keyWithoutPrefix = c.key.substring(MP_META_PREFIX.length);
+          // Skip keys that end with "/" or are empty after prefix removal
+          if (!keyWithoutPrefix || keyWithoutPrefix.endsWith("/")) {
+            yield* Effect.logWarning(
+              `Skipping malformed multipart upload metadata key: ${c.key}`,
+            );
+            continue;
+          }
+
+          const parts = keyWithoutPrefix.split("/");
+          const uploadId = parts.pop();
+          // Validate uploadId: must be present and non-empty
+          if (!uploadId || uploadId === "") {
+            yield* Effect.logWarning(
+              `Skipping multipart upload metadata key with missing uploadId: ${c.key}`,
+            );
+            continue;
+          }
+
           const key = parts.join("/");
-          return {
+          uploads.push({
             key,
             uploadId,
             owner: { id: "swift", displayName: "Swift User" },
             initiator: { id: "swift", displayName: "Swift User" },
             storageClass: "STANDARD",
             initiated: c.lastModified ?? new Date(),
-          };
-        });
+          });
+        }
 
         return {
           bucket: container,
@@ -505,13 +530,29 @@ export const makeMultipartOps = (
               Effect.mapError((e) => mapError(500, String(e), container)),
             );
 
-          if (metaResponse.status === 404) {
+          if (metaResponse.status === 200) {
+            // Metadata object exists, continue processing
+          } else if (metaResponse.status === 404) {
             return yield* Effect.fail(
               new NoSuchUpload({
                 uploadId,
                 message:
                   `The specified upload does not exist. The upload ID may be invalid, or the upload may have been aborted or completed.`,
               }),
+            );
+          } else {
+            // Non-200/non-404 status: fail with descriptive error
+            const errorMessage = yield* metaResponse.text.pipe(
+              Effect.orElseSucceed(() => "Unknown error"),
+            );
+            return yield* Effect.fail(
+              mapError(
+                metaResponse.status,
+                `Metadata HEAD failed for upload ${uploadId} in container ${container}: ${errorMessage}`,
+                container,
+                "HEAD",
+                encodedMetaKey,
+              ),
             );
           }
         }

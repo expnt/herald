@@ -394,7 +394,7 @@ export const makeObjectOps = (
         const contentLength = normalized["content-length"]
           ? parseInt(normalized["content-length"])
           : undefined;
-        if (contentLength) {
+        if (contentLength !== undefined) {
           swiftHeaders["Content-Length"] = String(contentLength);
         }
 
