@@ -156,7 +156,13 @@ export const makeMultipartOps = (
                 s.includes("NoSuchKey") || s.includes("NoSuchBucket") ||
                 s.includes("InvalidRequest") || s.includes("BadDigest")
               ) return Effect.fail(e as BackendError);
-              return Effect.fail(mapError(500, s, container));
+              // Preserve error context: include original error message and type
+              const errorMessage = e instanceof Error
+                ? `${e.constructor.name}: ${e.message}`
+                : s;
+              return Effect.fail(
+                mapError(500, errorMessage, container, "PUT", _key),
+              );
             }),
           );
 
@@ -514,15 +520,23 @@ export const makeMultipartOps = (
           prefix: `${MP_SEGMENTS_PREFIX}${uploadId}/`,
         });
 
-        const parts: PartInfo[] = segmentsResult.contents.map((c) => {
-          const partNumber = parseInt(c.key.split("/").pop() || "0");
-          return {
+        const parts: PartInfo[] = [];
+        for (const c of segmentsResult.contents) {
+          const keySegment = c.key.split("/").pop() || "0";
+          const partNumber = parseInt(keySegment, 10);
+          if (isNaN(partNumber) || partNumber <= 0) {
+            yield* Effect.logWarning(
+              `Invalid part number in segment key: ${c.key}, parsed as: ${keySegment}`,
+            );
+            continue;
+          }
+          parts.push({
             partNumber,
             lastModified: c.lastModified,
             etag: c.etag,
             size: c.size,
-          };
-        });
+          });
+        }
 
         return {
           bucket: container,

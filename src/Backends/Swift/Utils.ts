@@ -44,6 +44,16 @@ export const mapError = (
     if (message.includes("already exists")) {
       return new BucketAlreadyExists({ bucket, message });
     }
+    // For bucket operations (no key), default to BucketAlreadyOwnedByYou
+    // For object operations (has key), 409 likely indicates a conflict (e.g., concurrent writes)
+    // Use InternalError to avoid misleading bucket ownership error
+    if (key) {
+      return new InternalError({
+        message: `Swift Conflict [409] on ${
+          method ?? "UNKNOWN"
+        } for object ${key}: ${message}`,
+      });
+    }
     return new BucketAlreadyOwnedByYou({ bucket, message });
   }
   if (status === 403) {

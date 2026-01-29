@@ -202,20 +202,10 @@ export class SwiftClient extends Effect.Service<SwiftClient>()("SwiftClient", {
       getAuthMeta: (
         bucket: MaterializedBucket | { backend_id: string },
       ): Effect.Effect<SwiftAuthMeta, Error, never> => {
-        let backend_id: string;
-        let config: Schema.Schema.Type<typeof SwiftConfig>;
-
-        if ("protocol" in bucket) {
-          backend_id = bucket.backend_id;
-          config = appConfig.raw.backends[backend_id] as Schema.Schema.Type<
-            typeof SwiftConfig
-          >;
-        } else {
-          backend_id = bucket.backend_id;
-          config = appConfig.raw.backends[backend_id] as Schema.Schema.Type<
-            typeof SwiftConfig
-          >;
-        }
+        const backend_id = bucket.backend_id;
+        const config = appConfig.raw.backends[backend_id] as Schema.Schema.Type<
+          typeof SwiftConfig
+        >;
 
         if (!config || config.protocol !== "swift") {
           return Effect.fail(

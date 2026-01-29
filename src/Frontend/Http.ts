@@ -39,7 +39,29 @@ export const makeS3Router = (prefix = "") =>
         const pathname = request.url.startsWith("http")
           ? new URL(request.url).pathname
           : request.url.split("?")[0]; // Remove query string if present
-        const bucket = pathname.split("/").filter(Boolean)[0] || "";
+
+        // Remove prefix from pathname before extracting bucket
+        let pathWithoutPrefix = pathname;
+        if (prefix) {
+          // Normalize prefix: ensure it starts with / and remove trailing /
+          const normalizedPrefix = prefix.startsWith("/")
+            ? prefix
+            : `/${prefix}`;
+          const cleanPrefix = normalizedPrefix.endsWith("/")
+            ? normalizedPrefix.slice(0, -1)
+            : normalizedPrefix;
+
+          // Check if pathname starts with the prefix (exact match)
+          if (pathname.startsWith(cleanPrefix)) {
+            pathWithoutPrefix = pathname.substring(cleanPrefix.length);
+            // Ensure it starts with / after prefix removal
+            if (!pathWithoutPrefix.startsWith("/")) {
+              pathWithoutPrefix = `/${pathWithoutPrefix}`;
+            }
+          }
+        }
+
+        const bucket = pathWithoutPrefix.split("/").filter(Boolean)[0] || "";
         const isHead = request.method === "HEAD";
 
         const backend = yield* resolver.getLayerForBucket(bucket);

@@ -48,7 +48,8 @@ export const S3RequestParser = Effect.gen(function* () {
 
   const parsedHeaders = headerService.fromRequestHeaders(request.headers);
 
-  const [pathOnly] = url.pathname.split("?");
+  // url.pathname from a parsed URL object does not include the query string
+  const pathOnly = url.pathname;
   const bucketPrefixWithSlash = `/${bucket}/`;
   const bucketPrefixNoSlash = `/${bucket}`;
 
@@ -61,22 +62,25 @@ export const S3RequestParser = Effect.gen(function* () {
     key = "";
   }
 
+  // Explicitly type the merged s3Params to make the type relationship clear
+  const mergedS3Params: S3QueryParams & Record<string, unknown> = {
+    ...s3Params,
+    ...(parsedHeaders.s3Params.uploadId
+      ? { uploadId: parsedHeaders.s3Params.uploadId }
+      : {}),
+    ...(parsedHeaders.s3Params.partNumber
+      ? { partNumber: parsedHeaders.s3Params.partNumber }
+      : {}),
+    ...(parsedHeaders.s3Params.contentLength !== undefined
+      ? { contentLength: parsedHeaders.s3Params.contentLength }
+      : {}),
+  };
+
   return {
-    s3Params: {
-      ...s3Params,
-      ...(parsedHeaders.s3Params.uploadId
-        ? { uploadId: parsedHeaders.s3Params.uploadId }
-        : {}),
-      ...(parsedHeaders.s3Params.partNumber
-        ? { partNumber: parsedHeaders.s3Params.partNumber }
-        : {}),
-      ...(parsedHeaders.s3Params.contentLength !== undefined
-        ? { contentLength: parsedHeaders.s3Params.contentLength }
-        : {}),
-    },
+    s3Params: mergedS3Params,
     headers: parsedHeaders,
     key,
-  } as S3RequestData;
+  };
 });
 
 /**

@@ -1,5 +1,6 @@
-import { type HttpClientError, KeyValueStore } from "@effect/platform";
-import { Chunk, Context, Data, Effect, Option, Stream } from "effect";
+import type { HttpClientError } from "@effect/platform";
+import { Context, Data } from "effect";
+import type { Effect, Stream } from "effect";
 
 export class NoSuchBucket extends Data.TaggedError("NoSuchBucket")<{
   readonly bucket: string;
@@ -388,80 +389,3 @@ export class Backend extends Context.Tag("Backend")<
     ) => Effect.Effect<ListPartsResult, BackendError>;
   }
 >() {}
-
-export const makeBackendKeyValueStore = (
-  backend: {
-    getObject: (
-      key: string,
-      headers: Record<string, string | string[] | undefined>,
-    ) => Effect.Effect<ObjectResponse, BackendError>;
-    putObject: (
-      key: string,
-      stream: Stream.Stream<Uint8Array, Error>,
-      headers: Record<string, string | string[] | undefined>,
-    ) => Effect.Effect<PutObjectResult, BackendError>;
-    deleteObject: (key: string) => Effect.Effect<void, BackendError>;
-  },
-  prefix: string,
-): KeyValueStore.KeyValueStore => {
-  return KeyValueStore.make({
-    get: (key: string) =>
-      Effect.gen(function* () {
-        const result = yield* backend.getObject(`${prefix}${key}`, {}).pipe(
-          Effect.flatMap((res) => Stream.runCollect(res.stream)),
-          Effect.map((chunks: Chunk.Chunk<Uint8Array>) => {
-            const totalLength = Chunk.reduce(chunks, 0, (acc, c) =>
-              acc + c.length);
-            const body = new Uint8Array(totalLength);
-            let offset = 0;
-            for (const chunk of chunks) {
-              body.set(chunk, offset);
-              offset += chunk.length;
-            }
-            return Option.some(new TextDecoder().decode(body));
-          }),
-        );
-        return result;
-      }).pipe(Effect.catchAll(() =>
-        Effect.succeed(Option.none())
-      )),
-    getUint8Array: (key: string) =>
-      Effect.gen(function* () {
-        const result = yield* backend.getObject(`${prefix}${key}`, {}).pipe(
-          Effect.flatMap((res) => Stream.runCollect(res.stream)),
-          Effect.map((chunks: Chunk.Chunk<Uint8Array>) => {
-            const totalLength = Chunk.reduce(chunks, 0, (acc, c) =>
-              acc + c.length);
-            const body = new Uint8Array(totalLength);
-            let offset = 0;
-            for (const chunk of chunks) {
-              body.set(chunk, offset);
-              offset += chunk.length;
-            }
-            return Option.some(body);
-          }),
-        );
-        return result;
-      }).pipe(Effect.catchAll(() =>
-        Effect.succeed(Option.none())
-      )),
-    set: (key: string, value: string | Uint8Array) =>
-      backend.putObject(
-        `${prefix}${key}`,
-        Stream.fromIterable([
-          typeof value === "string" ? new TextEncoder().encode(value) : value,
-        ]),
-        { "Content-Type": "application/json" },
-      ).pipe(
-        Effect.asVoid,
-        Effect.catchAll((e) => Effect.die(e)),
-      ),
-    remove: (key: string) =>
-      backend.deleteObject(`${prefix}${key}`).pipe(
-        Effect.asVoid,
-        Effect.catchAll((e) => Effect.die(e)),
-      ),
-    clear: Effect.void,
-    size: Effect.succeed(0),
-  });
-};

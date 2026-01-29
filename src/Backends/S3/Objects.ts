@@ -453,7 +453,19 @@ export const makeObjectOps = (
           // If it's a Node stream, add an error handler to prevent uncaught exceptions
           // from the stream itself, as we handle failures through the send() promise.
           if (body instanceof Readable) {
-            body.on("error", () => {});
+            body.on("error", (err: unknown) => {
+              // Log at debug level for debugging purposes, but don't throw
+              // as we handle failures through the send() promise
+              Effect.logDebug(
+                `Stream error in putObject (handled by send() promise): ${
+                  String(err)
+                }`,
+              ).pipe(
+                Effect.runPromise,
+              ).catch(() => {
+                // Ignore logging errors
+              });
+            });
           }
 
           // Remove checksum middlewares to prevent them from trying to hash the stream twice

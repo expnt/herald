@@ -35,16 +35,6 @@ interface S3ChecksumFields {
   readonly ChecksumType?: string;
 }
 
-// const mapS3ChecksumsToResult = (result: S3ChecksumFields) => ({
-//   checksumAlgorithm: result.ChecksumAlgorithm as ChecksumAlgorithm,
-//   checksumType: result.ChecksumType as ChecksumType,
-//   checksumCRC32: result.ChecksumCRC32,
-//   checksumCRC32C: result.ChecksumCRC32C,
-//   checksumCRC64NVME: result.ChecksumCRC64NVME,
-//   checksumSHA1: result.ChecksumSHA1,
-//   checksumSHA256: result.ChecksumSHA256,
-// });
-
 export const makeMultipartOps = (
   { client, bucketName, headerService, checksumService }: S3Target,
 ) => ({
@@ -138,7 +128,19 @@ export const makeMultipartOps = (
           // If it's a Node stream, add an error handler to prevent uncaught exceptions
           // from the stream itself, as we handle failures through the send() promise.
           if (body instanceof Readable) {
-            body.on("error", () => {});
+            body.on("error", (err: unknown) => {
+              // Log at debug level for debugging purposes, but don't throw
+              // as we handle failures through the send() promise
+              Effect.logDebug(
+                `Stream error in uploadPart (handled by send() promise): ${
+                  String(err)
+                }`,
+              ).pipe(
+                Effect.runPromise,
+              ).catch(() => {
+                // Ignore logging errors
+              });
+            });
           }
 
           // Remove checksum middlewares to prevent them from trying to hash the stream twice
@@ -379,10 +381,10 @@ export const makeMultipartOps = (
         },
         storageClass: result.StorageClass ?? "STANDARD",
         partNumberMarker: result.PartNumberMarker
-          ? parseInt(String(result.PartNumberMarker))
+          ? parseInt(String(result.PartNumberMarker), 10) || 0
           : 0,
         nextPartNumberMarker: result.NextPartNumberMarker
-          ? parseInt(String(result.NextPartNumberMarker))
+          ? parseInt(String(result.NextPartNumberMarker), 10) || 0
           : 0,
         maxParts: result.MaxParts ?? 1000,
         isTruncated: result.IsTruncated ?? false,

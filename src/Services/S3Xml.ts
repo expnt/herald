@@ -469,15 +469,27 @@ export const makeS3Xml = Effect.sync(() => {
             : ""
         }${
           (result.objectParts.parts ?? []).map((p) =>
-            `<Part><PartNumber>${p.partNumber}</PartNumber><Size>${p.size}</Size><ChecksumCRC32>${
-              p.checksumCRC32 ?? ""
-            }</ChecksumCRC32><ChecksumCRC32C>${
-              p.checksumCRC32C ?? ""
-            }</ChecksumCRC32C><ChecksumSHA1>${
-              p.checksumSHA1 ?? ""
-            }</ChecksumSHA1><ChecksumSHA256>${
-              p.checksumSHA256 ?? ""
-            }</ChecksumSHA256></Part>`
+            `<Part><PartNumber>${p.partNumber}</PartNumber><Size>${p.size}</Size>${
+              p.checksumCRC32 !== undefined
+                ? `<ChecksumCRC32>${p.checksumCRC32}</ChecksumCRC32>`
+                : ""
+            }${
+              p.checksumCRC32C !== undefined
+                ? `<ChecksumCRC32C>${p.checksumCRC32C}</ChecksumCRC32C>`
+                : ""
+            }${
+              p.checksumSHA1 !== undefined
+                ? `<ChecksumSHA1>${p.checksumSHA1}</ChecksumSHA1>`
+                : ""
+            }${
+              p.checksumSHA256 !== undefined
+                ? `<ChecksumSHA256>${p.checksumSHA256}</ChecksumSHA256>`
+                : ""
+            }${
+              p.checksumCRC64NVME !== undefined
+                ? `<ChecksumCRC64NVME>${p.checksumCRC64NVME}</ChecksumCRC64NVME>`
+                : ""
+            }</Part>`
           ).join("")
         }</ObjectParts>`
         : "";

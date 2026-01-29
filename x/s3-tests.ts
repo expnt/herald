@@ -186,7 +186,6 @@ const program = Effect.gen(function* () {
         ? message
         : JSON.stringify(message);
       const logLine = `${timestamp} level=${level} ${msg}\n`;
-      // console.log(logLine);
       try {
         Deno.writeTextFileSync(proxyLogPath, logLine, { append: true });
       } catch (e) {

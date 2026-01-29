@@ -60,7 +60,7 @@ export const makeBucketOps = (
           creationDate: b.last_modified
             ? new Date(b.last_modified)
             : new Date(),
-        })).filter((b) => b.name !== "herald-metadata");
+        }));
 
         return {
           buckets: bucketInfos,
@@ -120,9 +120,13 @@ export const makeBucketOps = (
               prefix,
               marker,
             });
-            for (const obj of listResult.contents) {
-              yield* objectOps.deleteObject(obj.key);
-            }
+            // Delete objects in parallel with concurrency limit
+            yield* Effect.all(
+              listResult.contents.map((obj) =>
+                objectOps.deleteObject(obj.key).pipe(Effect.ignore)
+              ),
+              { concurrency: 10 },
+            );
             if (!listResult.isTruncated || !listResult.nextMarker) break;
             marker = listResult.nextMarker;
           }

@@ -13,11 +13,10 @@ export const listBuckets = Effect.gen(function* () {
     config.raw.backends[id].protocol === "s3"
   ) ?? Object.keys(config.raw.backends)[0];
 
-  if (!backendId) {
-    const s3Xml = yield* S3Xml;
-    return s3Xml.formatError("No backend configured");
-  }
   const s3xml = yield* S3Xml;
+  if (!backendId) {
+    return s3xml.formatError("No backend configured");
+  }
   return yield* resolver.getLayerForBackend(backendId).pipe(
     Effect.andThen((backend) =>
       backend.listBuckets()

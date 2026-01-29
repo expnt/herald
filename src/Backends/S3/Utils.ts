@@ -115,8 +115,8 @@ export const mapS3Error = (
  * This helper strips them if present.
  */
 export const stripMinioMetadata = (key: string): string => {
-  if (key.startsWith("X-Amz-Meta-")) {
-    return key.substring("X-Amz-Meta-".length);
-  }
+  // if (key.startsWith("X-Amz-Meta-")) {
+  //   return key.substring("X-Amz-Meta-".length);
+  // }
   return key;
 };

@@ -416,24 +416,25 @@ export const makeObjectOps = (
         );
 
         // Align with S3: buffer small files (< 1MB) and validate before HTTP request
-        const bodyStream = (false as boolean) // (contentLength !== undefined && contentLength < 1024 * 1024)
-          ? yield* Effect.gen(function* () {
-            // Buffer small files: consume stream to trigger validation BEFORE HTTP request
-            const chunks: Chunk.Chunk<Uint8Array> = yield* Stream.runCollect(
-              validatedStream,
-            ).pipe(
-              Effect.mapError((e) => {
-                // Preserve BadDigest and InvalidRequest errors
-                if (e instanceof BadDigest || e instanceof InvalidRequest) {
-                  return e;
-                }
-                return new InternalError({ message: String(e) });
-              }),
-            );
-            // Recreate stream from chunks for HTTP request
-            return Stream.fromIterable(chunks);
-          })
-          : validatedStream;
+        const bodyStream =
+          (contentLength !== undefined && contentLength < 1024 * 1024)
+            ? yield* Effect.gen(function* () {
+              // Buffer small files: consume stream to trigger validation BEFORE HTTP request
+              const chunks: Chunk.Chunk<Uint8Array> = yield* Stream.runCollect(
+                validatedStream,
+              ).pipe(
+                Effect.mapError((e) => {
+                  // Preserve BadDigest and InvalidRequest errors
+                  if (e instanceof BadDigest || e instanceof InvalidRequest) {
+                    return e;
+                  }
+                  return new InternalError({ message: String(e) });
+                }),
+              );
+              // Recreate stream from chunks for HTTP request
+              return Stream.fromIterable(chunks);
+            })
+            : validatedStream;
 
         const request = HttpClientRequest.put(`${url}/${encodedKey}`).pipe(
           HttpClientRequest.setHeaders(swiftHeaders),
