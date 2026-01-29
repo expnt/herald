@@ -6,21 +6,17 @@ replicaCount: 1
 # Herald config (GlobalConfig). Rendered as herald-config.yaml in the ConfigMap.
 # See repo README for full config docs. Backends each have protocol, endpoint?, region?,
 # credentials?, buckets ("*" or map of bucket name to overrides).
+# Override with your backends (e.g. S3/minio or openstack_swift). No default backend
+# so Helm merge does not add a stray minio when you only pass e.g. openstack_swift.
 config:
-  backends:
-    minio:
-      protocol: s3
-      endpoint: http://minio.herald:9000
-      region: us-east-1
-      # IMPORTANT: Do not use hard-coded credentials in production!
-      # Supply real credentials via:
-      #   - Kubernetes Secret referenced in extraEnvFrom (recommended)
-      #   - Environment variables (HERALD_<BACKEND>_ACCESS_KEY_ID, HERALD_<BACKEND>_SECRET_ACCESS_KEY)
-      #   - Or override these values via Helm --set or values file
-      credentials:
-        accessKeyId: "<REPLACE_ME>"
-        secretAccessKey: "<REPLACE_ME>"
-      buckets: "*"
+  backends: {}
+  # Example S3 backend (uncomment and set credentials):
+  #   minio:
+  #     protocol: s3
+  #     endpoint: http://minio.herald:9000
+  #     region: us-east-1
+  #     credentials: { accessKeyId: "<REPLACE_ME>", secretAccessKey: "<REPLACE_ME>" }
+  #     buckets: "*"
   # Optional: cors, auth (accessKeysRefs) at root or per backend/bucket
 
 image:

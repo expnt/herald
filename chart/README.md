@@ -16,7 +16,7 @@ helm install my-herald ./chart -n herald --create-namespace -f my-values.yaml
 
 | Value | Description | Default |
 | ----- | ----------- | ------- |
-| `config` | Herald [GlobalConfig](https://github.com/expnt/herald#config): `backends` (required), optional `cors`, `auth`. Rendered as `herald-config.yaml` in a ConfigMap. | Single S3 backend `minio` pointing at `http://minio.herald:9000` |
+| `config` | Herald [GlobalConfig](https://github.com/expnt/herald#config): `backends` (required), optional `cors`, `auth`. Rendered as `herald-config.yaml` in a ConfigMap. | `backends: {}` (you must set backends, e.g. S3 or openstack_swift) |
 | `port` | App listen port (container port and health probes) | `3000` |
 | `image.repository` | Container image | `ghcr.io/expnt/herald` |
 | `image.tag` | Image tag | `v0.11.0` |
