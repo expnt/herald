@@ -25,25 +25,6 @@ export const getObjectAttributes = () =>
     const allAttributes = Array.from(
       new Set([...attributesFromQuery, ...attributesFromHeader]),
     );
-    // #region agent log
-    fetch("http://127.0.0.1:7242/ingest/72b12113-1956-40fa-93e1-a5c755ed9c35", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        location: "Frontend/Objects/Get.ts:23",
-        message: "Frontend getObjectAttributes: parsed attributes",
-        data: {
-          attributesFromQuery,
-          attributesFromHeader,
-          allAttributes: Array.from(allAttributes),
-        },
-        timestamp: Date.now(),
-        sessionId: "debug-session",
-        runId: "run1",
-        hypothesisId: "getattr",
-      }),
-    }).catch(() => {});
-    // #endregion
 
     yield* Effect.logDebug(
       `getObjectAttributes key=[${key}] attributes=[${

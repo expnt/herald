@@ -120,6 +120,21 @@ implementation.
 
 ## 4. Validation, Errors & Protocol
 
+- [ ] **HTTP 100 Continue**: Support for `Expect: 100-continue` (return 100
+      before reading body). _(Focus tests: `test_100_continue`,
+      `test_100_continue_error_retry`)_
+- [ ] **SigV4 Request Validation**: Reject invalid or missing Authorization and
+      `x-amz-date` with 403/400. Many tests expect 403 for bad/missing auth.
+      _(Focus tests: `test_*_bad_authorization_*`, `test_*_bad_date_*_aws2`)_
+- [ ] **Content-Length Handling**: Require or correctly handle Content-Length
+      for PUT/POST; reject or accept requests with missing/invalid
+      Content-Length as per S3 behavior. _(Focus tests:
+      `test_object_create_bad_contentlength_none`,
+      `test_bucket_create_bad_contentlength_none`)_
+- [ ] **Special Key Names / Prefix**: Bucket create and list with special
+      characters in key names and prefix. _(Focus tests:
+      `test_bucket_create_special_key_names`,
+      `test_bucket_list_special_prefix`)_
 - [ ] **Bucket Naming Validation**: Implement strict S3 naming rules (no IP
       addresses, no double dots, length 3-63, etc.). Currently many naming tests
       fail. _(Focus tests: `test_bucket_create_naming_bad_ip`,

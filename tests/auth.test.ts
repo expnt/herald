@@ -8,6 +8,17 @@ import { SignatureV4 } from "@smithy/signature-v4";
 import { Sha256 } from "@aws-crypto/sha256";
 import type { HttpServerRequest } from "@effect/platform";
 
+// Helper to format date as YYYYMMDDTHHMMSSZ
+const formatAmzDate = (date: Date): string => {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const hour = String(date.getUTCHours()).padStart(2, "0");
+  const min = String(date.getUTCMinutes()).padStart(2, "0");
+  const sec = String(date.getUTCSeconds()).padStart(2, "0");
+  return `${year}${month}${day}T${hour}${min}${sec}Z`;
+};
+
 testEffect("auth/resolveAuthCredentials", () =>
   Effect.sync(() => {
     const env = {
@@ -38,11 +49,14 @@ testEffect("auth/verifyIncomingSigV4/header", () =>
       sha256: Sha256,
     });
 
+    const signingDate = new Date();
+    const amzDate = formatAmzDate(signingDate);
+
     const _request = new Request("http://localhost/my-bucket/my-key", {
       method: "GET",
       headers: {
         "host": "localhost",
-        "x-amz-date": "20260123T000000Z",
+        "x-amz-date": amzDate,
       },
     });
 
@@ -54,9 +68,9 @@ testEffect("auth/verifyIncomingSigV4/header", () =>
         path: "/my-bucket/my-key",
         headers: {
           "host": "localhost",
-          "x-amz-date": "20260123T000000Z",
+          "x-amz-date": amzDate,
         },
-      }, { signingDate: new Date("2026-01-23T00:00:00Z") })
+      }, { signingDate })
     );
 
     const httpServerRequest = {
@@ -90,6 +104,7 @@ testEffect(
         sha256: Sha256,
       });
 
+      const signingDate = new Date();
       const signed = yield* Effect.promise(() =>
         signer.sign({
           method: "GET",
@@ -100,7 +115,7 @@ testEffect(
             "host": "localhost",
           },
         }, {
-          signingDate: new Date("2026-01-23T00:00:00Z"),
+          signingDate,
           // @ts-ignore: signQuery might exist at runtime even if types mismatch
           signQuery: true,
         })
@@ -137,13 +152,17 @@ testEffect(
       }];
       const region = "us-east-1";
 
+      const signingDate = new Date();
+      const amzDate = formatAmzDate(signingDate);
+      const dateStr = amzDate.substring(0, 8); // YYYYMMDD
+
       const httpServerRequest = {
         method: "GET",
         url: "http://localhost/my-bucket/my-key",
         headers: {
           "authorization":
-            "AWS4-HMAC-SHA256 Credential=test-id/20260123/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-date, Signature=invalid",
-          "x-amz-date": "20260123T000000Z",
+            `AWS4-HMAC-SHA256 Credential=test-id/${dateStr}/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-date, Signature=invalid`,
+          "x-amz-date": amzDate,
           "host": "localhost",
         },
       } as unknown as HttpServerRequest.HttpServerRequest;
@@ -174,6 +193,9 @@ testEffect(
         sha256: Sha256,
       });
 
+      const signingDate = new Date();
+      const amzDate = formatAmzDate(signingDate);
+
       const signed = yield* Effect.promise(() =>
         signer.sign({
           method: "GET",
@@ -182,9 +204,9 @@ testEffect(
           path: "/my-bucket/my-key",
           headers: {
             "host": "localhost",
-            "x-amz-date": "20260123T000000Z",
+            "x-amz-date": amzDate,
           },
-        }, { signingDate: new Date("2026-01-23T00:00:00Z") })
+        }, { signingDate })
       );
 
       const httpServerRequest = {

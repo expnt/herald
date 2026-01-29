@@ -180,7 +180,7 @@ export const makeMultipartOps = (
 
           return client.send(command);
         },
-        catch: (e) => mapS3Error(e, bucketName),
+        catch: (e) => mapS3Error(e, bucketName, uploadId),
       });
 
       if (!result.ETag) {
@@ -250,7 +250,7 @@ export const makeMultipartOps = (
               ChecksumType: checksums.type,
             }),
           ),
-        catch: (e) => mapS3Error(e, bucketName),
+        catch: (e) => mapS3Error(e, bucketName, uploadId),
       });
 
       if (
@@ -291,7 +291,7 @@ export const makeMultipartOps = (
               UploadId: uploadId,
             }),
           ),
-        catch: (e) => mapS3Error(e, bucketName),
+        catch: (e) => mapS3Error(e, bucketName, uploadId),
       });
     }),
 
@@ -362,7 +362,7 @@ export const makeMultipartOps = (
               UploadId: uploadId,
             }),
           ),
-        catch: (e) => mapS3Error(e, bucketName),
+        catch: (e) => mapS3Error(e, bucketName, uploadId),
       });
 
       return {

@@ -453,7 +453,7 @@ export const makeMultipartOps = (
             owner: { id: "swift", displayName: "Swift User" },
             initiator: { id: "swift", displayName: "Swift User" },
             storageClass: "STANDARD",
-            initiated: c.lastModified!,
+            initiated: c.lastModified ?? new Date(),
           };
         });
 

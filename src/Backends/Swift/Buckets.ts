@@ -18,7 +18,7 @@ export interface SwiftContainer {
 }
 
 export const makeBucketOps = (
-  { client, container, storageUrl, token }: SwiftTarget,
+  { client, container, storageUrl, token, url: _url }: SwiftTarget,
   objectOps: {
     listObjects: (args: {
       prefix?: string;
@@ -73,13 +73,22 @@ export const makeBucketOps = (
       _headers: Record<string, string | string[] | undefined>,
     ) =>
       Effect.gen(function* () {
+        // Use container from target (which is bucket_name from MaterializedBucket)
+        // Don't URL-encode container name - Swift handles it natively (unlike object keys)
+        const requestUrl = `${storageUrl}/${container}`;
         const response = yield* client.execute(
-          HttpClientRequest.put(`${storageUrl}/${container}`).pipe(
+          HttpClientRequest.put(requestUrl).pipe(
             HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
           ),
         ).pipe(
           Effect.mapError((e) => mapError(500, String(e), container)),
         );
+
+        // Swift returns 201 (Created) for new containers, 202/204 for existing containers
+        if (response.status === 201) {
+          // Successfully created
+          return;
+        }
 
         if (response.status === 202 || response.status === 204) {
           return yield* Effect.fail(

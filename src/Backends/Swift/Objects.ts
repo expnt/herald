@@ -552,11 +552,17 @@ export const makeObjectOps = (
 
           if (regResponse.status < 200 || regResponse.status >= 300) {
             if (regResponse.status === 404) return;
-            const message = yield* regResponse.text.pipe(
+            const regResponseBody = yield* regResponse.text.pipe(
               Effect.orElseSucceed(() => "Error"),
             );
             return yield* Effect.fail(
-              mapError(regResponse.status, message, container, "DELETE", key),
+              mapError(
+                regResponse.status,
+                regResponseBody,
+                container,
+                "DELETE",
+                key,
+              ),
             );
           }
           return;
@@ -566,13 +572,12 @@ export const makeObjectOps = (
           if (response.status === 404) {
             return;
           }
-          const message = yield* response.text.pipe(
-            Effect.orElseSucceed(() => "Error"),
-          );
+          // Reuse the already-read responseBody instead of reading response.text again
+          const message = responseBody || "Error";
           return yield* Effect.fail(
             mapError(
               response.status,
-              message || "Error",
+              message,
               container,
               "DELETE",
               key,
@@ -607,7 +612,7 @@ export const makeObjectOps = (
                   Effect.mapError((e) => mapError(500, String(e), container)),
                 );
 
-              const responseBody = yield* response.text.pipe(
+              let responseBody = yield* response.text.pipe(
                 Effect.orElseSucceed(() => ""),
               );
 
@@ -623,6 +628,10 @@ export const makeObjectOps = (
                 ).pipe(
                   Effect.mapError((e) => mapError(500, String(e), container)),
                 );
+                // Refresh responseBody cache for the new response
+                responseBody = yield* response.text.pipe(
+                  Effect.orElseSucceed(() => ""),
+                );
               }
 
               if (
@@ -631,9 +640,8 @@ export const makeObjectOps = (
               ) {
                 return { key: obj.key, error: null };
               } else {
-                const errorBody = yield* response.text.pipe(
-                  Effect.orElseSucceed(() => "Unknown error"),
-                );
+                // Reuse the cached responseBody instead of reading response.text again
+                const errorBody = responseBody || "Unknown error";
                 return {
                   key: obj.key,
                   error: {

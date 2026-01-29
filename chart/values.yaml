@@ -3,40 +3,24 @@ namespace: herald
 
 replicaCount: 1
 
-heraldConfig:
-  port: 8000
-  temp_dir: "./tmp"
-  task_store_backend:
-    endpoint: http://minio.herald:9000
-    region: local
-    forcePathStyle: true
-    bucket: s3-test
-    credentials:
-      accessKeyId: "fromEnv:S3_ACCESS_KEY"
-      secretAccessKey: "fromEnv:S3_SECRET_KEY"
+# Herald config (GlobalConfig). Rendered as herald-config.yaml in the ConfigMap.
+# See repo README for full config docs. Backends each have protocol, endpoint?, region?,
+# credentials?, buckets ("*" or map of bucket name to overrides).
+config:
   backends:
-    minio_s3:
+    minio:
       protocol: s3
-    openstack_swift:
-      protocol: swift
-  service_accounts: []
-  default_bucket: "s3-test"
-  buckets:
-    s3-test:
-      backend: minio_s3
-      config:
-        endpoint: http://minio.herald:9000
-        region: local
-        forcePathStyle: true
-        bucket: s3-test
-        credentials:
-          accessKeyId: "fromEnv:S3_ACCESS_KEY"
-          secretAccessKey: "fromEnv:S3_SECRET_KEY"
-  replicas: []
+      endpoint: http://minio.herald:9000
+      region: us-east-1
+      credentials:
+        accessKeyId: "minioadmin"
+        secretAccessKey: "minioadmin"
+      buckets: "*"
+  # Optional: cors, auth (accessKeysRefs) at root or per backend/bucket
 
 image:
   repository: ghcr.io/expnt/herald
-  tag: "v0.7.0"
+  tag: "v0.11.0"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -55,22 +39,17 @@ deploymentAnnotations: {}
 podSecurityContext: {}
 
 securityContext: {}
+containerSecurityContext: {}
 resources: {}
 
-extraEnvFrom: {}
-extraEnv:
-  - name: CONFIG_FILE_PATH
-    value: "/etc/herald/herald-config.yaml"
-  - name: AUTH_TYPE
-    value: "none"
-  - name: SENTRY_DSN
-    value: ""
-  - name: S3_ACCESS_KEY
-    value: "minio"
-  - name: S3_SECRET_KEY
-    value: "password"
+# envFrom: list of secretRef/configMapRef for env (e.g. backend credentials)
+extraEnvFrom: []
+# Herald reads HERALD_CONFIG_PATH and PORT; these are set from the chart (see deployment).
+# Add HERALD_* or other env here. Backend credentials can go in config or HERALD_<BACKEND>_*.
+extraEnv: []
 
-containerPort: 8000
+# App port (Herald default 3000). Used for containerPort and health probes.
+port: 3000
 
 service:
   type: ClusterIP
@@ -95,10 +74,9 @@ volumeMounts:
     mountPath: /etc/herald/
     readOnly: true
 
-volumes:
-  - name: herald
-    configMap:
-      name: herald
+# Default volume (herald config) is defined in the deployment template with fullname.
+# Add extra volumes here if needed.
+extraVolumes: []
 
 helmhookjob:
   enabled: false

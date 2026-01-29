@@ -378,7 +378,67 @@ function baselineRunner(tc: ProxyTestCase, t: Deno.TestContext) {
       } else {
         yield* Effect.tryPromise({
           try: () => result as Promise<void>,
-          catch: (e) => new Error(`Test function failed for ${tc.name}: ${e}`),
+          catch: (e) => {
+            let errorMsg: string;
+            if (e instanceof Error) {
+              errorMsg = e.message || e.toString();
+            } else if (e && typeof e === "object") {
+              // Handle S3ServiceException and similar objects
+              // Access properties directly, they may not be enumerable
+              const err = e as {
+                name?: unknown;
+                message?: unknown;
+                $metadata?: unknown;
+                $response?: { statusCode?: unknown; body?: unknown };
+              };
+              const name = err.name !== undefined
+                ? String(err.name)
+                : undefined;
+              // message might be an object, try to extract string from it
+              let message: string | undefined;
+              if (err.message !== undefined) {
+                if (typeof err.message === "string") {
+                  message = err.message;
+                } else if (err.message && typeof err.message === "object") {
+                  try {
+                    message = JSON.stringify(err.message);
+                  } catch {
+                    message = String(err.message);
+                  }
+                } else {
+                  message = String(err.message);
+                }
+              }
+              if (name && message) {
+                errorMsg = `${name}: ${message}`;
+              } else if (name) {
+                errorMsg = name;
+              } else if (message) {
+                errorMsg = message;
+              } else {
+                // Try to stringify the whole object including non-enumerable properties
+                try {
+                  const props = Object.getOwnPropertyNames(e);
+                  const serialized: Record<string, unknown> = {};
+                  for (const prop of props) {
+                    try {
+                      serialized[prop] = (e as Record<string, unknown>)[prop];
+                    } catch {
+                      // ignore
+                    }
+                  }
+                  errorMsg = JSON.stringify(serialized, null, 2);
+                } catch {
+                  errorMsg = String(e);
+                }
+              }
+            } else {
+              errorMsg = String(e);
+            }
+            return new Error(
+              `Test function failed for ${tc.name}: ${errorMsg}`,
+            );
+          },
         });
       }
     });
@@ -440,7 +500,67 @@ function proxyRunner(tc: ProxyTestCase, t: Deno.TestContext) {
       } else {
         yield* Effect.tryPromise({
           try: () => result as Promise<void>,
-          catch: (e) => new Error(`Test function failed for ${tc.name}: ${e}`),
+          catch: (e) => {
+            let errorMsg: string;
+            if (e instanceof Error) {
+              errorMsg = e.message || e.toString();
+            } else if (e && typeof e === "object") {
+              // Handle S3ServiceException and similar objects
+              // Access properties directly, they may not be enumerable
+              const err = e as {
+                name?: unknown;
+                message?: unknown;
+                $metadata?: unknown;
+                $response?: { statusCode?: unknown; body?: unknown };
+              };
+              const name = err.name !== undefined
+                ? String(err.name)
+                : undefined;
+              // message might be an object, try to extract string from it
+              let message: string | undefined;
+              if (err.message !== undefined) {
+                if (typeof err.message === "string") {
+                  message = err.message;
+                } else if (err.message && typeof err.message === "object") {
+                  try {
+                    message = JSON.stringify(err.message);
+                  } catch {
+                    message = String(err.message);
+                  }
+                } else {
+                  message = String(err.message);
+                }
+              }
+              if (name && message) {
+                errorMsg = `${name}: ${message}`;
+              } else if (name) {
+                errorMsg = name;
+              } else if (message) {
+                errorMsg = message;
+              } else {
+                // Try to stringify the whole object including non-enumerable properties
+                try {
+                  const props = Object.getOwnPropertyNames(e);
+                  const serialized: Record<string, unknown> = {};
+                  for (const prop of props) {
+                    try {
+                      serialized[prop] = (e as Record<string, unknown>)[prop];
+                    } catch {
+                      // ignore
+                    }
+                  }
+                  errorMsg = JSON.stringify(serialized, null, 2);
+                } catch {
+                  errorMsg = String(e);
+                }
+              }
+            } else {
+              errorMsg = String(e);
+            }
+            return new Error(
+              `Test function failed for ${tc.name}: ${errorMsg}`,
+            );
+          },
         });
       }
     });
@@ -571,7 +691,67 @@ function swiftRunner(tc: ProxyTestCase, t: Deno.TestContext) {
       } else {
         yield* Effect.tryPromise({
           try: () => result as Promise<void>,
-          catch: (e) => new Error(`Test function failed for ${tc.name}: ${e}`),
+          catch: (e) => {
+            let errorMsg: string;
+            if (e instanceof Error) {
+              errorMsg = e.message || e.toString();
+            } else if (e && typeof e === "object") {
+              // Handle S3ServiceException and similar objects
+              // Access properties directly, they may not be enumerable
+              const err = e as {
+                name?: unknown;
+                message?: unknown;
+                $metadata?: unknown;
+                $response?: { statusCode?: unknown; body?: unknown };
+              };
+              const name = err.name !== undefined
+                ? String(err.name)
+                : undefined;
+              // message might be an object, try to extract string from it
+              let message: string | undefined;
+              if (err.message !== undefined) {
+                if (typeof err.message === "string") {
+                  message = err.message;
+                } else if (err.message && typeof err.message === "object") {
+                  try {
+                    message = JSON.stringify(err.message);
+                  } catch {
+                    message = String(err.message);
+                  }
+                } else {
+                  message = String(err.message);
+                }
+              }
+              if (name && message) {
+                errorMsg = `${name}: ${message}`;
+              } else if (name) {
+                errorMsg = name;
+              } else if (message) {
+                errorMsg = message;
+              } else {
+                // Try to stringify the whole object including non-enumerable properties
+                try {
+                  const props = Object.getOwnPropertyNames(e);
+                  const serialized: Record<string, unknown> = {};
+                  for (const prop of props) {
+                    try {
+                      serialized[prop] = (e as Record<string, unknown>)[prop];
+                    } catch {
+                      // ignore
+                    }
+                  }
+                  errorMsg = JSON.stringify(serialized, null, 2);
+                } catch {
+                  errorMsg = String(e);
+                }
+              }
+            } else {
+              errorMsg = String(e);
+            }
+            return new Error(
+              `Test function failed for ${tc.name}: ${errorMsg}`,
+            );
+          },
         });
       }
     });

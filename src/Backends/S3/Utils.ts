@@ -27,7 +27,11 @@ export interface S3Target {
   readonly checksumService: Checksum;
 }
 
-export const mapS3Error = (e: unknown, bucket: string) => {
+export const mapS3Error = (
+  e: unknown,
+  bucket: string,
+  uploadId?: string,
+) => {
   if (e instanceof BadDigest) return e;
 
   const error = e as {
@@ -86,7 +90,7 @@ export const mapS3Error = (e: unknown, bucket: string) => {
       return new InvalidArgument({ message });
     case "NoSuchUpload":
       return new NoSuchUpload({
-        uploadId: error.Key || "unknown", // SDK sometimes puts upload ID in Key for NoSuchUpload
+        uploadId: uploadId || "unknown",
         message,
       });
     case "InvalidRequest":

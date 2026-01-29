@@ -1,5 +1,4 @@
 import { S3Client as S3ClientSDK } from "@aws-sdk/client-s3";
-//import { FetchHttpHandler } from "@smithy/fetch-http-handler";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { Cache, Effect } from "effect";
 import { HeraldConfig } from "../../Config/Layer.ts";

@@ -88,4 +88,3 @@ token
 *.db-shm
 *.db-wal
 .vscode
-symlinks

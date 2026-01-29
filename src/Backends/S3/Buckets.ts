@@ -9,13 +9,13 @@ import type { BucketInfo, ListBucketsResult } from "../../Services/Backend.ts";
 import { mapS3Error, type S3Target } from "./Utils.ts";
 
 export const makeBucketOps = (
-  { client, bucketName }: S3Target,
+  { client, bucketName: _bucketName }: S3Target,
 ) => ({
   listBuckets: () =>
     Effect.gen(function* () {
       const result = yield* Effect.tryPromise({
         try: () => client.send(new ListBucketsCommand({})),
-        catch: (e) => mapS3Error(e, bucketName),
+        catch: (e) => mapS3Error(e, "*"),
       });
 
       return {

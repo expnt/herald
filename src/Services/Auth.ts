@@ -179,6 +179,40 @@ export function verifyIncomingSigV4(
         signingDate = undefined;
       }
 
+      // Validate signingDate: reject if missing or outside allowed windows
+      if (!signingDate) {
+        return false;
+      }
+
+      const now = new Date();
+      const timeDiffMs = Math.abs(now.getTime() - signingDate.getTime());
+      const timeDiffMinutes = timeDiffMs / (1000 * 60);
+
+      if (hasSigInQuery) {
+        // For query-presigned requests: validate X-Amz-Expires
+        const expiresParam = queryParams.get("X-Amz-Expires");
+        if (!expiresParam) {
+          return false;
+        }
+
+        // Type-check X-Amz-Expires: must be a valid integer
+        const expires = parseInt(expiresParam, 10);
+        if (isNaN(expires) || expiresParam !== String(expires) || expires < 0) {
+          return false;
+        }
+
+        // Reject if expired: now > signingDate + expires
+        const expirationTime = new Date(signingDate.getTime() + expires * 1000);
+        if (now > expirationTime) {
+          return false;
+        }
+      } else {
+        // For header-signed requests: enforce ±15 minutes clock skew
+        if (timeDiffMinutes > 15) {
+          return false;
+        }
+      }
+
       // Convert query params to smithy format (Record<string, string | string[]>)
       const queryBag: Record<string, string | string[]> = {};
       queryParams.forEach((v, k) => {

@@ -38,15 +38,19 @@ spec:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           ports:
             - name: http
-              containerPort: 8000
+              containerPort: {{ .Values.port }}
               protocol: TCP
           envFrom:
             {{- with .Values.extraEnvFrom }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
+            - name: HERALD_CONFIG_PATH
+              value: "/etc/herald/herald-config.yaml"
+            - name: PORT
+              value: {{ .Values.port | quote }}
             {{- with .Values.extraEnv }}
-            {{- toYaml . | nindent 12 }}
+            {{- toYaml . | nindent 4 }}
             {{- end }}
           volumeMounts:
             {{- with .Values.volumeMounts }}
@@ -54,16 +58,19 @@ spec:
             {{- end }}
           livenessProbe:
             httpGet:
-              path: /health-check
+              path: /health
               port: http
           readinessProbe:
             httpGet:
-              path: /health-check
+              path: /health
               port: http
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
 
       volumes:
-        {{- with .Values.volumes }}
+        - name: herald
+          configMap:
+            name: {{ include "herald.fullname" . }}
+        {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
