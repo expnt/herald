@@ -16,6 +16,7 @@ import { HttpHealthLive } from "./Frontend/Health/Http.ts";
 import { HttpS3Live } from "./Frontend/Http.ts";
 import { HttpHeraldApi } from "./Api.ts";
 import { corsMiddleware } from "./Frontend/Cors.ts";
+import { heraldHttpMetricsMiddleware } from "./Instrumentation.ts";
 import { S3XmlLive } from "./Services/S3Xml.ts";
 import { S3ClientFactory } from "./Backends/S3/Client.ts";
 import { SwiftClient } from "./Backends/Swift/Client.ts";
@@ -34,7 +35,11 @@ export const HttpServerHeraldLive = Layer.unwrapEffect(
       Config.integer("PORT"),
       3000,
     );
-    const middleware = flow(corsMiddleware, HttpMiddleware.logger);
+    const middleware = flow(
+      corsMiddleware,
+      heraldHttpMetricsMiddleware,
+      HttpMiddleware.logger,
+    );
     return HttpApiBuilder.serve(middleware).pipe(
       Layer.provide(HttpApiSwagger.layer()),
       Layer.provide(HttpApiBuilder.middlewareOpenApi()),

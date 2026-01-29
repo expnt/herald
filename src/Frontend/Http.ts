@@ -21,6 +21,50 @@ import { HttpHeraldApi } from "../Api.ts";
 import { BadGateway } from "./Api.ts";
 import * as HttpServerRequest from "@effect/platform/HttpServerRequest";
 
+/** Build annotations and log 5xx as error, 4xx as warning; return response. */
+function logRequestFailureAndReturn(
+  err: unknown,
+  response: HttpServerResponse.HttpServerResponse,
+  bucket: string,
+  method: string,
+): Effect.Effect<HttpServerResponse.HttpServerResponse, never> {
+  const status = response.status ?? 500;
+  const errorType =
+    err != null && typeof err === "object" && "constructor" in err &&
+      typeof (err as { constructor: { name?: string } }).constructor?.name ===
+        "string"
+      ? (err as { constructor: { name: string } }).constructor.name
+      : "Unknown";
+  const message = err instanceof Error ? err.message : String(err);
+  const annotations: Record<string, string | number> = {
+    status,
+    errorType,
+    message,
+    bucket,
+    method,
+  };
+  if (
+    err != null && typeof err === "object" && "key" in err &&
+    typeof (err as { key: unknown }).key === "string"
+  ) {
+    annotations.key = (err as { key: string }).key;
+  }
+  if (
+    err != null && typeof err === "object" && "uploadId" in err &&
+    typeof (err as { uploadId: unknown }).uploadId === "string"
+  ) {
+    annotations.uploadId = (err as { uploadId: string }).uploadId;
+  }
+  return Effect.gen(function* () {
+    if (status >= 500) {
+      yield* Effect.logError("Request failed", annotations);
+    } else if (status >= 400) {
+      yield* Effect.logWarning("Request failed", annotations);
+    }
+    return response;
+  });
+}
+
 /**
  * Main HTTP Router for the S3 Proxy.
  */
@@ -63,17 +107,23 @@ export const makeS3Router = (prefix = "") =>
 
         const bucket = pathWithoutPrefix.split("/").filter(Boolean)[0] || "";
         const isHead = request.method === "HEAD";
+        const method = request.method ?? "UNKNOWN";
 
         const backend = yield* resolver.getLayerForBucket(bucket);
         const backendLayer = Layer.succeed(Backend, backend);
 
+        const attrs = { bucket, method };
         return yield* handler.pipe(
           Effect.provideService(RequestContext, { bucket }),
           Effect.provide(backendLayer),
-          // convert the frontend errors to xml
-          Effect.catchAll((err) => {
-            return Effect.succeed(s3Xml.formatError(err, isHead));
+          // convert the frontend errors to xml and log failure details
+          Effect.catchAll((err: unknown) => {
+            const response = s3Xml.formatError(err, isHead);
+            return logRequestFailureAndReturn(err, response, bucket, method);
           }),
+        ).pipe(
+          Effect.annotateLogs(attrs),
+          Effect.withSpan("herald.s3.request", { attributes: attrs }),
         );
       });
 
@@ -95,9 +145,10 @@ export const makeS3Router = (prefix = "") =>
             }).pipe(Effect.provide(backendLayer));
             return s3Xml.formatListBuckets(result.buckets, result.owner);
           }).pipe(
-            Effect.catchAll((err: unknown) =>
-              Effect.succeed(s3Xml.formatError(err))
-            ),
+            Effect.catchAll((err: unknown) => {
+              const response = s3Xml.formatError(err);
+              return logRequestFailureAndReturn(err, response, "", "GET");
+            }),
           ),
         ),
         // Bucket/Object operations

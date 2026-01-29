@@ -36,13 +36,13 @@ export const LoggingLive = Layer.mergeAll(
   ),
 );
 
-/**
- * Utility to wrap an effect in a span and annotate all logs within it.
- */
-export const withContext =
-  (name: string, annotations: Record<string, string | number | boolean>) =>
-  <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-    effect.pipe(
-      Effect.annotateLogs(annotations),
-      Effect.withSpan(name, { attributes: annotations }),
-    );
+/** Annotation key names used consistently across logs and spans. */
+export const HERALD_KEYS = {
+  algorithm: "herald_algorithm",
+  bucket: "herald_bucket",
+  key: "herald_key",
+  uploadId: "herald_uploadId",
+  error: "herald_error",
+  method: "herald_method",
+  operation: "herald_operation",
+} as const;

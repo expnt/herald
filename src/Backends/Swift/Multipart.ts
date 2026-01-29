@@ -91,7 +91,12 @@ export const makeMultipartOps = (
           JSON.stringify(metadata),
         ).pipe(
           Effect.tapError((e) =>
-            Effect.logError(`metadataStore.set failed: ${e}`)
+            Effect.logError("Metadata store set failed", {
+              operation: "createMultipartUpload",
+              error: String(e),
+              key,
+              uploadId,
+            })
           ),
           Effect.mapError((e) =>
             new InternalError({
@@ -239,9 +244,12 @@ export const makeMultipartOps = (
           try {
             metadata = JSON.parse(metadataOpt.value);
           } catch (e) {
-            yield* Effect.logError(
-              `Failed to parse multipart metadata for ${key}/${uploadId}: ${e}`,
-            );
+            yield* Effect.logError("Parse multipart metadata failed", {
+              operation: "completeMultipartUpload",
+              key,
+              uploadId,
+              error: String(e),
+            });
           }
         }
 
@@ -461,9 +469,10 @@ export const makeMultipartOps = (
           const keyWithoutPrefix = c.key.substring(MP_META_PREFIX.length);
           // Skip keys that end with "/" or are empty after prefix removal
           if (!keyWithoutPrefix || keyWithoutPrefix.endsWith("/")) {
-            yield* Effect.logWarning(
-              `Skipping malformed multipart upload metadata key: ${c.key}`,
-            );
+            yield* Effect.logWarning("Skipping malformed metadata key", {
+              operation: "listMultipartUploads",
+              key: c.key,
+            });
             continue;
           }
 
@@ -472,7 +481,11 @@ export const makeMultipartOps = (
           // Validate uploadId: must be present and non-empty
           if (!uploadId || uploadId === "") {
             yield* Effect.logWarning(
-              `Skipping multipart upload metadata key with missing uploadId: ${c.key}`,
+              "Skipping metadata key with missing uploadId",
+              {
+                operation: "listMultipartUploads",
+                key: c.key,
+              },
             );
             continue;
           }
@@ -566,9 +579,11 @@ export const makeMultipartOps = (
           const keySegment = c.key.split("/").pop() || "0";
           const partNumber = parseInt(keySegment, 10);
           if (isNaN(partNumber) || partNumber <= 0) {
-            yield* Effect.logWarning(
-              `Invalid part number in segment key: ${c.key}, parsed as: ${keySegment}`,
-            );
+            yield* Effect.logWarning("Invalid part number in segment key", {
+              operation: "listParts",
+              key: c.key,
+              parsed: keySegment,
+            });
             continue;
           }
           parts.push({

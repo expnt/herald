@@ -9,10 +9,6 @@ export const createBucket = Effect.gen(function* () {
   const parser = yield* S3RequestParser;
   const { bucket } = yield* RequestContext;
 
-  yield* Effect.logDebug(
-    `createBucket bucket=[${bucket}] url=[${request.url}]`,
-  );
-
   const { s3Params } = parser;
 
   if (s3Params.acl !== undefined) {

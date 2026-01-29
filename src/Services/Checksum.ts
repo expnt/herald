@@ -104,10 +104,9 @@ export class Checksum extends Effect.Service<Checksum>()("Checksum", {
       Stream.Stream<Uint8Array, Error>,
       BadDigest | InvalidRequest
     > =>
-      Effect.gen(function* () {
+      Effect.sync(function () {
         const algo = expected.algorithm;
         if (!algo) return stream;
-        yield* Effect.logDebug(`Validating checksum with algorithm: ${algo}`);
 
         const algoUpper = algo.toUpperCase();
         let expectedValue: string | undefined;
@@ -128,16 +127,10 @@ export class Checksum extends Effect.Service<Checksum>()("Checksum", {
             expectedValue = expected.crc64nvme;
             break;
           default:
-            yield* Effect.logDebug(
-              `Unsupported checksum algorithm: ${algo}, returning original stream`,
-            );
             return stream;
         }
 
         if (!expectedValue) {
-          yield* Effect.logDebug(
-            `Expected checksum value missing for algorithm ${algo}, returning original stream`,
-          );
           return stream;
         }
 

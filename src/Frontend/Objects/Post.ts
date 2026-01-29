@@ -36,12 +36,6 @@ export const postObject = Effect.gen(function* () {
   const { bucket } = yield* RequestContext;
   const s3Xml = yield* S3Xml;
 
-  yield* Effect.logDebug(
-    `POST bucket=${bucket} delete=${s3Params.delete !== undefined} uploads=${
-      s3Params.uploads !== undefined
-    } uploadId=${!!s3Params.uploadId}`,
-  );
-
   if (s3Params.delete !== undefined) {
     // Multi-Object Delete
     const bodyText = yield* request.text;
@@ -76,23 +70,11 @@ export const postObject = Effect.gen(function* () {
     typeof contentTypeStr === "string" &&
     contentTypeStr.toLowerCase().startsWith("multipart/form-data")
   ) {
-    yield* Effect.logDebug("PostObject: Content-Type is multipart/form-data");
     const bodyText = yield* request.text;
-    yield* Effect.logDebug(
-      `PostObject: body length=${bodyText.length} boundary in type=${
-        contentTypeStr.includes("boundary")
-      }`,
-    );
     const parsed = yield* parseMultipartFormData(bodyText, contentTypeStr).pipe(
       Effect.catchAll((e) => Effect.fail(e)),
     );
     const { fields, filePart } = parsed;
-    const fieldNames = Object.keys(fields).join(",");
-    yield* Effect.logDebug(
-      `PostObject: parsed fields=[${fieldNames}] filePart=${
-        filePart ? "yes" : "no"
-      }`,
-    );
     // S3 PostObject allows case-insensitive condition field names (e.g. pOLICy)
     const field = (name: string) => {
       const lower = name.toLowerCase();
@@ -103,9 +85,6 @@ export const postObject = Effect.gen(function* () {
     const signatureVal = field("signature") ?? fields["x-amz-signature"];
     const hasSignature = !!signatureVal;
     if (policyB64 && hasSignature) {
-      yield* Effect.logDebug(
-        "PostObject: policy and signature present, validating",
-      );
       const keyFromForm = field("key") ?? pathKey;
       if (!keyFromForm || keyFromForm.trim() === "") {
         return yield* Effect.fail(
@@ -222,7 +201,6 @@ export const postObject = Effect.gen(function* () {
       if (successActionStatus === "200") {
         return HttpServerResponse.empty({ status: 200 });
       }
-      yield* Effect.logDebug("PostObject: success, returning 204");
       return HttpServerResponse.empty({ status: 204 });
     }
     if (policyB64 && !hasSignature) {
@@ -230,9 +208,6 @@ export const postObject = Effect.gen(function* () {
         new InvalidRequest({ message: "Missing signature in form" }),
       );
     }
-    yield* Effect.logDebug(
-      `PostObject: no policy or signature in form (policy=${!!policyB64} signature=${hasSignature}), falling through`,
-    );
   }
 
   return yield* Effect.fail(

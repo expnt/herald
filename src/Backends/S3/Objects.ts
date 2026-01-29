@@ -456,11 +456,11 @@ export const makeObjectOps = (
             body.on("error", (err: unknown) => {
               // Log at debug level for debugging purposes, but don't throw
               // as we handle failures through the send() promise
-              Effect.logDebug(
-                `Stream error in putObject (handled by send() promise): ${
-                  String(err)
-                }`,
-              ).pipe(
+              Effect.logDebug("Stream error", {
+                operation: "putObject",
+                context: "handled by send() promise",
+                error: String(err),
+              }).pipe(
                 Effect.runPromise,
               ).catch(() => {
                 // Ignore logging errors

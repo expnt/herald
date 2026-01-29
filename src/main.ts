@@ -5,8 +5,10 @@ import { Layer } from "effect";
 import { HttpServerHeraldLive } from "./Http.ts";
 // otel tracing layer
 import { TracingLive } from "./Tracing.ts";
+import { LoggingLive } from "./Logging/Layer.ts";
 
 HttpServerHeraldLive.pipe(
+  Layer.provide(LoggingLive),
   Layer.provide(TracingLive),
   Layer.provide(FetchHttpClient.layer),
   Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, {

@@ -26,11 +26,6 @@ export const getObjectAttributes = () =>
       new Set([...attributesFromQuery, ...attributesFromHeader]),
     );
 
-    yield* Effect.logDebug(
-      `getObjectAttributes key=[${key}] attributes=[${
-        allAttributes.join(",")
-      }]`,
-    );
     const s3Xml = yield* S3Xml;
 
     if (allAttributes.length === 0) {
