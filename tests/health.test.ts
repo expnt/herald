@@ -7,10 +7,12 @@ import {
 } from "@effect/platform";
 import { HeraldHttpApi, HttpHealthLive, HttpS3Live } from "../src/Http.ts";
 import { HeraldConfig } from "../src/Config/Layer.ts";
-import { S3ClientLive } from "../src/Backends/S3/Client.ts";
-import { SwiftClientLive } from "../src/Backends/Swift/Client.ts";
+import { S3ClientFactory } from "../src/Backends/S3/Client.ts";
+import { SwiftClient } from "../src/Backends/Swift/Client.ts";
 import { S3XmlLive } from "../src/Services/S3Xml.ts";
-import { BackendResolverLive } from "../src/Services/BackendResolver.ts";
+import { Checksum } from "../src/Services/Checksum.ts";
+import { S3HeaderService } from "../src/Services/S3HeaderService.ts";
+import { BackendResolver } from "../src/Services/BackendResolver.ts";
 import { EffectAssert, testEffect } from "./utils.ts";
 
 testEffect("health/getStatus", () =>
@@ -18,15 +20,19 @@ testEffect("health/getStatus", () =>
     const HeraldConfigLive = Layer.succeed(HeraldConfig, {
       raw: { backends: {} },
       lookupBucket: () => Option.none(),
+      resolveAuth: () => Option.none(),
+      resolveAuthForBackendId: () => Option.none(),
     });
 
     const ApiWithRequirements = HttpApiBuilder.api(HeraldHttpApi).pipe(
       Layer.provide(HttpHealthLive),
       Layer.provide(HttpS3Live),
-      Layer.provide(BackendResolverLive),
-      Layer.provide(S3ClientLive),
-      Layer.provide(SwiftClientLive),
+      Layer.provide(BackendResolver.Default),
+      Layer.provide(S3ClientFactory.Default),
+      Layer.provide(SwiftClient.Default),
       Layer.provide(S3XmlLive),
+      Layer.provide(Checksum.Default),
+      Layer.provide(S3HeaderService.Default),
       Layer.provide(HeraldConfigLive),
       Layer.provide(FetchHttpClient.layer),
       Layer.provideMerge(HttpServer.layerContext),

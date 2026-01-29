@@ -1,266 +1,110 @@
 #!/usr/bin/env -S deno run --allow-all
 /**
- * Herald S3 Compatibility Test Runner
+ * Run s3-tests directly against MinIO (bypassing Herald proxy)
  *
- * This script runs the Ceph S3 compatibility test suite (s3-tests) against
- * a local Herald proxy instance. It handles:
- *  - Starting the Herald proxy with a specified backend (minio or swift)
- *  - Configuring s3-tests to point to the proxy
+ * This script runs the Ceph S3 compatibility test suite (s3-tests) directly
+ * against a local MinIO instance. It handles:
+ *  - Configuring s3-tests to point directly to MinIO
  *  - Running pytest with real-time output streaming
  *  - Parsing JUnit XML for a final summary
  *
  * Usage:
- *   ./x/s3-tests.ts [pytest-args] [--backend <minio|swift>] [--no-abort]
+ *   ./x/s3-tests-direct.ts [pytest-args] [--no-abort]
  *
  * Environment Variables:
  *   S3TEST_TAGS: Custom pytest marks (default: not buckets and ...)
  *   S3TEST_PYTEST_ARGS: Additional pytest arguments
  *   S3TEST_NO_ABORT: Set to "true" to disable abort-on-error
- *   HERALD_LOG_LEVEL: Set to "DEBUG" for verbose proxy logging
- *
- * Files:
- *   s3-tests/s3tests.conf: Generated s3-tests configuration
- *   s3-tests/herald-proxy.log: Herald proxy logs (minio backend)
- *   s3-tests/herald-proxy-swift.log: Herald proxy logs (swift backend)
- *   s3-tests/s3-tests.log: Full pytest output
+ *   MINIO_ENDPOINT: MinIO endpoint (default: http://localhost:9000)
+ *   MINIO_ACCESS_KEY: MinIO access key (default: minioadmin)
+ *   MINIO_SECRET_KEY: MinIO secret key (default: minioadmin)
  */
 
-import { Config, Effect, Logger, LogLevel, Option } from "effect";
+import { Effect } from "effect";
 import * as path from "@std/path";
 import { $ } from "@david/dax";
 import * as colors from "@std/fmt/colors";
-import { makeTestHarness } from "../tests/utils.ts";
-import { GlobalConfig } from "../src/Domain/Config.ts";
 
 const DEFAULT_TAGS =
   "not appendobject and not bucket_policy and not copy and not cors and not encryption and not fails_strict_rfc2616 and not iam_tenant and not iam_user and not iam_account and not lifecycle and not object_lock and not policy and not policy_status and not s3select and not s3website and not sse_s3 and not tagging and not test_of_sts and not user_policy and not versioning and not webidentity_test";
 
-function getMinioConfig(): GlobalConfig {
-  return {
-    backends: {
-      minio: {
-        protocol: "s3",
-        endpoint: "http://localhost:9000",
-        region: "us-east-1",
-        credentials: {
-          accessKeyId: "minioadmin",
-          secretAccessKey: "minioadmin",
-        },
-        buckets: "*",
-      },
-    },
-  };
-}
-
-const getSwiftConfig = () =>
-  Effect.gen(function* () {
-    const authUrl = yield* Config.string("HERALD_SWIFTTEST_AUTH_URL").pipe(
-      Config.orElse(() => Config.string("OS_AUTH_URL")),
-      Config.withDefault("http://localhost:8080/auth/v1.0"),
-      Config.option,
-    );
-
-    const username = yield* Config.string("HERALD_SWIFTTEST_OS_USERNAME").pipe(
-      Config.orElse(() => Config.string("TF_VAR_OS_USERNAME")),
-      Config.orElse(() => Config.string("OS_USERNAME")),
-      Config.withDefault("test:tester"),
-      Config.option,
-    );
-    const password = yield* Config.string("HERALD_SWIFTTEST_OS_PASSWORD").pipe(
-      Config.orElse(() => Config.string("TF_VAR_OS_PASSWORD")),
-      Config.orElse(() => Config.string("OS_PASSWORD")),
-      Config.withDefault("testing"),
-      Config.option,
-    );
-    const projectName = yield* Config.string("HERALD_SWIFTTEST_OS_PROJECT_NAME")
-      .pipe(
-        Config.orElse(() => Config.string("TF_VAR_OS_PROJECT_NAME")),
-        Config.orElse(() => Config.string("OS_PROJECT_NAME")),
-        Config.option,
-      );
-    const region = yield* Config.string("HERALD_SWIFTTEST_OS_REGION_NAME").pipe(
-      Config.orElse(() => Config.string("TF_VAR_OS_REGION_NAME")),
-      Config.orElse(() => Config.string("OS_REGION_NAME")),
-      Config.withDefault("dc3-a"),
-      Config.option,
-    );
-
-    if (
-      Option.isNone(username) || Option.isNone(password) ||
-      Option.isNone(authUrl)
-    ) {
-      return Option.none();
-    }
-
-    const config: GlobalConfig = {
-      backends: {
-        swift: {
-          protocol: "swift",
-          auth_url: authUrl.value,
-          region: Option.getOrUndefined(region),
-          credentials: {
-            username: username.value,
-            password: password.value,
-            project_name: Option.getOrUndefined(projectName),
-            user_domain_name: "Default",
-            project_domain_name: "Default",
-          },
-          buckets: "*",
-        },
-      },
-    };
-    return Option.some(config);
-  });
-
 const program = Effect.gen(function* () {
-  console.log("Program started");
   const __dirname = path.dirname(path.fromFileUrl(import.meta.url));
   const s3TestsDir = path.resolve(__dirname, "../s3-tests");
 
-  // Parse filtering arguments and flags
+  // Parse arguments
   const rawArgs = [...Deno.args];
   const noAbort = rawArgs.includes("--no-abort") ||
     Deno.env.get("S3TEST_NO_ABORT") === "true";
 
-  let backend = "minio";
-  const backendIdx = rawArgs.indexOf("--backend");
-  if (backendIdx !== -1) {
-    backend = rawArgs[backendIdx + 1];
-    rawArgs.splice(backendIdx, 2);
-  }
-
   const pytestArgsFromCli = rawArgs.filter((arg) => arg !== "--no-abort");
 
-  const proxyLogName = backend === "swift"
-    ? "herald-proxy-swift.log"
-    : "herald-proxy.log";
-  const proxyLogPath = path.join(s3TestsDir, proxyLogName);
+  // MinIO configuration
+  const minioEndpoint = Deno.env.get("MINIO_ENDPOINT") ||
+    "http://localhost:9000";
+  const minioAccessKey = Deno.env.get("MINIO_ACCESS_KEY") || "minioadmin";
+  const minioSecretKey = Deno.env.get("MINIO_SECRET_KEY") || "minioadmin";
 
-  // Initialize config based on backend
-  let activeConfig: GlobalConfig;
-  let s3AccessKey = "minioadmin";
-  let s3SecretKey = "minioadmin";
-
-  if (backend === "swift") {
-    const swiftConfig = yield* getSwiftConfig();
-    if (Option.isNone(swiftConfig)) {
-      return yield* Effect.fail(
-        new Error("Swift credentials missing. Run with infisical."),
-      );
-    }
-    activeConfig = swiftConfig.value;
-    // For Swift backend, Herald doesn't check S3 credentials,
-    // but s3-tests needs them to sign requests.
-    // We use minioadmin/minioadmin because that's what the test harness mock HeraldConfig uses.
-    s3AccessKey = "minioadmin";
-    s3SecretKey = "minioadmin";
-  } else {
-    activeConfig = getMinioConfig();
-  }
-
-  console.log("Creating file logger for proxy...");
-  // Create a file logger for the proxy
-  const proxyLogFile = yield* Effect.tryPromise(() =>
-    Deno.open(proxyLogPath, { write: true, create: true, truncate: true })
-  );
-
-  yield* Effect.addFinalizer(() =>
-    Effect.tryPromise({
-      try: () => Promise.resolve(proxyLogFile.close()),
-      catch: (e) => new Error(`Failed to close proxy log file: ${e}`),
-    }).pipe(Effect.orDie)
-  );
-
-  const logLevel = yield* Config.string("HERALD_LOG_LEVEL").pipe(
-    Config.withDefault("INFO"),
-  );
-  const minLogLevel = LogLevel.Debug;
-
-  // Create a custom logging layer that writes to file synchronously
-  const FileLoggingLive = Logger.replace(
-    Logger.defaultLogger,
-    Logger.make(({ message, logLevel: currentLogLevel }) => {
-      const timestamp = new Date().toISOString();
-      const level = currentLogLevel.label;
-      const msg = typeof message === "string"
-        ? message
-        : JSON.stringify(message);
-      const logLine = `${timestamp} level=${level} ${msg}\n`;
-      try {
-        Deno.writeTextFileSync(proxyLogPath, logLine, { append: true });
-      } catch (e) {
-        console.error(`Failed to write to proxy log: ${e}`);
-      }
-    }),
-  );
-
-  // Provide the file logger to the test harness (the proxy)
-  const h = yield* makeTestHarness(activeConfig, FileLoggingLive);
-
-  const port = new URL(h.proxyUrl).port;
-
-  // Parse remaining filtering arguments
-  const tags = Deno.env.get("S3TEST_TAGS") ?? DEFAULT_TAGS;
-  const pytestArgsEnv = Deno.env.get("S3TEST_PYTEST_ARGS") ?? "";
-  const pytestArgsFromEnv = pytestArgsEnv ? pytestArgsEnv.split(/\s+/) : [];
-
-  const pytestArgs = [...pytestArgsFromEnv, ...pytestArgsFromCli];
+  // Parse endpoint to get host and port
+  const endpointUrl = new URL(minioEndpoint);
+  const host = endpointUrl.hostname;
+  const port = endpointUrl.port ||
+    (endpointUrl.protocol === "https:" ? "443" : "80");
+  const isSecure = endpointUrl.protocol === "https:";
 
   return yield* (Effect.gen(function* () {
-    // We use console.log for harness output to avoid them going to the proxy log file
     console.log(
-      `Starting Herald (${colors.cyan(backend)} backend) on port ${
-        colors.cyan(port)
+      `Running s3-tests directly against MinIO at ${
+        colors.cyan(minioEndpoint)
       }`,
     );
-    console.log(`Proxy logs: ${colors.gray(proxyLogPath)}`);
 
     const confContent = `[DEFAULT]
-host = 127.0.0.1
+host = ${host}
 port = ${port}
-is_secure = no
+is_secure = ${isSecure ? "yes" : "no"}
 
 [fixtures]
-bucket prefix = herald-${backend}-{random}-
+bucket prefix = minio-direct-{random}-
 
 [s3 main]
 user_id = main
 display_name = main
 email = main@example.com
-access_key = main
-secret_key = main
+access_key = ${minioAccessKey}
+secret_key = ${minioSecretKey}
 
 [s3 alt]
 user_id = alt
 display_name = alt
 email = alt@example.com
-access_key = alt
-secret_key = alt
+access_key = ${minioAccessKey}
+secret_key = ${minioSecretKey}
 
 [s3 tenant]
 user_id = tenant
 display_name = tenant
 email = tenant@example.com
-access_key = tenant
-secret_key = tenant
+access_key = ${minioAccessKey}
+secret_key = ${minioSecretKey}
 tenant = testx
 
 [iam]
 email = iam@example.com
 user_id = iam
-access_key = iam
-secret_key = iam
+access_key = ${minioAccessKey}
+secret_key = ${minioSecretKey}
 display_name = iam
 
 [iam root]
-access_key = iam_root
-secret_key = iam_root
+access_key = ${minioAccessKey}
+secret_key = ${minioSecretKey}
 user_id = iam_root
 email = iam_root@example.com
 
 [iam alt root]
-access_key = iam_alt_root
-secret_key = iam_alt_root
+access_key = ${minioAccessKey}
+secret_key = ${minioSecretKey}
 user_id = iam_alt_root
 email = iam_alt_root@example.com
 `;
@@ -270,22 +114,10 @@ email = iam_alt_root@example.com
     );
     yield* Effect.promise(() => Deno.writeTextFile(confPath, confContent));
 
-    const logName = backend === "swift" ? "s3-tests-swift.log" : "s3-tests.log";
-    const logPath = path.join(s3TestsDir, logName);
+    const logPath = path.join(s3TestsDir, "s3-tests-direct.log");
 
     console.log(`s3-tests directory: ${colors.gray(s3TestsDir)}`);
     console.log(`Log file: ${colors.gray(logPath)}`);
-
-    // Ensure we have a virtual environment
-    const venvPath = path.join(s3TestsDir, ".venv");
-    const venvExists = yield* Effect.tryPromise(() =>
-      Deno.stat(venvPath).then(() => true).catch(() => false)
-    );
-
-    if (!venvExists) {
-      console.log(colors.yellow("Creating Python virtual environment..."));
-      yield* Effect.tryPromise(() => $`uv venv --python 3.11`.cwd(s3TestsDir));
-    }
 
     // Register finalizer to clean up conf file
     yield* Effect.addFinalizer(() =>
@@ -297,6 +129,17 @@ email = iam_alt_root@example.com
         catch: (e) => new Error(`Effect.tryPromise failed: ${e}`),
       }).pipe(Effect.orDie)
     );
+
+    // Ensure we have a virtual environment
+    const venvPath = path.join(s3TestsDir, ".venv");
+    const venvExists = yield* Effect.tryPromise(() =>
+      Deno.stat(venvPath).then(() => true).catch(() => false)
+    );
+
+    if (!venvExists) {
+      console.log(colors.yellow("Creating Python virtual environment..."));
+      yield* Effect.tryPromise(() => $`uv venv --python 3.11`.cwd(s3TestsDir));
+    }
 
     // Ensure dependencies are installed
     const pytestCheck = yield* Effect.tryPromise({
@@ -318,9 +161,12 @@ email = iam_alt_root@example.com
       });
     }
 
-    console.log(
-      `Running s3-tests against Herald on port ${colors.cyan(port)}...`,
-    );
+    const tags = Deno.env.get("S3TEST_TAGS") ?? DEFAULT_TAGS;
+    const pytestArgsEnv = Deno.env.get("S3TEST_PYTEST_ARGS") ?? "";
+    const pytestArgsFromEnv = pytestArgsEnv ? pytestArgsEnv.split(/\s+/) : [];
+    const pytestArgs = [...pytestArgsFromEnv, ...pytestArgsFromCli];
+
+    console.log(`Running s3-tests against MinIO...`);
     if (tags) console.log(`${colors.gray("Tags:")} ${tags}`);
     if (pytestArgs.length > 0) {
       console.log(
@@ -371,7 +217,6 @@ email = iam_alt_root@example.com
 
     const result = yield* Effect.tryPromise({
       try: async () => {
-        let collectedInfo = "";
         let failedCount = 0;
         let errorCount = 0;
         let skippedCount = 0;
@@ -594,17 +439,12 @@ email = iam_alt_root@example.com
         return {
           code: exitCode,
           counts: finalCounts,
-          collectedInfo,
           shouldAbort,
           abortReason,
         };
       },
       catch: (e) => new Error(`Failed to run pytest: ${e}`),
     });
-
-    if (result.collectedInfo) {
-      console.log(colors.gray(result.collectedInfo));
-    }
 
     const { tests, failures, errors, skipped, time, failedNames, errorNames } =
       result.counts;
@@ -673,9 +513,7 @@ email = iam_alt_root@example.com
     }
 
     console.log(colors.green(`\n✓ s3-tests completed successfully.`));
-  }).pipe(
-    Effect.provide(Logger.minimumLogLevel(minLogLevel)),
-  ));
+  }));
 });
 
 if (import.meta.main) {

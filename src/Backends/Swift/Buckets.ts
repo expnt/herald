@@ -1,180 +1,184 @@
+import { HttpClientRequest } from "@effect/platform";
 import { Effect } from "effect";
-import { type HttpClient, HttpClientRequest } from "@effect/platform";
-import {
-  type BackendService,
-  BucketAlreadyOwnedByYou,
-  type BucketInfo,
-  type ListObjectsResult,
-  type OwnerInfo,
+import type {
+  BackendError,
+  BucketInfo,
+  ListBucketsResult,
+  ListObjectsResult,
 } from "../../Services/Backend.ts";
-import { INTERNAL_PREFIX, mapError, type SwiftTarget } from "./Utils.ts";
+import { BucketAlreadyOwnedByYou } from "../../Services/Backend.ts";
+import { MP_META_PREFIX, MP_SEGMENTS_PREFIX } from "./Utils.ts";
+import { mapError, type SwiftTarget } from "./Utils.ts";
 
 export interface SwiftContainer {
   readonly name: string;
+  readonly count: number;
+  readonly bytes: number;
   readonly last_modified?: string;
 }
 
 export const makeBucketOps = (
-  target: SwiftTarget,
-  client: HttpClient.HttpClient,
+  { client, container, storageUrl, token, url: _url }: SwiftTarget,
   objectOps: {
-    listObjects: BackendService["listObjects"];
-    deleteObject: BackendService["deleteObject"];
+    listObjects: (args: {
+      prefix?: string;
+      delimiter?: string;
+      marker?: string;
+      maxKeys?: number;
+    }) => Effect.Effect<ListObjectsResult, BackendError>;
+    deleteObject: (key: string) => Effect.Effect<void, BackendError>;
   },
-) => ({
-  listBuckets: () =>
-    Effect.gen(function* () {
-      const { storageUrl, token } = target;
-      const response = yield* client.execute(
-        HttpClientRequest.get(`${storageUrl}?format=json`).pipe(
-          HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-        ),
-      ).pipe(
-        Effect.mapError((e) => mapError(500, String(e), "")),
-      );
-
-      if (response.status < 200 || response.status >= 300) {
-        const message = yield* response.text.pipe(
-          Effect.orElseSucceed(() => "Error"),
-        );
-        return yield* Effect.fail(
-          mapError(response.status, message || "Error", "", "GET"),
-        );
-      }
-
-      const containers = (yield* response.json.pipe(
-        Effect.mapError((e) =>
-          mapError(500, `Failed to parse Swift response: ${e}`, "")
-        ),
-      )) as readonly SwiftContainer[];
-
-      const bucketInfos: BucketInfo[] = containers.map((b) => ({
-        name: b.name,
-        creationDate: b.last_modified ? new Date(b.last_modified) : undefined,
-      }));
-
-      const owner: OwnerInfo = { id: "swift", displayName: "Swift User" };
-
-      return { buckets: bucketInfos, owner };
-    }),
-
-  createBucket: () =>
-    Effect.gen(function* () {
-      const { url, token, container } = target;
-      const response = yield* client.execute(
-        HttpClientRequest.put(url).pipe(
-          HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-        ),
-      ).pipe(
-        Effect.mapError((e) => mapError(500, String(e), container)),
-      );
-
-      if (response.status === 201) {
-        return;
-      }
-
-      if (response.status === 202) {
-        return yield* Effect.fail(
-          new BucketAlreadyOwnedByYou({
-            bucketName: container,
-            message: "Bucket already exists",
-          }),
-        );
-      }
-
-      if (response.status < 200 || response.status >= 300) {
-        const message = yield* response.text.pipe(
-          Effect.orElseSucceed(() => "Error"),
-        );
-        return yield* Effect.fail(
-          mapError(response.status, message || "Error", container, "PUT"),
-        );
-      }
-    }),
-
-  deleteBucket: () =>
-    Effect.gen(function* () {
-      const { url, token, container } = target;
-
-      // 1. Cleanup .herald/ and .hrld/ objects so bucket can be deleted
-      yield* Effect.all(
-        [".herald/", INTERNAL_PREFIX].map((prefix) =>
-          Effect.gen(function* () {
-            let marker: string | undefined = undefined;
-            while (true) {
-              const objects: ListObjectsResult = yield* objectOps.listObjects({
-                prefix,
-                marker,
-              });
-              if (objects.contents.length === 0) {
-                break;
-              }
-              yield* Effect.all(
-                objects.contents.map((obj) =>
-                  objectOps.deleteObject(obj.key).pipe(Effect.ignore)
-                ),
-                { concurrency: 10 },
-              );
-              if (!objects.isTruncated || !objects.nextMarker) {
-                break;
-              }
-              marker = objects.nextMarker;
-            }
-          })
-        ),
-        { concurrency: 2 },
-      );
-
-      // 2. Delete the bucket
-      const response = yield* client.execute(
-        HttpClientRequest.del(url).pipe(
-          HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-        ),
-      ).pipe(
-        Effect.mapError((e) => mapError(500, String(e), container)),
-      );
-
-      yield* Effect.logDebug(
-        `Swift deleteBucket container=[${container}] status=${response.status}`,
-      );
-
-      if (response.status === 204) {
-        return;
-      }
-
-      if (response.status < 200 || response.status >= 300) {
-        const message = yield* response.text.pipe(
-          Effect.orElseSucceed(() => "Error"),
-        );
-        return yield* Effect.fail(
-          mapError(
-            response.status,
-            message || "Error",
-            container,
-            "DELETE",
+) => {
+  return {
+    listBuckets: () =>
+      Effect.gen(function* () {
+        const response = yield* client.execute(
+          HttpClientRequest.get(`${storageUrl}?format=json`).pipe(
+            HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
           ),
+        ).pipe(
+          Effect.mapError((e) => mapError(500, String(e), container)),
         );
-      }
-    }),
 
-  headBucket: () =>
-    Effect.gen(function* () {
-      const { url, token, container } = target;
-      const response = yield* client.execute(
-        HttpClientRequest.head(url).pipe(
-          HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-        ),
-      ).pipe(
-        Effect.mapError((e) => mapError(500, String(e), container)),
-      );
+        if (response.status < 200 || response.status >= 300) {
+          const message = yield* response.text.pipe(
+            Effect.orElseSucceed(() => "Error"),
+          );
+          return yield* Effect.fail(
+            mapError(response.status, message || "Error", container, "GET"),
+          );
+        }
 
-      if (response.status < 200 || response.status >= 300) {
-        const message = yield* response.text.pipe(
-          Effect.orElseSucceed(() => "Error"),
+        const containers = (yield* response.json.pipe(
+          Effect.mapError((e) =>
+            mapError(500, `Failed to parse Swift response: ${e}`, container)
+          ),
+        )) as readonly SwiftContainer[];
+
+        const bucketInfos: BucketInfo[] = containers.map((b) => ({
+          name: b.name,
+          creationDate: b.last_modified
+            ? new Date(b.last_modified)
+            : new Date(),
+        }));
+
+        return {
+          buckets: bucketInfos,
+          owner: { id: "swift", displayName: "Swift User" },
+        } satisfies ListBucketsResult;
+      }),
+
+    createBucket: (
+      _name: string,
+      _headers: Record<string, string | string[] | undefined>,
+    ) =>
+      Effect.gen(function* () {
+        // Use container from target (which is bucket_name from MaterializedBucket)
+        // Don't URL-encode container name - Swift handles it natively (unlike object keys)
+        const requestUrl = `${storageUrl}/${container}`;
+        const response = yield* client.execute(
+          HttpClientRequest.put(requestUrl).pipe(
+            HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+          ),
+        ).pipe(
+          Effect.mapError((e) => mapError(500, String(e), container)),
         );
-        return yield* Effect.fail(
-          mapError(response.status, message || "Error", container, "HEAD"),
+
+        // Swift returns 201 (Created) for new containers, 202/204 for existing containers
+        if (response.status === 201) {
+          // Successfully created
+          return;
+        }
+
+        if (response.status === 202 || response.status === 204) {
+          return yield* Effect.fail(
+            new BucketAlreadyOwnedByYou({
+              bucket: container,
+              message:
+                "The bucket you tried to create already exists, and you already own it.",
+            }),
+          );
+        }
+
+        if (response.status < 200 || response.status >= 300) {
+          const message = yield* response.text.pipe(
+            Effect.orElseSucceed(() => "Error"),
+          );
+          return yield* Effect.fail(
+            mapError(response.status, message || "Error", container, "PUT"),
+          );
+        }
+      }),
+
+    deleteBucket: (_name: string) =>
+      Effect.gen(function* () {
+        // 1. Delete all segments and metadata first
+        for (const prefix of [MP_SEGMENTS_PREFIX, MP_META_PREFIX]) {
+          let marker: string | undefined = undefined;
+          while (true) {
+            const listResult: ListObjectsResult = yield* objectOps.listObjects({
+              prefix,
+              marker,
+            });
+            // Delete objects in parallel with concurrency limit
+            yield* Effect.all(
+              listResult.contents.map((obj) =>
+                objectOps.deleteObject(obj.key).pipe(Effect.ignore)
+              ),
+              { concurrency: 10 },
+            );
+            if (!listResult.isTruncated || !listResult.nextMarker) break;
+            marker = listResult.nextMarker;
+          }
+        }
+
+        // 2. Delete the container itself
+        const response = yield* client.execute(
+          HttpClientRequest.del(`${storageUrl}/${container}`).pipe(
+            HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+          ),
+        ).pipe(
+          Effect.mapError((e) => mapError(500, String(e), container)),
         );
-      }
-    }),
-});
+
+        if (response.status < 200 || response.status >= 300) {
+          const message = yield* response.text.pipe(
+            Effect.orElseSucceed(() => "Error"),
+          );
+          return yield* Effect.fail(
+            mapError(
+              response.status,
+              message || "Error",
+              container,
+              "DELETE",
+            ),
+          );
+        }
+      }),
+
+    headBucket: (_name: string) =>
+      Effect.gen(function* () {
+        const response = yield* client.execute(
+          HttpClientRequest.head(`${storageUrl}/${container}`).pipe(
+            HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+          ),
+        ).pipe(
+          Effect.mapError((e) => mapError(500, String(e), container)),
+        );
+
+        if (response.status < 200 || response.status >= 300) {
+          const message = yield* response.text.pipe(
+            Effect.orElseSucceed(() => "Error"),
+          );
+          return yield* Effect.fail(
+            mapError(
+              response.status,
+              message || "Error",
+              container,
+              "HEAD",
+            ),
+          );
+        }
+      }),
+  };
+};

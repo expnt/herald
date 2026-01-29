@@ -1,40 +1,31 @@
+import { HttpServerRequest, HttpServerResponse } from "@effect/platform";
 import { Effect } from "effect";
-import { HttpServerResponse } from "@effect/platform";
-import { RequestContext } from "../Utils.ts";
+import { Backend } from "../../Services/Backend.ts";
+import { S3RequestParser } from "../Utils.ts";
+import { S3HeaderService } from "../../Services/S3HeaderService.ts";
+import { uploadPart } from "../Multipart/Put.ts";
 
 /**
  * Handler for PutObject (PUT /:bucket/*)
  */
-export const putObject = () =>
-  Effect.gen(function* () {
-    const { backend, key, params, request } = yield* RequestContext;
+export const putObject = Effect.gen(function* () {
+  const backend = yield* Backend;
+  const request = yield* HttpServerRequest.HttpServerRequest;
+  const { key, s3Params } = yield* S3RequestParser;
+  const headerService = yield* S3HeaderService;
 
-    if (params.partNumber && params.uploadId) {
-      // Upload Part
-      const result = yield* backend.uploadPart(
-        key,
-        params.uploadId,
-        params.partNumber,
-        request.stream,
-        request.headers,
-      );
-      return HttpServerResponse.empty({
-        status: 200,
-        headers: { ETag: result.etag },
-      });
-    }
+  if (s3Params.partNumber && s3Params.uploadId) {
+    return yield* uploadPart;
+  }
 
-    const result = yield* backend.putObject(
-      key,
-      request.stream,
-      request.headers,
-    );
-    const headers: Record<string, string> = {};
-    if (result.etag) headers["ETag"] = result.etag;
-    if (result.versionId) headers["x-amz-version-id"] = result.versionId;
+  const result = yield* backend.putObject(
+    key,
+    request.stream,
+    request.headers,
+  );
 
-    return HttpServerResponse.empty({
-      status: 200,
-      headers,
-    });
+  return HttpServerResponse.empty({
+    status: 200,
+    headers: headerService.toResponseHeaders(result),
   });
+});

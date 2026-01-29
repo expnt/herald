@@ -1,42 +1,32 @@
-import { Cache, Context, Effect, Layer, type Schema } from "effect";
 import { HttpClient, HttpClientRequest } from "@effect/platform";
-import type { MaterializedBucket, SwiftConfig } from "../../Domain/Config.ts";
+import { Cache, Effect, Schema } from "effect";
 import { HeraldConfig } from "../../Config/Layer.ts";
+import type { MaterializedBucket, SwiftConfig } from "../../Domain/Config.ts";
 
 export interface SwiftAuthMeta {
   readonly token: string;
   readonly storageUrl: string;
 }
 
-export class SwiftClient extends Context.Tag("SwiftClient")<
-  SwiftClient,
-  {
-    readonly getAuthMeta: (
-      bucket: MaterializedBucket | { backend_id: string },
-    ) => Effect.Effect<SwiftAuthMeta, Error, never>;
-  }
->() {}
+const SwiftEndpoint = Schema.Struct({
+  region: Schema.String,
+  interface: Schema.Literal("public", "internal", "admin"),
+  url: Schema.String,
+});
 
-interface SwiftEndpoint {
-  readonly region: string;
-  readonly interface: "public" | "internal" | "admin";
-  readonly url: string;
-}
+const SwiftService = Schema.Struct({
+  type: Schema.String,
+  endpoints: Schema.Array(SwiftEndpoint),
+});
 
-interface SwiftService {
-  readonly type: string;
-  readonly endpoints: readonly SwiftEndpoint[];
-}
+const SwiftTokenResponse = Schema.Struct({
+  token: Schema.Struct({
+    catalog: Schema.Array(SwiftService),
+  }),
+});
 
-interface SwiftTokenResponse {
-  readonly token: {
-    readonly catalog: readonly SwiftService[];
-  };
-}
-
-export const SwiftClientLive = Layer.effect(
-  SwiftClient,
-  Effect.gen(function* () {
+export class SwiftClient extends Effect.Service<SwiftClient>()("SwiftClient", {
+  effect: Effect.gen(function* () {
     const appConfig = yield* HeraldConfig;
     const client = yield* HttpClient.HttpClient;
 
@@ -160,9 +150,14 @@ export const SwiftClientLive = Layer.effect(
           );
         }
 
-        const body = (yield* response.json.pipe(
+        const json = yield* response.json.pipe(
           Effect.mapError((e) => new Error(String(e))),
-        )) as SwiftTokenResponse;
+        );
+        const body = yield* Schema.decodeUnknown(SwiftTokenResponse)(json).pipe(
+          Effect.mapError((e) =>
+            new Error(`Failed to parse Swift token response: ${e}`)
+          ),
+        );
 
         const catalog = body.token.catalog;
         const storageService = catalog.find((s) => s.type === "object-store");
@@ -198,29 +193,19 @@ export const SwiftClientLive = Layer.effect(
 
     const cache = yield* Cache.make({
       capacity: 100,
-      timeToLive: "50 minutes", // Swift tokens usually last 1h
       lookup: (config: Schema.Schema.Type<typeof SwiftConfig>) =>
         fetchAuthMeta(config),
+      timeToLive: "50 minutes", // Swift tokens usually last 1h
     });
 
-    return SwiftClient.of({
+    return {
       getAuthMeta: (
         bucket: MaterializedBucket | { backend_id: string },
-      ) => {
-        let backend_id: string;
-        let config: Schema.Schema.Type<typeof SwiftConfig>;
-
-        if ("protocol" in bucket) {
-          backend_id = bucket.backend_id;
-          config = appConfig.raw.backends[backend_id] as Schema.Schema.Type<
-            typeof SwiftConfig
-          >;
-        } else {
-          backend_id = bucket.backend_id;
-          config = appConfig.raw.backends[backend_id] as Schema.Schema.Type<
-            typeof SwiftConfig
-          >;
-        }
+      ): Effect.Effect<SwiftAuthMeta, Error, never> => {
+        const backend_id = bucket.backend_id;
+        const config = appConfig.raw.backends[backend_id] as Schema.Schema.Type<
+          typeof SwiftConfig
+        >;
 
         if (!config || config.protocol !== "swift") {
           return Effect.fail(
@@ -230,6 +215,6 @@ export const SwiftClientLive = Layer.effect(
 
         return cache.get(config);
       },
-    });
+    };
   }),
-);
+}) {}

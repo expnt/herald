@@ -1,44 +1,91 @@
+import { HttpServerRequest, HttpServerResponse } from "@effect/platform";
 import { Effect } from "effect";
-import { HttpServerResponse } from "@effect/platform";
-import { RequestContext } from "../Utils.ts";
+import { Backend, InvalidRequest } from "../../Services/Backend.ts";
 import { S3Xml } from "../../Services/S3Xml.ts";
+import { S3RequestParser } from "../Utils.ts";
+import { listParts } from "../Multipart/Get.ts";
+
+/**
+ * Handler for GetObjectAttributes (GET /:bucket/*?attributes)
+ */
+export const getObjectAttributes = () =>
+  Effect.gen(function* () {
+    const backend = yield* Backend;
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const { key, headers, s3Params } = yield* S3RequestParser;
+
+    // Attributes can come from query parameter ?attributes=... or header x-amz-object-attributes
+    const attributesFromQuery = s3Params.attributes
+      ? s3Params.attributes.split(",").map((a) => a.trim()).filter((a) =>
+        a !== ""
+      )
+      : [];
+    const attributesFromHeader = headers.objectAttributes;
+    // Deduplicate attributes
+    const allAttributes = Array.from(
+      new Set([...attributesFromQuery, ...attributesFromHeader]),
+    );
+
+    yield* Effect.logDebug(
+      `getObjectAttributes key=[${key}] attributes=[${
+        allAttributes.join(",")
+      }]`,
+    );
+    const s3Xml = yield* S3Xml;
+
+    if (allAttributes.length === 0) {
+      return s3Xml.formatError(
+        new InvalidRequest({
+          message: "At least one attribute must be specified.",
+        }),
+      );
+    }
+
+    const result = yield* backend.getObjectAttributes(
+      key,
+      allAttributes,
+      request.headers,
+    );
+    return s3Xml.formatObjectAttributes(result);
+  });
 
 /**
  * Handler for GetObject (GET /:bucket/*)
  * Also handles ListParts (?uploadId=...).
  */
-export const getObject = () =>
-  Effect.gen(function* () {
-    const { backend, key, params, request } = yield* RequestContext;
-    const s3Xml = yield* S3Xml;
+export const getObject = Effect.gen(function* () {
+  const backend = yield* Backend;
+  const { key, s3Params, headers } = yield* S3RequestParser;
+  const request = yield* HttpServerRequest.HttpServerRequest;
 
-    if (params.uploadId) {
-      // List Parts
-      const result = yield* backend.listParts(key, params.uploadId);
-      return s3Xml.formatListParts(result);
-    }
+  // Route to getObjectAttributes if attributes are specified in query or header
+  if (
+    s3Params.attributes !== undefined ||
+    (headers.objectAttributes && headers.objectAttributes.length > 0)
+  ) {
+    return yield* getObjectAttributes();
+  }
 
-    const combinedHeaders = { ...request.headers };
-    if (params.partNumber) {
-      combinedHeaders["x-amz-part-number"] = String(params.partNumber);
-    }
+  if (s3Params.uploadId) {
+    return yield* listParts;
+  }
 
-    const result = yield* backend.getObject(key, combinedHeaders);
-    const status = (request.headers["range"] || request.headers["Range"])
-      ? 206
-      : 200;
+  const result = yield* backend.getObject(key, request.headers);
+  const status = (request.headers["range"] || request.headers["Range"])
+    ? 206
+    : 200;
 
-    if (result.nativeStream) {
-      return HttpServerResponse.raw(result.nativeStream, {
-        status,
-        headers: result.headers,
-        contentType: result.contentType,
-      });
-    }
-
-    return HttpServerResponse.stream(result.stream, {
+  if (result.nativeStream) {
+    return HttpServerResponse.raw(result.nativeStream, {
       status,
       headers: result.headers,
       contentType: result.contentType,
     });
+  }
+
+  return HttpServerResponse.stream(result.stream, {
+    status,
+    headers: result.headers,
+    contentType: result.contentType,
   });
+});

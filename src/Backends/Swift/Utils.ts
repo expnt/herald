@@ -1,6 +1,5 @@
-import { Effect } from "effect";
 import {
-  type BackendError,
+  AccessDenied,
   BucketAlreadyExists,
   BucketAlreadyOwnedByYou,
   BucketNotEmpty,
@@ -8,80 +7,59 @@ import {
   NoSuchBucket,
   NoSuchKey,
 } from "../../Services/Backend.ts";
-import type { MaterializedBucket } from "../../Domain/Config.ts";
-import { SwiftClient } from "./Client.ts";
+import type { HttpClient } from "@effect/platform";
+import type { S3HeaderService } from "../../Services/S3HeaderService.ts";
+import type { Checksum } from "../../Services/Checksum.ts";
 
 export interface SwiftTarget {
+  readonly client: HttpClient.HttpClient;
+  readonly container: string;
   readonly storageUrl: string;
   readonly token: string;
-  readonly container: string;
   readonly url: string;
+  readonly headerService: S3HeaderService;
+  readonly checksumService: Checksum;
 }
 
-export const INTERNAL_PREFIX = ".hrld/";
-export const MP_META_PREFIX = `${INTERNAL_PREFIX}mmp/`;
-export const MP_SEGMENTS_PREFIX = `${INTERNAL_PREFIX}msg/`;
+export const MP_META_PREFIX = ".mp_meta/";
+export const MP_SEGMENTS_PREFIX = ".mp_segments/";
 
 export const mapError = (
   status: number,
   message: string,
-  bucketName: string,
+  bucket: string,
   method?: string,
   key?: string,
-): BackendError => {
-  switch (status) {
-    case 404:
-      if (key) {
-        return new NoSuchKey({ bucketName, key, message });
-      }
-      return new NoSuchBucket({ bucketName, message });
-    case 409:
-      if (method === "DELETE") {
-        return new BucketNotEmpty({ bucketName, message });
-      }
-      if (method === "PUT" && !key) {
-        return new BucketAlreadyExists({ bucketName, message });
-      }
-      return new InternalError({
-        message: `Swift conflict error (${status}): ${message}`,
-      });
-    case 202:
-      if (method === "PUT") {
-        return new BucketAlreadyOwnedByYou({ bucketName, message });
-      }
-      return new InternalError({
-        message: `Swift error (${status}): ${message}`,
-      });
-    default:
-      return new InternalError({
-        message: `Swift error (${status}): ${message}`,
-      });
+) => {
+  if (status === 404) {
+    if (key) {
+      return new NoSuchKey({ bucket, key, message });
+    }
+    return new NoSuchBucket({ bucket, message });
   }
-};
-
-/**
- * Resolves the target container and acquires the Swift token dynamically.
- */
-export const getTarget = (
-  bucket: MaterializedBucket | { backend_id: string },
-): Effect.Effect<SwiftTarget, BackendError, SwiftClient> =>
-  Effect.gen(function* () {
-    const swiftClient = yield* SwiftClient;
-    const auth = yield* swiftClient.getAuthMeta(bucket).pipe(
-      Effect.mapError((e) => new InternalError({ message: e.message })),
-    );
-    const container = "bucket_name" in bucket ? bucket.bucket_name : "";
-    const encodedContainer = container ? encodeURIComponent(container) : "";
-    const res = {
-      storageUrl: auth.storageUrl,
-      token: auth.token,
-      container,
-      url: encodedContainer
-        ? `${auth.storageUrl}/${encodedContainer}`
-        : auth.storageUrl,
-    };
-    yield* Effect.logDebug(
-      `SwiftTarget resolved: url=[${res.url}] container=[${res.container}]`,
-    );
-    return res;
+  if (status === 409) {
+    if (message.includes("not empty")) {
+      return new BucketNotEmpty({ bucket, message });
+    }
+    if (message.includes("already exists")) {
+      return new BucketAlreadyExists({ bucket, message });
+    }
+    // For bucket operations (no key), default to BucketAlreadyOwnedByYou
+    // For object operations (has key), 409 likely indicates a conflict (e.g., concurrent writes)
+    // Use InternalError to avoid misleading bucket ownership error
+    if (key) {
+      return new InternalError({
+        message: `Swift Conflict [409] on ${
+          method ?? "UNKNOWN"
+        } for object ${key}: ${message}`,
+      });
+    }
+    return new BucketAlreadyOwnedByYou({ bucket, message });
+  }
+  if (status === 403) {
+    return new AccessDenied({ message });
+  }
+  return new InternalError({
+    message: `Swift Error [${status}] on ${method ?? "UNKNOWN"}: ${message}`,
   });
+};

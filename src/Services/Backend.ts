@@ -1,18 +1,132 @@
-/**
- * The `Backend` service represents a single impl that herald can proxy to.
- */
+import type { HttpClientError } from "@effect/platform";
+import { Context, Data } from "effect";
+import type { Effect, Stream } from "effect";
 
-import { Context, type Effect, Schema, type Stream } from "effect";
-import type { KeyValueStore } from "@effect/platform";
+export class NoSuchBucket extends Data.TaggedError("NoSuchBucket")<{
+  readonly bucket: string;
+  readonly message: string;
+}> {}
+
+export class NoSuchKey extends Data.TaggedError("NoSuchKey")<{
+  readonly bucket: string;
+  readonly key: string;
+  readonly message: string;
+}> {}
+
+export class BucketAlreadyExists
+  extends Data.TaggedError("BucketAlreadyExists")<{
+    readonly bucket: string;
+    readonly message: string;
+  }> {}
+
+export class BucketAlreadyOwnedByYou extends Data.TaggedError(
+  "BucketAlreadyOwnedByYou",
+)<{
+  readonly bucket: string;
+  readonly message: string;
+}> {}
+
+export class BucketNotEmpty extends Data.TaggedError("BucketNotEmpty")<{
+  readonly bucket: string;
+  readonly message: string;
+}> {}
+
+export class InternalError extends Data.TaggedError("InternalError")<{
+  readonly message: string;
+}> {}
+
+export class AccessDenied extends Data.TaggedError("AccessDenied")<{
+  readonly message: string;
+}> {}
+
+export class BadGateway extends Data.TaggedError("BadGateway")<{
+  readonly message: string;
+}> {}
+
+export class NoSuchUpload extends Data.TaggedError("NoSuchUpload")<{
+  readonly uploadId: string;
+  readonly message: string;
+}> {}
+
+export class InvalidPart extends Data.TaggedError("InvalidPart")<{
+  readonly message: string;
+}> {}
+
+export class InvalidPartOrder extends Data.TaggedError("InvalidPartOrder")<{
+  readonly message: string;
+}> {}
+
+export class EntityTooSmall extends Data.TaggedError("EntityTooSmall")<{
+  readonly message: string;
+}> {}
+
+export class InvalidRequest extends Data.TaggedError("InvalidRequest")<{
+  readonly message: string;
+}> {}
+
+export class BadDigest extends Data.TaggedError("BadDigest")<{
+  readonly message: string;
+}> {}
+
+export class InvalidBucketName extends Data.TaggedError("InvalidBucketName")<{
+  readonly message: string;
+}> {}
+
+export class InvalidArgument extends Data.TaggedError("InvalidArgument")<{
+  readonly message: string;
+}> {}
+
+export class MalformedXML extends Data.TaggedError("MalformedXML")<{
+  readonly message: string;
+}> {}
+
+export class MethodNotAllowed extends Data.TaggedError("MethodNotAllowed")<{
+  readonly message: string;
+}> {}
+
+export class DeleteObjectsError extends Data.TaggedError("DeleteObjectsError")<{
+  readonly errors: readonly {
+    readonly key: string;
+    readonly code: string;
+    readonly message: string;
+  }[];
+}> {}
+
+export type BackendError =
+  | NoSuchBucket
+  | NoSuchKey
+  | BucketAlreadyExists
+  | BucketAlreadyOwnedByYou
+  | BucketNotEmpty
+  | InternalError
+  | AccessDenied
+  | BadGateway
+  | NoSuchUpload
+  | InvalidPart
+  | InvalidPartOrder
+  | EntityTooSmall
+  | InvalidRequest
+  | BadDigest
+  | InvalidBucketName
+  | InvalidArgument
+  | MalformedXML
+  | MethodNotAllowed
+  | HttpClientError.HttpClientError
+  | DeleteObjectsError;
 
 export interface BucketInfo {
   readonly name: string;
-  readonly creationDate?: Date;
+  readonly creationDate: Date;
 }
 
 export interface OwnerInfo {
   readonly id: string;
   readonly displayName: string;
+}
+
+export interface ListBucketsResult {
+  readonly buckets: readonly BucketInfo[];
+  readonly owner: OwnerInfo;
 }
 
 export interface ObjectInfo {
@@ -23,8 +137,8 @@ export interface ObjectInfo {
   readonly storageClass?: string;
   readonly owner?: OwnerInfo;
   readonly versionId?: string;
-  readonly isDeleteMarker?: boolean;
   readonly isLatest?: boolean;
+  readonly isDeleteMarker?: boolean;
 }
 
 export interface CommonPrefix {
@@ -42,14 +156,24 @@ export interface ListObjectsResult {
   readonly contents: readonly ObjectInfo[];
   readonly commonPrefixes: readonly CommonPrefix[];
   readonly encodingType?: string;
+  readonly listType: 1 | 2;
   readonly continuationToken?: string;
   readonly nextContinuationToken?: string;
-  readonly startAfter?: string;
   readonly keyCount?: number;
-  readonly listType: 1 | 2;
+  readonly startAfter?: string;
 }
 
-export interface ObjectResponse {
+export interface ChecksumInfo {
+  readonly checksumAlgorithm?: string;
+  readonly checksumCRC32?: string;
+  readonly checksumCRC32C?: string;
+  readonly checksumCRC64NVME?: string;
+  readonly checksumSHA1?: string;
+  readonly checksumSHA256?: string;
+  readonly checksumType?: string;
+}
+
+export interface ObjectResponse extends ChecksumInfo {
   readonly stream: Stream.Stream<Uint8Array, Error>;
   readonly nativeStream?: ReadableStream<Uint8Array>;
   readonly contentType?: string;
@@ -58,31 +182,33 @@ export interface ObjectResponse {
   readonly lastModified?: Date;
   readonly metadata: Record<string, string>;
   readonly headers: Record<string, string>;
+  readonly partsCount?: number;
 }
 
-export interface HeadObjectResult {
+export interface HeadObjectResult extends ChecksumInfo {
   readonly contentType?: string;
   readonly contentLength?: number;
   readonly etag?: string;
   readonly lastModified?: Date;
   readonly metadata: Record<string, string>;
   readonly headers: Record<string, string>;
+  readonly partsCount?: number;
 }
 
-export interface PutObjectResult {
+export interface PutObjectResult extends ChecksumInfo {
   readonly etag?: string;
   readonly versionId?: string;
 }
 
-export interface MultipartUploadResult {
+export interface MultipartUploadResult extends ChecksumInfo {
   readonly uploadId: string;
 }
 
-export interface UploadPartResult {
+export interface UploadPartResult extends ChecksumInfo {
   readonly etag: string;
 }
 
-export interface CompleteMultipartUploadResult {
+export interface CompleteMultipartUploadResult extends ChecksumInfo {
   readonly location: string;
   readonly bucket: string;
   readonly key: string;
@@ -90,25 +216,35 @@ export interface CompleteMultipartUploadResult {
   readonly versionId?: string;
 }
 
-export interface PartInfo {
+export interface ObjectAttributes {
+  readonly etag?: string;
+  readonly checksum?: ChecksumInfo;
+  readonly objectParts?: {
+    readonly totalPartsCount?: number;
+    readonly partNumberMarker?: number;
+    readonly nextPartNumberMarker?: number;
+    readonly maxParts?: number;
+    readonly isTruncated?: boolean;
+    readonly parts?: readonly PartInfo[];
+  };
+  readonly objectSize?: number;
+  readonly storageClass?: string;
+}
+
+export interface PartInfo extends ChecksumInfo {
   readonly partNumber: number;
-  readonly lastModified: Date;
+  readonly lastModified?: Date;
   readonly etag: string;
   readonly size: number;
 }
 
-export interface ListPartsResult {
-  readonly bucket: string;
-  readonly key: string;
-  readonly uploadId: string;
-  readonly owner: OwnerInfo;
-  readonly initiator: OwnerInfo;
-  readonly storageClass: string;
-  readonly partNumberMarker: number;
-  readonly nextPartNumberMarker: number;
-  readonly maxParts: number;
-  readonly isTruncated: boolean;
-  readonly parts: readonly PartInfo[];
+export interface DeleteObjectsResult {
+  readonly deleted: readonly string[];
+  readonly errors: readonly {
+    readonly key: string;
+    readonly code: string;
+    readonly message: string;
+  }[];
 }
 
 export interface MultipartUploadInfo {
@@ -122,216 +258,139 @@ export interface MultipartUploadInfo {
 
 export interface ListMultipartUploadsResult {
   readonly bucket: string;
-  readonly prefix?: string;
   readonly keyMarker?: string;
   readonly uploadIdMarker?: string;
   readonly nextKeyMarker?: string;
   readonly nextUploadIdMarker?: string;
   readonly maxUploads: number;
-  readonly delimiter?: string;
   readonly isTruncated: boolean;
   readonly uploads: readonly MultipartUploadInfo[];
   readonly commonPrefixes: readonly CommonPrefix[];
+  readonly prefix?: string;
+  readonly delimiter?: string;
   readonly encodingType?: string;
 }
 
-export class NoSuchBucket
-  extends Schema.TaggedError<NoSuchBucket>()("NoSuchBucket", {
-    bucketName: Schema.String,
-    message: Schema.String,
-  }) {}
-
-export class BucketAlreadyExists
-  extends Schema.TaggedError<BucketAlreadyExists>()("BucketAlreadyExists", {
-    bucketName: Schema.String,
-    message: Schema.String,
-  }) {}
-
-export class BucketAlreadyOwnedByYou
-  extends Schema.TaggedError<BucketAlreadyOwnedByYou>()(
-    "BucketAlreadyOwnedByYou",
-    {
-      bucketName: Schema.String,
-      message: Schema.String,
-    },
-  ) {}
-
-export class InternalError
-  extends Schema.TaggedError<InternalError>()("InternalError", {
-    message: Schema.String,
-  }) {}
-
-export class AccessDenied
-  extends Schema.TaggedError<AccessDenied>()("AccessDenied", {
-    message: Schema.String,
-  }) {}
-
-export class NoSuchKey extends Schema.TaggedError<NoSuchKey>()("NoSuchKey", {
-  bucketName: Schema.String,
-  key: Schema.String,
-  message: Schema.String,
-}) {}
-
-export class BucketNotEmpty
-  extends Schema.TaggedError<BucketNotEmpty>()("BucketNotEmpty", {
-    bucketName: Schema.String,
-    message: Schema.String,
-  }) {}
-
-export class NoSuchUpload
-  extends Schema.TaggedError<NoSuchUpload>()("NoSuchUpload", {
-    uploadId: Schema.String,
-    message: Schema.String,
-  }) {}
-
-export class InvalidPart
-  extends Schema.TaggedError<InvalidPart>()("InvalidPart", {
-    message: Schema.String,
-  }) {}
-
-export class InvalidPartOrder
-  extends Schema.TaggedError<InvalidPartOrder>()("InvalidPartOrder", {
-    message: Schema.String,
-  }) {}
-
-export class EntityTooSmall
-  extends Schema.TaggedError<EntityTooSmall>()("EntityTooSmall", {
-    message: Schema.String,
-  }) {}
-
-export class InvalidRequest
-  extends Schema.TaggedError<InvalidRequest>()("InvalidRequest", {
-    message: Schema.String,
-  }) {}
-
-export class MalformedXML
-  extends Schema.TaggedError<MalformedXML>()("MalformedXML", {
-    message: Schema.String,
-  }) {}
-
-export interface DeleteError {
+export interface ListPartsResult {
+  readonly bucket: string;
   readonly key: string;
-  readonly code: string;
-  readonly message: string;
+  readonly uploadId: string;
+  readonly partNumberMarker: number;
+  readonly nextPartNumberMarker: number;
+  readonly maxParts: number;
+  readonly isTruncated: boolean;
+  readonly parts: readonly PartInfo[];
+  readonly initiator: OwnerInfo;
+  readonly owner: OwnerInfo;
+  readonly storageClass: string;
 }
 
-export interface DeleteObjectsResult {
-  readonly deleted: readonly string[];
-  readonly errors: readonly DeleteError[];
-}
+export class Backend extends Context.Tag("Backend")<
+  Backend,
+  {
+    listBuckets: () => Effect.Effect<ListBucketsResult, BackendError>;
+    createBucket: (
+      name: string,
+      headers: Record<string, string | string[] | undefined>,
+    ) => Effect.Effect<void, BackendError>;
+    deleteBucket: (name: string) => Effect.Effect<void, BackendError>;
+    headBucket: (name: string) => Effect.Effect<void, BackendError>;
 
-export class DeleteObjectsError
-  extends Schema.TaggedError<DeleteObjectsError>()("DeleteObjectsError", {
-    message: Schema.String,
-    deleted: Schema.Array(Schema.String),
-    errors: Schema.Array(Schema.Struct({
-      key: Schema.String,
-      code: Schema.String,
-      message: Schema.String,
-    })),
-  }) {}
+    listObjects: (args: {
+      prefix?: string;
+      delimiter?: string;
+      marker?: string;
+      maxKeys?: number;
+      encodingType?: string;
+      continuationToken?: string;
+      startAfter?: string;
+      listType?: 1 | 2;
+    }) => Effect.Effect<ListObjectsResult, BackendError>;
 
-export type BackendError =
-  | NoSuchBucket
-  | BucketAlreadyExists
-  | BucketAlreadyOwnedByYou
-  | InternalError
-  | AccessDenied
-  | NoSuchKey
-  | BucketNotEmpty
-  | DeleteObjectsError
-  | NoSuchUpload
-  | InvalidPart
-  | InvalidPartOrder
-  | EntityTooSmall
-  | InvalidRequest
-  | MalformedXML;
+    listVersions: (args: {
+      prefix?: string;
+      delimiter?: string;
+      keyMarker?: string;
+      versionIdMarker?: string;
+      maxKeys?: number;
+      encodingType?: string;
+    }) => Effect.Effect<ListObjectsResult, BackendError>;
 
-export interface BackendService {
-  readonly listBuckets: () => Effect.Effect<
-    { buckets: readonly BucketInfo[]; owner: OwnerInfo },
-    BackendError
-  >;
-  readonly createBucket: () => Effect.Effect<void, BackendError>;
-  readonly deleteBucket: () => Effect.Effect<void, BackendError>;
-  readonly headBucket: () => Effect.Effect<void, BackendError>;
-  readonly listObjects: (args: {
-    prefix?: string;
-    delimiter?: string;
-    marker?: string;
-    maxKeys?: number;
-    encodingType?: string;
-    continuationToken?: string;
-    startAfter?: string;
-    listType?: 1 | 2;
-  }) => Effect.Effect<ListObjectsResult, BackendError>;
-  readonly listVersions: (args: {
-    prefix?: string;
-    delimiter?: string;
-    keyMarker?: string;
-    versionIdMarker?: string;
-    maxKeys?: number;
-    encodingType?: string;
-  }) => Effect.Effect<ListObjectsResult, BackendError>;
-  readonly getObject: (
-    key: string,
-    headers: Record<string, string | string[] | undefined>,
-  ) => Effect.Effect<ObjectResponse, BackendError>;
-  readonly headObject: (
-    key: string,
-    headers: Record<string, string | string[] | undefined>,
-  ) => Effect.Effect<HeadObjectResult, BackendError>;
-  readonly putObject: (
-    key: string,
-    body: Stream.Stream<Uint8Array, Error>,
-    headers: Record<string, string | string[] | undefined>,
-  ) => Effect.Effect<PutObjectResult, BackendError>;
-  readonly deleteObject: (key: string) => Effect.Effect<void, BackendError>;
-  readonly deleteObjects: (
-    objects: readonly { key: string; versionId?: string }[],
-  ) => Effect.Effect<DeleteObjectsResult, BackendError>;
+    getObject: (
+      key: string,
+      headers: Record<string, string | string[] | undefined>,
+    ) => Effect.Effect<ObjectResponse, BackendError>;
 
-  readonly multipartMetadataStore: KeyValueStore.KeyValueStore;
+    headObject: (
+      key: string,
+      headers: Record<string, string | string[] | undefined>,
+    ) => Effect.Effect<HeadObjectResult, BackendError>;
 
-  // Multipart Upload
-  readonly createMultipartUpload: (
-    key: string,
-    headers: Record<string, string | string[] | undefined>,
-  ) => Effect.Effect<MultipartUploadResult, BackendError>;
-  readonly uploadPart: (
-    key: string,
-    uploadId: string,
-    partNumber: number,
-    body: Stream.Stream<Uint8Array, Error>,
-    headers: Record<string, string | string[] | undefined>,
-  ) => Effect.Effect<UploadPartResult, BackendError>;
-  readonly completeMultipartUpload: (
-    key: string,
-    uploadId: string,
-    parts: readonly { etag: string; partNumber: number }[],
-    metadata: Record<string, string>,
-  ) => Effect.Effect<CompleteMultipartUploadResult, BackendError>;
-  readonly abortMultipartUpload: (
-    key: string,
-    uploadId: string,
-  ) => Effect.Effect<void, BackendError>;
-  readonly listMultipartUploads: (args: {
-    prefix?: string;
-    delimiter?: string;
-    keyMarker?: string;
-    uploadIdMarker?: string;
-    maxUploads?: number;
-    encodingType?: string;
-  }) => Effect.Effect<ListMultipartUploadsResult, BackendError>;
-  readonly listParts: (
-    key: string,
-    uploadId: string,
-  ) => Effect.Effect<ListPartsResult, BackendError>;
-}
+    putObject: (
+      key: string,
+      stream: Stream.Stream<Uint8Array, Error>,
+      headers: Record<string, string | string[] | undefined>,
+    ) => Effect.Effect<PutObjectResult, BackendError>;
 
-/**
- * Backend service represents a connection to a specific storage backend.
- * It is provided dynamically based on the request context (bucket or backend ID).
- */
-export class Backend
-  extends Context.Tag("Backend")<Backend, BackendService>() {}
+    deleteObject: (key: string) => Effect.Effect<void, BackendError>;
+
+    deleteObjects: (
+      objects: readonly { key: string; versionId?: string }[],
+    ) => Effect.Effect<DeleteObjectsResult, BackendError>;
+
+    getObjectAttributes: (
+      key: string,
+      attributes: readonly string[],
+      headers: Record<string, string | string[] | undefined>,
+    ) => Effect.Effect<ObjectAttributes, BackendError>;
+
+    // Multipart Upload
+    createMultipartUpload: (
+      key: string,
+      headers: Record<string, string | string[] | undefined>,
+    ) => Effect.Effect<MultipartUploadResult, BackendError>;
+
+    uploadPart: (
+      key: string,
+      uploadId: string,
+      partNumber: number,
+      body: Stream.Stream<Uint8Array, Error>,
+      headers: Record<string, string | string[] | undefined>,
+    ) => Effect.Effect<UploadPartResult, BackendError>;
+
+    completeMultipartUpload: (
+      key: string,
+      uploadId: string,
+      parts: readonly {
+        etag: string;
+        partNumber: number;
+        checksumCRC32?: string;
+        checksumCRC32C?: string;
+        checksumCRC64NVME?: string;
+        checksumSHA1?: string;
+        checksumSHA256?: string;
+      }[],
+      metadata: Record<string, string>,
+      headers: Record<string, string | string[] | undefined>,
+    ) => Effect.Effect<CompleteMultipartUploadResult, BackendError>;
+
+    abortMultipartUpload: (
+      key: string,
+      uploadId: string,
+    ) => Effect.Effect<void, BackendError>;
+
+    listMultipartUploads: (args: {
+      prefix?: string;
+      delimiter?: string;
+      keyMarker?: string;
+      uploadIdMarker?: string;
+      maxUploads?: number;
+      encodingType?: string;
+    }) => Effect.Effect<ListMultipartUploadsResult, BackendError>;
+
+    listParts: (
+      key: string,
+      uploadId: string,
+    ) => Effect.Effect<ListPartsResult, BackendError>;
+  }
+>() {}

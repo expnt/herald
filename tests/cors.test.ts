@@ -147,6 +147,8 @@ testEffect("cors/middleware/preflight", () =>
     const heraldConfig = {
       raw: config,
       lookupBucket: () => Option.none(),
+      resolveAuth: () => Option.none(),
+      resolveAuthForBackendId: () => Option.none(),
     };
 
     const request = makeMockRequest("http://localhost/s3/obj", {
@@ -162,8 +164,7 @@ testEffect("cors/middleware/preflight", () =>
     );
 
     const response = yield* middleware.pipe(
-      // deno-lint-ignore no-explicit-any
-      Effect.provideService(HeraldConfig, heraldConfig as any),
+      Effect.provideService(HeraldConfig, heraldConfig),
       Effect.provideService(HttpServerRequest.HttpServerRequest, request),
     );
 
@@ -194,6 +195,8 @@ testEffect("cors/middleware/headers", () =>
     const heraldConfig = {
       raw: config,
       lookupBucket: () => Option.none(),
+      resolveAuth: () => Option.none(),
+      resolveAuthForBackendId: () => Option.none(),
     };
 
     const request = makeMockRequest("http://localhost/s3/obj", {
@@ -205,8 +208,7 @@ testEffect("cors/middleware/headers", () =>
     const middleware = corsMiddleware(handler);
 
     const response = yield* middleware.pipe(
-      // deno-lint-ignore no-explicit-any
-      Effect.provideService(HeraldConfig, heraldConfig as any),
+      Effect.provideService(HeraldConfig, heraldConfig),
       Effect.provideService(HttpServerRequest.HttpServerRequest, request),
     );
 

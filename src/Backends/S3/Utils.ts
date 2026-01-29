@@ -1,15 +1,13 @@
-import { Effect } from "effect";
-import type { S3Client as S3ClientSDK } from "@aws-sdk/client-s3";
-import type { MaterializedBucket } from "../../Domain/Config.ts";
-import { HeraldConfig } from "../../Config/Layer.ts";
 import {
   AccessDenied,
-  type BackendError,
+  BadDigest,
   BucketAlreadyExists,
   BucketAlreadyOwnedByYou,
   BucketNotEmpty,
   EntityTooSmall,
   InternalError,
+  InvalidArgument,
+  InvalidBucketName,
   InvalidPart,
   InvalidPartOrder,
   InvalidRequest,
@@ -18,130 +16,110 @@ import {
   NoSuchKey,
   NoSuchUpload,
 } from "../../Services/Backend.ts";
-import { S3Client } from "./Client.ts";
+import type { S3Client } from "@aws-sdk/client-s3";
+import type { S3HeaderService } from "../../Services/S3HeaderService.ts";
+import type { Checksum } from "../../Services/Checksum.ts";
 
 export interface S3Target {
-  readonly client: S3ClientSDK;
+  readonly client: S3Client;
   readonly bucketName: string;
   readonly name: string;
+  readonly headerService: S3HeaderService;
+  readonly checksumService: Checksum;
 }
 
-/**
- * Strips MinIO metadata suffixes like [minio_cache:v2,return:] from strings.
- */
-export function stripMinioMetadata(s: string): string {
-  return s.replace(/\[minio_cache:[^\]]+\]/g, "");
-}
+export const mapS3Error = (
+  e: unknown,
+  bucket: string,
+  uploadId?: string,
+) => {
+  if (e instanceof BadDigest) return e;
 
-/**
- * Maps S3 SDK exceptions to internal BackendError types.
- */
-export function mapS3Error(e: unknown, bucketName?: string): BackendError {
-  const err = e as {
+  const error = e as {
     name?: string;
     Code?: string;
-    Message?: string;
     message?: string;
-    $metadata?: { httpStatusCode?: number };
+    Message?: string;
+    Key?: string;
+    cause?: unknown;
   };
-  const name = err?.name || err?.Code ||
-    (e instanceof Error ? e.name : "UnknownError");
-  const message = err?.message || err?.Message ||
-    "An unknown S3 error occurred";
-  const bucket = bucketName ?? "unknown-bucket";
+
+  // Check for BadDigest in the error message or cause
+  const errorStr = String(e);
+  if (
+    errorStr.includes("BadDigest") || errorStr.includes("checksum mismatch") ||
+    errorStr.includes("Checksum mismatch")
+  ) {
+    return new BadDigest({ message: errorStr });
+  }
+  if (error.cause) {
+    if (error.cause instanceof BadDigest) return error.cause;
+    const causeStr = String(error.cause);
+    if (
+      causeStr.includes("BadDigest") ||
+      causeStr.includes("checksum mismatch") ||
+      causeStr.includes("Checksum mismatch")
+    ) {
+      return new BadDigest({ message: causeStr });
+    }
+  }
+
+  const name = error.name || error.Code || "InternalError";
+  const message = error.message || error.Message || "Internal S3 Error";
 
   switch (name) {
     case "NoSuchBucket":
-    case "NotFound":
-      return new NoSuchBucket({ bucketName: bucket, message });
+    case "NotFound": // S3 sometimes returns NotFound for HEAD requests on non-existent buckets
+      return new NoSuchBucket({ bucket, message });
     case "NoSuchKey":
       return new NoSuchKey({
-        bucketName: bucket,
-        key: "unknown",
-        message: message,
+        bucket,
+        key: error.Key || "unknown",
+        message,
       });
+    case "AccessDenied":
+      return new AccessDenied({ message });
+    case "BucketAlreadyExists":
+      return new BucketAlreadyExists({ bucket, message });
+    case "BucketAlreadyOwnedByYou":
+      return new BucketAlreadyOwnedByYou({ bucket, message });
+    case "BucketNotEmpty":
+      return new BucketNotEmpty({ bucket, message });
+    case "InvalidBucketName":
+      return new InvalidBucketName({
+        message: `Invalid bucket name: ${bucket}`,
+      });
+    case "InvalidArgument":
+      return new InvalidArgument({ message });
     case "NoSuchUpload":
       return new NoSuchUpload({
-        uploadId: "unknown",
-        message: message,
+        uploadId: uploadId || "unknown",
+        message,
       });
+    case "InvalidRequest":
+      return new InvalidRequest({ message });
+    case "MalformedXML":
+      return new MalformedXML({ message });
     case "InvalidPart":
-    case "InvalidPartNumber":
       return new InvalidPart({ message });
     case "InvalidPartOrder":
       return new InvalidPartOrder({ message });
     case "EntityTooSmall":
       return new EntityTooSmall({ message });
-    case "InvalidRequest":
-      if (message.includes("at least one part")) {
-        return new MalformedXML({ message });
-      }
-      return new InvalidRequest({ message });
-    case "MalformedXML":
-      return new MalformedXML({ message });
-    case "BucketAlreadyExists":
-      return new BucketAlreadyExists({ bucketName: bucket, message });
-    case "BucketAlreadyOwnedByYou":
-      return new BucketAlreadyOwnedByYou({ bucketName: bucket, message });
-    case "AccessDenied":
-    case "Forbidden":
-      return new AccessDenied({ message });
-    case "BucketNotEmpty":
-    case "Conflict":
-      return new BucketNotEmpty({ bucketName: bucket, message });
+    default:
+      return new InternalError({
+        message: `S3 Error [${name}]: ${message}`,
+      });
   }
-
-  // Handle case where it might be a raw 404 from HEAD request
-  if (err?.$metadata?.httpStatusCode === 404) {
-    return new NoSuchKey({
-      bucketName: bucket,
-      key: "unknown",
-      message: "Not Found",
-    });
-  }
-
-  return new InternalError({
-    message: e instanceof Error ? `${e.name}: ${e.message}` : String(e),
-  });
-}
+};
 
 /**
- * Resolves the target bucket configuration and acquires the S3 client.
- * This ensures the backend remains a stateless proxy that picks up request-local configuration and clients.
+ * Minio sometimes adds metadata prefixes like 'X-Amz-Meta-' to keys in listings.
+ * This helper strips them if present.
  */
-export const getTarget = (
-  bucket: MaterializedBucket | { backend_id: string },
-): Effect.Effect<S3Target, BackendError, S3Client | HeraldConfig> =>
-  Effect.gen(function* () {
-    const s3Service = yield* S3Client;
-    const config = yield* HeraldConfig;
-
-    const resolveTargetBucket = (): MaterializedBucket => {
-      if ("bucket_name" in bucket) return bucket as MaterializedBucket;
-
-      const backendConfig = config.raw.backends[bucket.backend_id];
-      if (backendConfig && backendConfig.protocol === "s3") {
-        return {
-          name: "",
-          backend_id: bucket.backend_id,
-          protocol: "s3" as const,
-          endpoint: backendConfig.endpoint,
-          region: backendConfig.region,
-          bucket_name: "",
-          credentials: backendConfig.credentials,
-        };
-      }
-      throw new Error(`Backend ${bucket.backend_id} is not an S3 backend`);
-    };
-
-    const targetBucket = resolveTargetBucket();
-    const client = yield* s3Service.getClient(targetBucket).pipe(
-      Effect.mapError((e) => mapS3Error(e, targetBucket.name)),
-    );
-
-    return {
-      client,
-      bucketName: targetBucket.bucket_name,
-      name: targetBucket.name,
-    };
-  });
+export const stripMinioMetadata = (key: string): string => {
+  // if (key.startsWith("X-Amz-Meta-")) {
+  //   return key.substring("X-Amz-Meta-".length);
+  // }
+  return key;
+};

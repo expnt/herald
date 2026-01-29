@@ -1,31 +1,23 @@
-import { Effect, Option, Schedule, type Stream } from "effect";
-import { type HttpClient, HttpClientRequest } from "@effect/platform";
-import {
-  type BackendError,
-  type CommonPrefix,
-  type CompleteMultipartUploadResult,
-  type DeleteObjectsResult,
-  InternalError,
-  InvalidPart,
-  type ListMultipartUploadsResult,
-  type ListObjectsResult,
-  type ListPartsResult,
-  type MultipartUploadInfo,
-  type MultipartUploadResult,
-  NoSuchUpload,
-  type ObjectInfo,
-  type ObjectResponse,
-  type PartInfo,
-  type PutObjectResult,
-  type UploadPartResult,
+import { HttpClientRequest, type HttpClientResponse } from "@effect/platform";
+import { type Chunk, Effect, Stream } from "effect";
+import type {
+  BackendError,
+  CommonPrefix,
+  DeleteObjectsResult,
+  HeadObjectResult,
+  ListObjectsResult,
+  ObjectAttributes,
+  ObjectInfo,
+  ObjectResponse,
+  PutObjectResult,
 } from "../../Services/Backend.ts";
 import {
-  mapError,
-  MP_META_PREFIX,
-  MP_SEGMENTS_PREFIX,
-  type SwiftTarget,
-} from "./Utils.ts";
-import { fixHeaderEncoding } from "../../Frontend/Utils.ts";
+  BadDigest,
+  InternalError,
+  InvalidRequest,
+} from "../../Services/Backend.ts";
+import { normalizeHeaders } from "../../Services/S3HeaderService.ts";
+import { mapError, type SwiftTarget } from "./Utils.ts";
 
 export interface SwiftObject {
   readonly name?: string;
@@ -37,8 +29,15 @@ export interface SwiftObject {
 }
 
 export const makeObjectOps = (
-  target: SwiftTarget,
-  client: HttpClient.HttpClient,
+  {
+    container,
+    storageUrl: _,
+    token,
+    url,
+    client,
+    headerService,
+    checksumService,
+  }: SwiftTarget,
 ) => {
   const listObjects = (args: {
     prefix?: string;
@@ -49,9 +48,8 @@ export const makeObjectOps = (
     continuationToken?: string;
     startAfter?: string;
     listType?: 1 | 2;
-  }) =>
+  }): Effect.Effect<ListObjectsResult, BackendError> =>
     Effect.gen(function* () {
-      const { url, token, container } = target;
       const limit = args.maxKeys ?? 1000;
       const query = new URLSearchParams({ format: "json" });
       if (args.prefix) query.set("prefix", args.prefix);
@@ -61,13 +59,14 @@ export const makeObjectOps = (
       if (args.continuationToken) query.set("marker", args.continuationToken);
       if (args.startAfter) query.set("marker", args.startAfter);
 
-      const response = yield* client.execute(
-        HttpClientRequest.get(`${url}?${query.toString()}`).pipe(
-          HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-        ),
-      ).pipe(
-        Effect.mapError((e) => mapError(500, String(e), container)),
-      );
+      const response: HttpClientResponse.HttpClientResponse = yield* client
+        .execute(
+          HttpClientRequest.get(`${url}?${query.toString()}`).pipe(
+            HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+          ),
+        ).pipe(
+          Effect.mapError((e) => mapError(500, String(e), container)),
+        );
 
       if (response.status < 200 || response.status >= 300) {
         const message = yield* response.text.pipe(
@@ -128,18 +127,98 @@ export const makeObjectOps = (
         keyCount: contents.length + commonPrefixes.length,
       } satisfies ListObjectsResult;
     });
+  const headObject = (
+    key: string,
+    headers: Record<string, string | string[] | undefined>,
+  ): Effect.Effect<HeadObjectResult, BackendError> =>
+    Effect.gen(function* () {
+      const encodedKey = key.split("/").map(encodeURIComponent).join("/");
+      const swiftHeaders: Record<string, string> = {
+        "X-Auth-Token": token,
+      };
+      const response: HttpClientResponse.HttpClientResponse = yield* client
+        .execute(
+          HttpClientRequest.head(`${url}/${encodedKey}`).pipe(
+            HttpClientRequest.setHeaders(swiftHeaders),
+          ),
+        ).pipe(
+          Effect.mapError((e) => mapError(500, String(e), container)),
+        );
+
+      if (response.status < 200 || response.status >= 300) {
+        const message = yield* response.text.pipe(
+          Effect.orElseSucceed(() => "Error"),
+        );
+        return yield* Effect.fail(
+          mapError(
+            response.status,
+            message || "Error",
+            container,
+            "HEAD",
+            key,
+          ),
+        );
+      }
+
+      const { metadata, s3Headers, checksums, partsCount } = headerService
+        .fromSwiftHeaders(response.headers);
+
+      const contentLengthHeader = response.headers["content-length"];
+      const contentLength = Array.isArray(contentLengthHeader)
+        ? parseInt(contentLengthHeader[0] || "0")
+        : parseInt(contentLengthHeader || "0");
+
+      const etagHeader = response.headers["etag"];
+      const etag = Array.isArray(etagHeader) ? etagHeader[0] : etagHeader;
+
+      const lastModifiedHeader = response.headers["last-modified"];
+      const lastModified = Array.isArray(lastModifiedHeader)
+        ? lastModifiedHeader[0]
+        : lastModifiedHeader;
+
+      const { s3Params } = headerService.fromRequestHeaders(headers);
+      const checksumMode = s3Params.checksumMode === "ENABLED";
+
+      if (checksumMode) {
+        Object.assign(
+          s3Headers,
+          headerService.toResponseHeaders({
+            checksumAlgorithm: checksums.algorithm,
+            checksumCRC32: checksums.crc32,
+            checksumCRC32C: checksums.crc32c,
+            checksumCRC64NVME: checksums.crc64nvme,
+            checksumSHA1: checksums.sha1,
+            checksumSHA256: checksums.sha256,
+            checksumType: checksums.type,
+            metadata: {},
+            headers: {},
+            partsCount,
+          }),
+        );
+      }
+
+      return {
+        contentType: (Array.isArray(response.headers["content-type"])
+          ? response.headers["content-type"][0]
+          : response.headers["content-type"]) || undefined,
+        contentLength,
+        etag: etag || undefined,
+        lastModified: lastModified ? new Date(lastModified) : undefined,
+        metadata,
+        headers: s3Headers,
+        checksumAlgorithm: checksums.algorithm,
+        checksumCRC32: checksums.crc32,
+        checksumCRC32C: checksums.crc32c,
+        checksumCRC64NVME: checksums.crc64nvme,
+        checksumSHA1: checksums.sha1,
+        checksumSHA256: checksums.sha256,
+        checksumType: checksums.type,
+        partsCount,
+      } satisfies HeadObjectResult;
+    });
 
   return {
-    listObjects: (args: {
-      prefix?: string;
-      delimiter?: string;
-      marker?: string;
-      maxKeys?: number;
-      encodingType?: string;
-      continuationToken?: string;
-      startAfter?: string;
-      listType?: 1 | 2;
-    }) => listObjects(args),
+    listObjects,
 
     listVersions: (args: {
       prefix?: string;
@@ -171,50 +250,44 @@ export const makeObjectOps = (
       headers: Record<string, string | string[] | undefined>,
     ) =>
       Effect.gen(function* () {
-        const { url, token, container } = target;
         const encodedKey = key.split("/").map(encodeURIComponent).join("/");
         const swiftHeaders: Record<string, string> = {
           "X-Auth-Token": token,
         };
+        const { s3Params } = headerService.fromRequestHeaders(headers);
+
         if (headers["range"] || headers["Range"]) {
-          swiftHeaders["Range"] = String(
-            headers["range"] || headers["Range"],
-          );
+          swiftHeaders["Range"] = String(headers["range"] || headers["Range"]);
         }
         if (headers["if-match"] || headers["If-Match"]) {
           swiftHeaders["If-Match"] = String(
-            headers["if-match"] ||
-              headers["If-Match"],
+            headers["if-match"] || headers["If-Match"],
           );
         }
         if (headers["if-none-match"] || headers["If-None-Match"]) {
           swiftHeaders["If-None-Match"] = String(
-            headers["if-none-match"] ||
-              headers["If-None-Match"],
+            headers["if-none-match"] || headers["If-None-Match"],
           );
         }
         if (headers["if-modified-since"] || headers["If-Modified-Since"]) {
           swiftHeaders["If-Modified-Since"] = String(
-            headers["if-modified-since"] ||
-              headers["If-Modified-Since"],
+            headers["if-modified-since"] || headers["If-Modified-Since"],
           );
         }
-        if (
-          headers["if-unmodified-since"] || headers["If-Unmodified-Since"]
-        ) {
+        if (headers["if-unmodified-since"] || headers["If-Unmodified-Since"]) {
           swiftHeaders["If-Unmodified-Since"] = String(
-            headers["if-unmodified-since"] ||
-              headers["If-Unmodified-Since"],
+            headers["if-unmodified-since"] || headers["If-Unmodified-Since"],
           );
         }
 
-        const response = yield* client.execute(
-          HttpClientRequest.get(`${url}/${encodedKey}`).pipe(
-            HttpClientRequest.setHeaders(swiftHeaders),
-          ),
-        ).pipe(
-          Effect.mapError((e) => mapError(500, String(e), container)),
-        );
+        const response: HttpClientResponse.HttpClientResponse = yield* client
+          .execute(
+            HttpClientRequest.get(`${url}/${encodedKey}`).pipe(
+              HttpClientRequest.setHeaders(swiftHeaders),
+            ),
+          ).pipe(
+            Effect.mapError((e) => mapError(500, String(e), container)),
+          );
 
         if (response.status < 200 || response.status >= 300) {
           const message = yield* response.text.pipe(
@@ -231,31 +304,8 @@ export const makeObjectOps = (
           );
         }
 
-        const metadata: Record<string, string> = {};
-        const s3Headers: Record<string, string> = {};
-
-        for (const [k, v] of Object.entries(response.headers)) {
-          const lowK = k.toLowerCase();
-          const value = Array.isArray(v) ? v.join(", ") : v;
-          if (lowK.startsWith("x-object-meta-")) {
-            const metaKey = lowK.substring("x-object-meta-".length);
-            const decodedValue = (value.includes("%"))
-              ? Option.liftThrowable(decodeURIComponent)(value).pipe(
-                Option.getOrElse(() => value),
-              )
-              : value;
-            metadata[metaKey] = decodedValue;
-            s3Headers[`x-amz-meta-${metaKey}`] = decodedValue;
-          } else if (lowK === "content-type") {
-            s3Headers["Content-Type"] = value;
-          } else if (lowK === "content-length") {
-            s3Headers["Content-Length"] = value;
-          } else if (lowK === "etag") {
-            s3Headers["ETag"] = value;
-          } else if (lowK === "last-modified") {
-            s3Headers["Last-Modified"] = value;
-          }
-        }
+        const { metadata, s3Headers, checksums, partsCount } = headerService
+          .fromSwiftHeaders(response.headers);
 
         const contentLengthHeader = response.headers["content-length"];
         const contentLength = Array.isArray(contentLengthHeader)
@@ -269,6 +319,26 @@ export const makeObjectOps = (
         const lastModified = Array.isArray(lastModifiedHeader)
           ? lastModifiedHeader[0]
           : lastModifiedHeader;
+
+        const checksumMode = s3Params.checksumMode === "ENABLED";
+
+        if (checksumMode) {
+          Object.assign(
+            s3Headers,
+            headerService.toResponseHeaders({
+              checksumAlgorithm: checksums.algorithm,
+              checksumCRC32: checksums.crc32,
+              checksumCRC32C: checksums.crc32c,
+              checksumCRC64NVME: checksums.crc64nvme,
+              checksumSHA1: checksums.sha1,
+              checksumSHA256: checksums.sha256,
+              checksumType: checksums.type,
+              metadata: {},
+              headers: {},
+              partsCount,
+            }),
+          );
+        }
 
         // Try to get the native stream to avoid Effect <-> WebStream conversion overhead
         const nativeStream =
@@ -288,134 +358,128 @@ export const makeObjectOps = (
           lastModified: lastModified ? new Date(lastModified) : undefined,
           metadata,
           headers: s3Headers,
+          checksumAlgorithm: checksums.algorithm,
+          checksumCRC32: checksums.crc32,
+          checksumCRC32C: checksums.crc32c,
+          checksumCRC64NVME: checksums.crc64nvme,
+          checksumSHA1: checksums.sha1,
+          checksumSHA256: checksums.sha256,
+          checksumType: checksums.type,
+          partsCount,
         } satisfies ObjectResponse;
       }),
 
-    headObject: (
-      key: string,
-      _headers: Record<string, string | string[] | undefined>,
-    ) =>
-      Effect.gen(function* () {
-        const { url, token, container } = target;
-        const encodedKey = key.split("/").map(encodeURIComponent).join("/");
-        const swiftHeaders: Record<string, string> = {
-          "X-Auth-Token": token,
-        };
-        const response = yield* client.execute(
-          HttpClientRequest.head(`${url}/${encodedKey}`).pipe(
-            HttpClientRequest.setHeaders(swiftHeaders),
-          ),
-        ).pipe(
-          Effect.mapError((e) => mapError(500, String(e), container)),
-        );
-
-        if (response.status < 200 || response.status >= 300) {
-          const message = yield* response.text.pipe(
-            Effect.orElseSucceed(() => "Error"),
-          );
-          return yield* Effect.fail(
-            mapError(
-              response.status,
-              message || "Error",
-              container,
-              "HEAD",
-              key,
-            ),
-          );
-        }
-
-        const metadata: Record<string, string> = {};
-        const s3Headers: Record<string, string> = {};
-
-        for (const [k, v] of Object.entries(response.headers)) {
-          const lowK = k.toLowerCase();
-          const value = Array.isArray(v) ? v.join(", ") : v;
-          if (lowK.startsWith("x-object-meta-")) {
-            const metaKey = lowK.substring("x-object-meta-".length);
-            const decodedValue = (value.includes("%"))
-              ? Option.liftThrowable(decodeURIComponent)(value).pipe(
-                Option.getOrElse(() => value),
-              )
-              : value;
-            metadata[metaKey] = decodedValue;
-            s3Headers[`x-amz-meta-${metaKey}`] = decodedValue;
-          } else if (lowK === "content-type") {
-            s3Headers["Content-Type"] = value;
-          } else if (lowK === "content-length") {
-            s3Headers["Content-Length"] = value;
-          } else if (lowK === "etag") {
-            s3Headers["ETag"] = value;
-          } else if (lowK === "last-modified") {
-            s3Headers["Last-Modified"] = value;
-          }
-        }
-
-        const contentLengthHeader = response.headers["content-length"];
-        const contentLength = Array.isArray(contentLengthHeader)
-          ? parseInt(contentLengthHeader[0] || "0")
-          : parseInt(contentLengthHeader || "0");
-
-        const etagHeader = response.headers["etag"];
-        const etag = Array.isArray(etagHeader) ? etagHeader[0] : etagHeader;
-
-        const lastModifiedHeader = response.headers["last-modified"];
-        const lastModified = Array.isArray(lastModifiedHeader)
-          ? lastModifiedHeader[0]
-          : lastModifiedHeader;
-
-        return {
-          contentType: (Array.isArray(response.headers["content-type"])
-            ? response.headers["content-type"][0]
-            : response.headers["content-type"]) || undefined,
-          contentLength,
-          etag: etag || undefined,
-          lastModified: lastModified ? new Date(lastModified) : undefined,
-          metadata,
-          headers: s3Headers,
-        };
-      }),
+    headObject,
 
     putObject: (
       key: string,
       stream: Stream.Stream<Uint8Array, Error>,
       headers: Record<string, string | string[] | undefined>,
-    ): Effect.Effect<PutObjectResult, BackendError> => {
-      const { url, token, container } = target;
+    ) => {
       const encodedKey = key.split("/").map(encodeURIComponent).join("/");
 
       return Effect.gen(function* () {
+        const { checksums, metadata } = headerService.fromRequestHeaders(
+          headers,
+        );
+        const normalized = normalizeHeaders(headers);
+
         const swiftHeaders: Record<string, string> = {
           "X-Auth-Token": token,
-          "Content-Type": (headers["content-type"] || headers["Content-Type"] ||
+          "Content-Type": (normalized["content-type"] ||
             "application/octet-stream") as string,
+          ...headerService.toSwiftHeaders(metadata, checksums),
         };
 
-        const contentLength = headers["content-length"] ||
-          headers["Content-Length"];
-        if (contentLength) {
+        const contentLength = normalized["content-length"]
+          ? parseInt(normalized["content-length"])
+          : undefined;
+        if (contentLength !== undefined) {
           swiftHeaders["Content-Length"] = String(contentLength);
         }
 
-        for (const [k, v] of Object.entries(headers)) {
-          const lowK = k.toLowerCase();
-          if (lowK.startsWith("x-amz-meta-")) {
-            const metaKey = lowK.substring("x-amz-meta-".length);
-            const value = fixHeaderEncoding(String(v));
-            swiftHeaders[`X-Object-Meta-${metaKey}`] =
-              /[^\x20-\x7E]/.test(value) ? encodeURIComponent(value) : value;
-          }
-        }
+        const validatedStream = (yield* checksumService.validate(
+          stream,
+          checksums,
+        )).pipe(
+          Stream.catchAll((e) => {
+            // Preserve BadDigest and InvalidRequest errors from checksum validation
+            if (e instanceof BadDigest || e instanceof InvalidRequest) {
+              return Stream.fail(e as BackendError);
+            }
+            return Stream.fail(
+              new InternalError({
+                message: `error on checksum stream: ${String(e)}`,
+              }),
+            );
+          }),
+        );
+
+        // Align with S3: buffer small files (< 1MB) and validate before HTTP request
+        const bodyStream =
+          (contentLength !== undefined && contentLength < 1024 * 1024)
+            ? yield* Effect.gen(function* () {
+              // Buffer small files: consume stream to trigger validation BEFORE HTTP request
+              const chunks: Chunk.Chunk<Uint8Array> = yield* Stream.runCollect(
+                validatedStream,
+              ).pipe(
+                Effect.mapError((e) => {
+                  // Preserve BadDigest and InvalidRequest errors
+                  if (e instanceof BadDigest || e instanceof InvalidRequest) {
+                    return e;
+                  }
+                  return new InternalError({ message: String(e) });
+                }),
+              );
+              // Recreate stream from chunks for HTTP request
+              return Stream.fromIterable(chunks);
+            })
+            : validatedStream;
 
         const request = HttpClientRequest.put(`${url}/${encodedKey}`).pipe(
           HttpClientRequest.setHeaders(swiftHeaders),
-          HttpClientRequest.bodyStream(stream),
+          HttpClientRequest.bodyStream(bodyStream),
         );
 
-        const response = yield* client.execute(request).pipe(
-          Effect.mapError((e) => {
-            return mapError(500, String(e), container);
-          }),
-        );
+        const response: HttpClientResponse.HttpClientResponse = yield* client
+          .execute(request).pipe(
+            Effect.catchAll(
+              (
+                e,
+              ): Effect.Effect<
+                HttpClientResponse.HttpClientResponse,
+                BackendError
+              > => {
+                // Check for BadDigest in the error message or cause
+                const errorStr = String(e);
+                if (
+                  errorStr.includes("BadDigest") ||
+                  errorStr.includes("checksum mismatch") ||
+                  errorStr.includes("Checksum mismatch")
+                ) {
+                  return Effect.fail(new BadDigest({ message: errorStr }));
+                }
+                if (e && typeof e === "object" && "cause" in e) {
+                  const cause = (e as { cause?: unknown }).cause;
+                  if (
+                    cause instanceof BadDigest ||
+                    cause instanceof InvalidRequest
+                  ) {
+                    return Effect.fail(cause);
+                  }
+                  const causeStr = String(cause);
+                  if (
+                    causeStr.includes("BadDigest") ||
+                    causeStr.includes("checksum mismatch") ||
+                    causeStr.includes("Checksum mismatch")
+                  ) {
+                    return Effect.fail(new BadDigest({ message: causeStr }));
+                  }
+                }
+                return Effect.fail(mapError(500, errorStr, container));
+              },
+            ),
+          );
 
         if (response.status < 200 || response.status >= 300) {
           const message = yield* response.text.pipe(
@@ -439,45 +503,67 @@ export const makeObjectOps = (
 
         return {
           etag: etagValue || undefined,
+          checksumAlgorithm: checksums.algorithm,
+          checksumCRC32: checksums.crc32,
+          checksumCRC32C: checksums.crc32c,
+          checksumCRC64NVME: checksums.crc64nvme,
+          checksumSHA1: checksums.sha1,
+          checksumSHA256: checksums.sha256,
         } satisfies PutObjectResult;
       });
     },
 
     deleteObject: (key: string) =>
       Effect.gen(function* () {
-        const { url, token, container } = target;
         const encodedKey = key.split("/").map(encodeURIComponent).join("/");
 
         // Try SLO delete first (recursive)
-        const response = yield* client.execute(
-          HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
-            HttpClientRequest.setHeaders({
-              "X-Auth-Token": token,
-              "X-Static-Large-Object": "true",
-            }),
-            HttpClientRequest.setUrlParams({ "multipart-manifest": "delete" }),
-          ),
-        ).pipe(
-          Effect.mapError((e) => mapError(500, String(e), container)),
-        );
-
-        if (response.status === 400) {
-          // Not an SLO, try regular delete
-          const regResponse = yield* client.execute(
+        const response: HttpClientResponse.HttpClientResponse = yield* client
+          .execute(
             HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
-              HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+              HttpClientRequest.setHeaders({
+                "X-Auth-Token": token,
+                "X-Static-Large-Object": "true",
+              }),
+              HttpClientRequest.setUrlParams({
+                "multipart-manifest": "delete",
+              }),
             ),
           ).pipe(
             Effect.mapError((e) => mapError(500, String(e), container)),
           );
 
+        const responseBody = yield* response.text.pipe(
+          Effect.orElseSucceed(() => ""),
+        );
+
+        if (
+          response.status === 400 ||
+          (response.status === 200 && responseBody.includes("Not an SLO"))
+        ) {
+          // Not an SLO, try regular delete
+          const regResponse: HttpClientResponse.HttpClientResponse =
+            yield* client.execute(
+              HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
+                HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+              ),
+            ).pipe(
+              Effect.mapError((e) => mapError(500, String(e), container)),
+            );
+
           if (regResponse.status < 200 || regResponse.status >= 300) {
             if (regResponse.status === 404) return;
-            const message = yield* regResponse.text.pipe(
+            const regResponseBody = yield* regResponse.text.pipe(
               Effect.orElseSucceed(() => "Error"),
             );
             return yield* Effect.fail(
-              mapError(regResponse.status, message, container, "DELETE", key),
+              mapError(
+                regResponse.status,
+                regResponseBody,
+                container,
+                "DELETE",
+                key,
+              ),
             );
           }
           return;
@@ -487,13 +573,12 @@ export const makeObjectOps = (
           if (response.status === 404) {
             return;
           }
-          const message = yield* response.text.pipe(
-            Effect.orElseSucceed(() => "Error"),
-          );
+          // Reuse the already-read responseBody instead of reading response.text again
+          const message = responseBody || "Error";
           return yield* Effect.fail(
             mapError(
               response.status,
-              message || "Error",
+              message,
               container,
               "DELETE",
               key,
@@ -502,10 +587,10 @@ export const makeObjectOps = (
         }
       }),
 
-    deleteObjects: (objects: readonly { key: string; versionId?: string }[]) =>
+    deleteObjects: (
+      objects: readonly { key: string; versionId?: string }[],
+    ) =>
       Effect.gen(function* () {
-        const { url, token, container } = target;
-
         const results = yield* Effect.all(
           objects.map((obj) =>
             Effect.gen(function* () {
@@ -513,21 +598,29 @@ export const makeObjectOps = (
                 .join(
                   "/",
                 );
-              let response = yield* client.execute(
-                HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
-                  HttpClientRequest.setHeaders({
-                    "X-Auth-Token": token,
-                    "X-Static-Large-Object": "true",
-                  }),
-                  HttpClientRequest.setUrlParams({
-                    "multipart-manifest": "delete",
-                  }),
-                ),
-              ).pipe(
-                Effect.mapError((e) => mapError(500, String(e), container)),
+              let response: HttpClientResponse.HttpClientResponse =
+                yield* client.execute(
+                  HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
+                    HttpClientRequest.setHeaders({
+                      "X-Auth-Token": token,
+                      "X-Static-Large-Object": "true",
+                    }),
+                    HttpClientRequest.setUrlParams({
+                      "multipart-manifest": "delete",
+                    }),
+                  ),
+                ).pipe(
+                  Effect.mapError((e) => mapError(500, String(e), container)),
+                );
+
+              let responseBody = yield* response.text.pipe(
+                Effect.orElseSucceed(() => ""),
               );
 
-              if (response.status === 400) {
+              if (
+                response.status === 400 ||
+                (response.status === 200 && responseBody.includes("Not an SLO"))
+              ) {
                 // Not an SLO, try regular delete
                 response = yield* client.execute(
                   HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
@@ -535,6 +628,10 @@ export const makeObjectOps = (
                   ),
                 ).pipe(
                   Effect.mapError((e) => mapError(500, String(e), container)),
+                );
+                // Refresh responseBody cache for the new response
+                responseBody = yield* response.text.pipe(
+                  Effect.orElseSucceed(() => ""),
                 );
               }
 
@@ -544,9 +641,8 @@ export const makeObjectOps = (
               ) {
                 return { key: obj.key, error: null };
               } else {
-                const errorBody = yield* response.text.pipe(
-                  Effect.orElseSucceed(() => "Unknown error"),
-                );
+                // Reuse the cached responseBody instead of reading response.text again
+                const errorBody = responseBody || "Unknown error";
                 return {
                   key: obj.key,
                   error: {
@@ -574,367 +670,57 @@ export const makeObjectOps = (
         return { deleted, errors } satisfies DeleteObjectsResult;
       }),
 
-    createMultipartUpload: (
-      _key: string,
-      _headers: Record<string, string | string[] | undefined>,
-    ): Effect.Effect<MultipartUploadResult, BackendError> =>
-      Effect.gen(function* () {
-        const uploadId = yield* Effect.try({
-          try: () => crypto.randomUUID(),
-          catch: (e) => new InternalError({ message: String(e) }),
-        });
-        return { uploadId } satisfies MultipartUploadResult;
-      }),
-
-    uploadPart: (
-      _key: string,
-      uploadId: string,
-      partNumber: number,
-      body: Stream.Stream<Uint8Array, Error>,
-      _headers: Record<string, string | string[] | undefined>,
-    ): Effect.Effect<UploadPartResult, BackendError> =>
-      Effect.gen(function* () {
-        const { url, token, container } = target;
-        const segmentKey = `${MP_SEGMENTS_PREFIX}${uploadId}/${partNumber}`;
-        const encodedSegmentKey = segmentKey.split("/").map(encodeURIComponent)
-          .join("/");
-
-        const response = yield* client.execute(
-          HttpClientRequest.put(`${url}/${encodedSegmentKey}`).pipe(
-            HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-            HttpClientRequest.bodyStream(body),
-          ),
-        ).pipe(
-          Effect.mapError((e) => mapError(500, String(e), container)),
-        );
-
-        if (response.status < 200 || response.status >= 300) {
-          const message = yield* response.text.pipe(
-            Effect.orElseSucceed(() => "Error"),
-          );
-          return yield* Effect.fail(
-            mapError(
-              response.status,
-              message || "Error",
-              container,
-              "PUT",
-              segmentKey,
-            ),
-          );
-        }
-
-        const etagHeader = response.headers["etag"];
-        const etagValue = Array.isArray(etagHeader)
-          ? etagHeader[0]
-          : etagHeader;
-
-        return {
-          etag: etagValue || "",
-        } satisfies UploadPartResult;
-      }),
-
-    completeMultipartUpload: (
+    getObjectAttributes: (
       key: string,
-      uploadId: string,
-      parts: readonly { etag: string; partNumber: number }[],
-      metadata: Record<string, string>,
-    ): Effect.Effect<CompleteMultipartUploadResult, BackendError> =>
+      attributes: readonly string[],
+      headers: Record<string, string | string[] | undefined>,
+    ) =>
       Effect.gen(function* () {
-        if (parts.length === 0) {
-          return yield* Effect.fail(
-            new InvalidPart({
-              message: "At least one part must be specified.",
-            }),
-          );
-        }
-        const { url, token, container } = target;
-        const encodedKey = key.split("/").map(encodeURIComponent).join("/");
-
-        // Fetch segment info to get sizes
-        const segmentMap = new Map<string, ObjectInfo>();
-        const buildSegmentMap = Effect.gen(function* () {
-          segmentMap.clear();
-          let segmentMarker: string | undefined = undefined;
-          while (true) {
-            const segmentsResult: ListObjectsResult = yield* listObjects({
-              prefix: `${MP_SEGMENTS_PREFIX}${uploadId}/`,
-              marker: segmentMarker,
-            });
-            for (const c of segmentsResult.contents) {
-              segmentMap.set(c.key, c);
-            }
-            if (!segmentsResult.isTruncated || !segmentsResult.nextMarker) {
-              break;
-            }
-            segmentMarker = segmentsResult.nextMarker;
-          }
-
-          // Verify all parts are present
-          for (const p of parts) {
-            const segmentKey =
-              `${MP_SEGMENTS_PREFIX}${uploadId}/${p.partNumber}`;
-            if (!segmentMap.has(segmentKey)) {
-              return yield* Effect.fail(
-                new NoSuchUpload({
-                  uploadId,
-                  message: `Part ${p.partNumber} not found in segment listing`,
-                }),
-              );
-            }
-          }
-        });
-
-        // Retry with exponential backoff for eventual consistency
-        yield* buildSegmentMap.pipe(
-          Effect.retry({
-            while: (e) => e instanceof NoSuchUpload,
-            schedule: Schedule.exponential("100 millis").pipe(
-              Schedule.compose(Schedule.recurs(4)),
-            ),
-          }),
+        const head = yield* headObject(
+          key,
+          { "x-amz-checksum-mode": "ENABLED", ...headers },
         );
 
-        // 1. Build SLO manifest
-        const manifest = [];
-        for (const p of parts) {
-          const segmentKey = `${MP_SEGMENTS_PREFIX}${uploadId}/${p.partNumber}`;
-          const info = segmentMap.get(segmentKey)!;
-          manifest.push({
-            path: `/${container}/${segmentKey}`,
-            etag: p.etag.replace(/"/g, ""),
-            size_bytes: info.size,
-          });
-        }
-
-        // 2. PUT SLO manifest
-        const swiftHeaders: Record<string, string> = {
-          "X-Auth-Token": token,
-          "Content-Type": (metadata["content-type"] ||
-            "application/octet-stream") as string,
+        const lowerAttrs = attributes.map((a) => a.toLowerCase());
+        const isSLO =
+          head.headers["x-static-large-object"]?.toLowerCase() === "true";
+        const result: ObjectAttributes = {
+          ...(lowerAttrs.includes("etag") ? { etag: head.etag } : {}),
+          ...(lowerAttrs.includes("checksum")
+            ? {
+              checksum: {
+                checksumCRC32: head.checksumCRC32,
+                checksumCRC32C: head.checksumCRC32C,
+                checksumCRC64NVME: head.checksumCRC64NVME,
+                checksumSHA1: head.checksumSHA1,
+                checksumSHA256: head.checksumSHA256,
+                checksumType: head.checksumAlgorithm
+                  ? (isSLO ? "COMPOSITE" : "FULL_OBJECT")
+                  : undefined,
+              },
+            }
+            : {}),
+          ...(lowerAttrs.includes("objectsize")
+            ? { objectSize: head.contentLength }
+            : {}),
+          ...(lowerAttrs.includes("storageclass")
+            ? { storageClass: "STANDARD" }
+            : {}),
+          ...(lowerAttrs.includes("objectparts")
+            ? {
+              objectParts: {
+                totalPartsCount: 0, // Placeholder
+                partNumberMarker: 0,
+                nextPartNumberMarker: 0,
+                maxParts: 1000,
+                isTruncated: false,
+                parts: [],
+              },
+            }
+            : {}),
         };
 
-        for (const [k, v] of Object.entries(metadata)) {
-          const lowK = k.toLowerCase();
-          if (lowK.startsWith("x-amz-meta-")) {
-            const metaKey = lowK.substring("x-amz-meta-".length);
-            const value = fixHeaderEncoding(String(v));
-            swiftHeaders[`X-Object-Meta-${metaKey}`] =
-              /[^\x20-\x7E]/.test(value) ? encodeURIComponent(value) : value;
-          }
-        }
-
-        const body = new TextEncoder().encode(JSON.stringify(manifest));
-
-        const request = HttpClientRequest.put(`${url}/${encodedKey}`).pipe(
-          HttpClientRequest.setUrlParams({ "multipart-manifest": "put" }),
-          HttpClientRequest.bodyUint8Array(body),
-          HttpClientRequest.setHeaders({
-            ...swiftHeaders,
-            "X-Static-Large-Object": "true",
-            "Content-Length": String(body.length),
-          }),
-        );
-
-        const response = yield* client.execute(request).pipe(
-          Effect.mapError((e) => {
-            return mapError(500, String(e), container);
-          }),
-        );
-
-        if (response.status < 200 || response.status >= 300) {
-          const message = yield* response.text.pipe(
-            Effect.orElseSucceed(() => "Error"),
-          );
-          return yield* Effect.fail(
-            mapError(
-              response.status,
-              message || "Error",
-              container,
-              "PUT",
-              key,
-            ),
-          );
-        }
-
-        const etagHeader = response.headers["etag"];
-        const etagValue = Array.isArray(etagHeader)
-          ? etagHeader[0]
-          : etagHeader;
-
-        // 3. Delete the metadata object
-        const metaKey = `${MP_META_PREFIX}${key}/${uploadId}`;
-        const encodedMetaKey = metaKey.split("/").map(encodeURIComponent).join(
-          "/",
-        );
-        yield* client.execute(
-          HttpClientRequest.del(`${url}/${encodedMetaKey}`).pipe(
-            HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-          ),
-        ).pipe(Effect.ignore);
-
-        return {
-          location: `${url}/${encodedKey}`,
-          bucket: container,
-          key,
-          etag: etagValue || "",
-        } satisfies CompleteMultipartUploadResult;
-      }),
-
-    abortMultipartUpload: (
-      key: string,
-      uploadId: string,
-    ): Effect.Effect<void, BackendError> =>
-      Effect.gen(function* () {
-        const { url, token } = target;
-
-        // 1. Delete the segments
-        let marker: string | undefined = undefined;
-        while (true) {
-          const segmentsResult: ListObjectsResult = yield* listObjects({
-            prefix: `${MP_SEGMENTS_PREFIX}${uploadId}/`,
-            marker,
-          });
-
-          yield* Effect.all(
-            segmentsResult.contents.map((content) => {
-              const encodedKey = content.key.split("/").map(encodeURIComponent)
-                .join("/");
-              return client.execute(
-                HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
-                  HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-                ),
-              ).pipe(Effect.ignore);
-            }),
-            { concurrency: 10 },
-          );
-
-          if (!segmentsResult.isTruncated || !segmentsResult.nextMarker) {
-            break;
-          }
-          marker = segmentsResult.nextMarker;
-        }
-
-        // 2. Delete the metadata object
-        const metaKey = `${MP_META_PREFIX}${key}/${uploadId}`;
-        const encodedMetaKey = metaKey.split("/").map(encodeURIComponent).join(
-          "/",
-        );
-        yield* client.execute(
-          HttpClientRequest.del(`${url}/${encodedMetaKey}`).pipe(
-            HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-          ),
-        ).pipe(Effect.ignore);
-      }),
-
-    listMultipartUploads: (args: {
-      prefix?: string;
-      delimiter?: string;
-      keyMarker?: string;
-      uploadIdMarker?: string;
-      maxUploads?: number;
-      encodingType?: string;
-    }): Effect.Effect<ListMultipartUploadsResult, BackendError> =>
-      Effect.gen(function* () {
-        const { container } = target;
-        const prefix = `${MP_META_PREFIX}${args.prefix ?? ""}`;
-        const marker = args.keyMarker
-          ? `${MP_META_PREFIX}${args.keyMarker}/${args.uploadIdMarker ?? ""}`
-          : undefined;
-
-        const metaResult = yield* listObjects({
-          prefix,
-          delimiter: args.delimiter,
-          maxKeys: args.maxUploads,
-          marker,
-        });
-
-        const uploads: MultipartUploadInfo[] = metaResult.contents.map((c) => {
-          const parts = c.key.substring(MP_META_PREFIX.length).split("/");
-          const uploadId = parts.pop()!;
-          const key = parts.join("/");
-          return {
-            key,
-            uploadId,
-            owner: { id: "swift", displayName: "Swift User" },
-            initiator: { id: "swift", displayName: "Swift User" },
-            storageClass: "STANDARD",
-            initiated: c.lastModified!,
-          };
-        });
-
-        return {
-          bucket: container,
-          prefix: args.prefix,
-          keyMarker: args.keyMarker,
-          uploadIdMarker: args.uploadIdMarker,
-          maxUploads: args.maxUploads ?? 1000,
-          delimiter: args.delimiter,
-          isTruncated: metaResult.isTruncated,
-          uploads,
-          commonPrefixes: metaResult.commonPrefixes.map((cp) => ({
-            prefix: cp.prefix.substring(MP_META_PREFIX.length),
-          })),
-          encodingType: args.encodingType,
-        } satisfies ListMultipartUploadsResult;
-      }),
-
-    listParts: (
-      key: string,
-      uploadId: string,
-    ): Effect.Effect<ListPartsResult, BackendError> =>
-      Effect.gen(function* () {
-        const { url, token, container } = target;
-
-        // Check if upload exists by checking for metadata object
-        const metaKey = `${MP_META_PREFIX}${key}/${uploadId}`;
-        const encodedMetaKey = metaKey.split("/").map(encodeURIComponent).join(
-          "/",
-        );
-        const metaResponse = yield* client.execute(
-          HttpClientRequest.head(`${url}/${encodedMetaKey}`).pipe(
-            HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-          ),
-        ).pipe(
-          Effect.mapError((e) => mapError(500, String(e), container)),
-        );
-
-        if (metaResponse.status === 404) {
-          return yield* Effect.fail(
-            new NoSuchUpload({
-              uploadId,
-              message:
-                `The specified upload does not exist. The upload ID may be invalid, or the upload may have been aborted or completed.`,
-            }),
-          );
-        }
-
-        const segmentsResult = yield* listObjects({
-          prefix: `${MP_SEGMENTS_PREFIX}${uploadId}/`,
-        });
-
-        const parts: PartInfo[] = segmentsResult.contents.map((c) => {
-          const partNumber = parseInt(c.key.split("/").pop() || "0");
-          return {
-            partNumber,
-            lastModified: c.lastModified,
-            etag: c.etag,
-            size: c.size,
-          };
-        });
-
-        return {
-          bucket: container,
-          key,
-          uploadId,
-          owner: { id: "swift", displayName: "Swift User" },
-          initiator: { id: "swift", displayName: "Swift User" },
-          storageClass: "STANDARD",
-          partNumberMarker: 0,
-          nextPartNumberMarker: 0,
-          maxParts: 1000,
-          isTruncated: false,
-          parts,
-        } satisfies ListPartsResult;
+        return result;
       }),
   };
 };

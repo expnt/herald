@@ -33,11 +33,18 @@ export const CorsConfig = Schema.Struct({
 
 export type CorsConfig = Schema.Schema.Type<typeof CorsConfig>;
 
+export const AuthConfig = Schema.Struct({
+  accessKeysRefs: Schema.Array(Schema.String),
+});
+
+export type AuthConfig = Schema.Schema.Type<typeof AuthConfig>;
+
 export const BucketOverride = Schema.Struct({
   endpoint: Schema.optional(Schema.String),
   bucket_name: Schema.optional(Schema.String),
   region: Schema.optional(Schema.String),
   cors: Schema.optional(CorsConfig),
+  auth: Schema.optional(AuthConfig),
 });
 
 export type BucketOverride = Schema.Schema.Type<typeof BucketOverride>;
@@ -57,6 +64,7 @@ export const S3Config = Schema.Struct({
   credentials: Schema.optional(S3Credentials),
   buckets: BucketsConfig,
   cors: Schema.optional(CorsConfig),
+  auth: Schema.optional(AuthConfig),
 });
 
 export const SwiftConfig = Schema.Struct({
@@ -67,6 +75,7 @@ export const SwiftConfig = Schema.Struct({
   credentials: Schema.optional(SwiftCredentials),
   buckets: BucketsConfig,
   cors: Schema.optional(CorsConfig),
+  auth: Schema.optional(AuthConfig),
 });
 
 export const BackendConfig = Schema.Union(S3Config, SwiftConfig);
@@ -76,6 +85,7 @@ export type BackendConfig = Schema.Schema.Type<typeof BackendConfig>;
 export const GlobalConfig = Schema.Struct({
   backends: Schema.Record({ key: Schema.String, value: BackendConfig }),
   cors: Schema.optional(CorsConfig),
+  auth: Schema.optional(AuthConfig),
 });
 
 export type GlobalConfig = Schema.Schema.Type<typeof GlobalConfig>;
@@ -249,4 +259,64 @@ export const resolveCorsConfig = (
     ...backendCors,
     ...bucketCors,
   };
+};
+
+export const resolveAuthConfig = (
+  config: GlobalConfig,
+  bucketName: string,
+): AuthConfig | undefined => {
+  // 1. Find the backend and bucket override
+  let bucketAuth: AuthConfig | undefined;
+  let backendAuth: AuthConfig | undefined;
+
+  for (const backend of Object.values(config.backends)) {
+    const buckets = backend.buckets;
+    if (buckets && typeof buckets !== "string" && buckets[bucketName]) {
+      bucketAuth = buckets[bucketName].auth;
+      backendAuth = backend.auth;
+      break;
+    }
+  }
+
+  // If not found by direct hit, try glob match (similar to lookupBucket)
+  if (!bucketAuth && !backendAuth) {
+    for (const backend of Object.values(config.backends)) {
+      const buckets = backend.buckets;
+      if (buckets && typeof buckets !== "string") {
+        let foundMatch = false;
+        for (const [key, override] of Object.entries(buckets)) {
+          if (globToRegex(key).test(bucketName)) {
+            bucketAuth = (override as BucketOverride).auth;
+            backendAuth = backend.auth;
+            foundMatch = true;
+            break;
+          }
+        }
+        if (foundMatch) break;
+      }
+    }
+  }
+
+  // If still not found, check if it's a general backend match
+  if (!bucketAuth && !backendAuth) {
+    for (const backend of Object.values(config.backends)) {
+      const buckets = backend.buckets;
+      if (
+        typeof buckets === "string" && globToRegex(buckets).test(bucketName)
+      ) {
+        backendAuth = backend.auth;
+        break;
+      }
+    }
+  }
+
+  const globalAuth = config.auth;
+
+  if (!bucketAuth && !backendAuth && !globalAuth) {
+    return undefined;
+  }
+
+  // Merge with precedence: bucket > backend > global
+  // For accessKeysRefs, we take the most specific one, not merge arrays
+  return bucketAuth ?? backendAuth ?? globalAuth;
 };

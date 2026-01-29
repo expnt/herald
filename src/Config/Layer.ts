@@ -1,17 +1,28 @@
-import { Config, Context, Effect, Layer, type Option, Schema } from "effect";
+import { Config, Context, Effect, Layer, Option, Schema } from "effect";
 import { parse } from "@std/yaml";
 import {
   type BackendConfig,
   GlobalConfig,
   lookupBucket,
   type MaterializedBucket,
+  resolveAuthConfig,
 } from "../Domain/Config.ts";
+import {
+  type AuthCredentials,
+  resolveAuthCredentials,
+} from "../Services/Auth.ts";
 
 export class HeraldConfig extends Context.Tag("HeraldConfig")<
   HeraldConfig,
   {
     readonly raw: GlobalConfig;
     readonly lookupBucket: (name: string) => Option.Option<MaterializedBucket>;
+    readonly resolveAuth: (
+      bucketName: string,
+    ) => Option.Option<AuthCredentials[]>;
+    readonly resolveAuthForBackendId: (
+      backendId: string,
+    ) => Option.Option<AuthCredentials[]>;
   }
 >() {}
 
@@ -62,6 +73,7 @@ export function parseConfig(
     "CORS_EXPOSED_HEADERS",
     "CORS_MAX_AGE",
     "CORS_CREDENTIALS",
+    "AUTH_ACCESS_KEYS_REFS",
   ];
 
   for (const [key, value] of Object.entries(env)) {
@@ -127,6 +139,10 @@ export function parseConfig(
         (backend.cors as Record<string, unknown>)[camelCorsKey] =
           value.toLowerCase() === "true";
       }
+    } else if (configKey === "auth_access_keys_refs") {
+      backend.auth = {
+        accessKeysRefs: value.split(",").map((s) => s.trim()),
+      };
     } else {
       backend[configKey] = value;
     }
@@ -161,6 +177,18 @@ export function parseConfig(
     }
   }
 
+  // Handle global AUTH from env
+  const globalAuth: Record<string, unknown> = (yamlConfig &&
+      typeof yamlConfig === "object" && "auth" in yamlConfig)
+    ? { ...(yamlConfig as { auth: Record<string, unknown> }).auth }
+    : {};
+
+  if (env["HERALD_AUTH_ACCESS_KEYS_REFS"]) {
+    globalAuth["accessKeysRefs"] = env["HERALD_AUTH_ACCESS_KEYS_REFS"]
+      .split(",")
+      .map((s) => s.trim());
+  }
+
   // Default backend fallback if no backends defined at all
   if (Object.keys(backends).length === 0) {
     backends["default"] = {
@@ -179,6 +207,7 @@ export function parseConfig(
   return Schema.decodeUnknownSync(GlobalConfig)({
     backends: validatedBackends,
     cors: Object.keys(globalCors).length > 0 ? globalCors : undefined,
+    auth: Object.keys(globalAuth).length > 0 ? globalAuth : undefined,
   });
 }
 
@@ -212,6 +241,20 @@ export const HeraldConfigLive = Layer.effect(
     return {
       raw,
       lookupBucket: (name: string) => lookupBucket(raw, name),
+      resolveAuth: (bucketName: string) => {
+        const authConfig = resolveAuthConfig(raw, bucketName);
+        if (!authConfig) return Option.none();
+        const creds = resolveAuthCredentials(authConfig.accessKeysRefs, env);
+        return Option.some(creds);
+      },
+      resolveAuthForBackendId: (backendId: string) => {
+        const backend = raw.backends[backendId];
+        if (!backend) return Option.none();
+        const authConfig = backend.auth ?? raw.auth;
+        if (!authConfig) return Option.none();
+        const creds = resolveAuthCredentials(authConfig.accessKeysRefs, env);
+        return Option.some(creds);
+      },
     };
   }),
 );

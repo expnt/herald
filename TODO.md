@@ -30,6 +30,17 @@ implementation.
 - [ ] **Public Access Block**: Implementation of
       `GET/PUT/DELETE /?publicAccessBlock`. _(Focus tests:
       `test_bucket_public_access_block`)_
+- [ ] **Bucket Listing Enhancements**: - [ ] **Encoding Type**: Support for
+      `?encoding-type=url` in `ListObjects` and `ListObjectsV2`. _(Focus tests:
+      `test_bucket_list_encoding_basic`, `test_bucket_listv2_encoding_basic`)_ -
+      [ ] **Special Characters in Delimiters**: Fix handling of percentage,
+      whitespace, and other special characters as delimiters. _(Focus tests:
+      `test_bucket_list_delimiter_percentage`,
+      `test_bucket_list_delimiter_whitespace`)_ - [ ] **V2 Fetch Owner**:
+      Support for `FetchOwner` parameter in `ListObjectsV2`. _(Focus tests:
+      `test_bucket_listv2_fetchowner_empty`)_ - [ ] **Unordered Listings**:
+      Ensure consistent behavior when listing objects in buckets with
+      non-standard ordering. _(Focus tests: `test_bucket_list_unordered`)_
 - [ ] **Replication Configuration**: Implementation of
       `GET/PUT/DELETE /?replication`.
 - [ ] **Notification Configuration (SNS)**: Implementation of
@@ -59,21 +70,36 @@ implementation.
       during certain test sequences. _(Focus tests:
       `test_object_head_zero_bytes`)_
 - [ ] **Unicode Metadata**: Fix support for non-ASCII characters in object
-      metadata. _(Focus tests: `test_object_set_get_unicode_metadata`)_
+      metadata. Currently failing across all backends. _(Focus tests:
+      `test_object_set_get_unicode_metadata`)_
 - [ ] **Copy Object**: Support for `PUT` with `x-amz-copy-source` header.
       _(Focus tests: `test_object_copy`)_
 - [ ] **Tagging**: Implementation of `GET/PUT/DELETE /?tagging` for objects.
       _(Focus tests: `test_object_tagging`)_
 - [ ] **ACLs (Access Control Lists)**: Implementation of `GET/PUT /?acl` for
-      objects. _(Focus tests: `test_object_acl_default`, `test_object_acl_read`,
-      `test_object_put_acl_mtime`)_
+      objects. Currently failing due to missing XML parsing/formatting for
+      object-level ACLs. _(Focus tests: `test_object_acl_default`,
+      `test_object_acl_read`, `test_object_put_acl_mtime`)_
 - [ ] **Legal Hold & Retention**: Implementation of `GET/PUT /?legal-hold` and
       `GET/PUT /?retention` (Object Lock).
 - [ ] **Object Lock Configuration**: Implementation of `GET/PUT /?object-lock`
       on objects.
 - [ ] **S3 Select**: Implementation of `POST /?select&select-type=2`.
 - [ ] **Checksums**: Support for `x-amz-checksum-sha1`, `x-amz-checksum-sha256`,
-      `x-amz-checksum-crc32`, and `x-amz-checksum-crc32c`.
+      `x-amz-checksum-crc32`, and `x-amz-checksum-crc32c`. Currently failing
+      validation tests. _(Focus tests: `test_object_checksum_sha256`)_
+  - [ ] **Fix S3 Buffering**: Refactor S3 `putObject` and `uploadPart` to stream
+        directly to the AWS SDK instead of collecting chunks into a
+        `Uint8Array`.
+  - [ ] **Fix Swift Validation Timing**: Move Swift checksum validation before
+        the final commit to avoid "zombie" objects (data persisted despite
+        failure).
+  - [ ] **Implement CRC64NVME**: Add the missing logic for CRC64NVME in the
+        `Checksum` service.
+  - [ ] **Validation on GET**: Implement "Check-on-Read" validation for `GET`
+        requests, supporting abrupt termination or trailers on mismatch.
+  - [ ] **Swift Header Cleanup**: Fix duplicate checksum headers in Swift
+        responses (remove `x-amz-meta-` versions of internal checksums).
 - [ ] **Server-Side Encryption (SSE)**: Handling of
       `x-amz-server-side-encryption`,
       `x-amz-server-side-encryption-customer-algorithm`, etc.
@@ -88,28 +114,49 @@ implementation.
       `AssumeRole`, etc.
 - [ ] **Web Identity Federation**: Implementation of
       `AssumeRoleWithWebIdentity`.
+- [ ] **Anonymous Access**: Correctly handle anonymous requests for public
+      buckets/objects. _(Focus tests: `test_bucket_list_objects_anonymous`,
+      `test_post_object_anonymous_request`)_
 
 ## 4. Validation, Errors & Protocol
 
+- [ ] **HTTP 100 Continue**: Support for `Expect: 100-continue` (return 100
+      before reading body). _(Focus tests: `test_100_continue`,
+      `test_100_continue_error_retry`)_
+- [ ] **SigV4 Request Validation**: Reject invalid or missing Authorization and
+      `x-amz-date` with 403/400. Many tests expect 403 for bad/missing auth.
+      _(Focus tests: `test_*_bad_authorization_*`, `test_*_bad_date_*_aws2`)_
+- [ ] **Content-Length Handling**: Require or correctly handle Content-Length
+      for PUT/POST; reject or accept requests with missing/invalid
+      Content-Length as per S3 behavior. _(Focus tests:
+      `test_object_create_bad_contentlength_none`,
+      `test_bucket_create_bad_contentlength_none`)_
+- [ ] **Special Key Names / Prefix**: Bucket create and list with special
+      characters in key names and prefix. _(Focus tests:
+      `test_bucket_create_special_key_names`,
+      `test_bucket_list_special_prefix`)_
 - [ ] **Bucket Naming Validation**: Implement strict S3 naming rules (no IP
       addresses, no double dots, length 3-63, etc.). Currently many naming tests
-      fail or hang. _(Focus tests: `test_bucket_create_naming_bad_ip`,
+      fail. _(Focus tests: `test_bucket_create_naming_bad_ip`,
       `test_bucket_create_naming_dns_dot_dot`,
       `test_bucket_create_naming_bad_starts_nonalpha`)_
-- [ ] **Correct Error Codes**: Ensure accurate HTTP status codes for S3 errors
-      (e.g., return `400 Bad Request` or `403 Forbidden` instead of
-      `409 Conflict` or `500 Internal Server Error`). _(Focus tests:
-      `test_bucket_create_exists`, `test_bucket_create_exists_nonowner`,
-      `test_object_read_not_exist`)_
+- [ ] **Correct Error Codes**: Ensure accurate HTTP status codes for S3 errors.
+      - [ ] **409 Conflict**: Ensure `BucketAlreadyExists` and
+      `BucketAlreadyOwnedByYou` return 409. (Partially fixed for Swift create).
+      - [ ] **404 Not Found**: Ensure `NoSuchKey` and `NoSuchBucket` return 404
+      with correct XML body. - [ ] **403 Forbidden**: Ensure `AccessDenied`
+      returns 403.
 - [ ] **Method POST Support**: Fix "Method POST for key [] not implemented"
-      errors at the bucket root level. _(Focus tests:
-      `test_multi_object_delete`, `test_post_object_authenticated_request`)_
+      errors at the bucket root level for authenticated requests. _(Focus tests:
+      `test_post_object_authenticated_request`)_
 - [ ] **Multipart Reliability**: Address `502 Bad Gateway` errors occurring
       during `CreateMultipartUpload` and other multipart operations. _(Focus
       tests: `test_multipart_upload`)_
 - [ ] **Conditional Requests**: Fix `If-Match`, `If-None-Match`,
-      `If-Modified-Since`, and `If-Unmodified-Since` behavior. _(Focus tests:
-      `test_get_object_ifmatch_failed`, `test_get_object_ifnonematch_failed`,
+      `If-Modified-Since`, and `If-Unmodified-Since` behavior. Currently failing
+      to return `412 Precondition Failed` or `304 Not Modified` correctly.
+      _(Focus tests: `test_get_object_ifmatch_failed`,
+      `test_get_object_ifnonematch_good`,
       `test_get_object_ifmodifiedsince_failed`)_
 - [ ] **Response Field Completeness**: Ensure expected XML/JSON fields like
       `ChecksumSHA256`, `Rules`, `Errors`, and `x-amz-delete-marker` are present
@@ -132,3 +179,10 @@ implementation.
 
 - [ ] **Append Object**: Implementation of `appendobject` (often found in
       Ceph/RGW).
+
+## 6. Architectural & DevEx
+
+- [ ] **Configuration Hot-Reloading**: Implement a watcher for `herald.yaml` to
+      invalidate the `BackendResolver` cache on configuration changes.
+- [ ] **Header Marshalling Abstraction**: Centralize S3 header parsing and
+      generation to reduce boilerplate in the Frontend handlers.
