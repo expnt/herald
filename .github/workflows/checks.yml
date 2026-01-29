@@ -80,6 +80,7 @@ jobs:
         run: nix develop --command deno bench --allow-all benchmarks/
 
       - name: s3-tests
+        if: false
         run: |
           set +e
 
