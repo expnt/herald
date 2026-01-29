@@ -17,6 +17,8 @@ import { HttpS3Live } from "./Frontend/Http.ts";
 import { HttpHeraldApi } from "./Api.ts";
 import { corsMiddleware } from "./Frontend/Cors.ts";
 import { S3XmlLive } from "./Services/S3Xml.ts";
+import { S3ClientFactory } from "./Backends/S3/Client.ts";
+import { SwiftClient } from "./Backends/Swift/Client.ts";
 import { BackendResolver } from "./Services/BackendResolver.ts";
 import { S3HeaderService } from "./Services/S3HeaderService.ts";
 import { Checksum } from "./Services/Checksum.ts";
@@ -39,6 +41,8 @@ export const HttpServerHeraldLive = Layer.unwrapEffect(
       Layer.provide(HttpHeraldLive),
       Layer.provide(S3XmlLive),
       Layer.provide(BackendResolver.Default),
+      Layer.provide(S3ClientFactory.Default),
+      Layer.provide(SwiftClient.Default),
       Layer.provide(S3HeaderService.Default),
       Layer.provide(Checksum.Default),
       HttpServer.withLogAddress,
