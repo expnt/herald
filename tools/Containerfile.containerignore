@@ -1,0 +1,7 @@
+# Ignore everything by default (whitelisting approach)
+*
+
+# Allow source code and essential configuration
+!src/
+!deno.jsonc
+!deno.lock

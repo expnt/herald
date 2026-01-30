@@ -1,0 +1,123 @@
+name: checks
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOCKER_CMD: docker
+  UV_CACHE_DIR: /tmp/.uv-cache
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: DeterminateSystems/nix-installer-action@v16
+
+      - uses: DeterminateSystems/flakehub-cache-action@v3
+
+      - name: pre-commit hooks
+        run: nix develop --command prek run --all-files
+
+      - name: deno cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/deno
+          key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-deno-
+
+      - name: uv cache
+        uses: actions/cache@v5
+        with:
+          path: /tmp/.uv-cache
+          key: uv-${{ runner.os }}-${{ hashFiles('s3-tests/requirements.txt') }}
+          restore-keys: |
+            uv-${{ runner.os }}-${{ hashFiles('s3-tests/requirements.txt') }}
+            uv-${{ runner.os }}
+
+      - name: start container
+        run: nix develop --command deno run --allow-all x/compose-up.ts s3 swift db
+
+      - name: wait for services
+        run: |
+          echo "Waiting for MinIO..."
+          for i in {1..30}; do
+            if curl -sf http://localhost:9000/minio/health/live; then
+              echo "MinIO is ready"
+              break
+            fi
+            sleep 2
+          done || (echo "MinIO failed to start" && exit 1)
+
+          echo "Waiting for SAIO..."
+          for i in {1..60}; do
+            if curl -sf http://localhost:8080/healthcheck; then
+              echo "SAIO is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "SAIO failed to start"
+          exit 1
+
+      - name: integration tests
+        run: nix develop --command deno task test
+
+      - name: benchmarks
+        run: nix develop --command deno bench --allow-all benchmarks/
+
+      - name: s3-tests
+        if: false
+        run: |
+          set +e
+
+          run_minio() {
+            echo "=== Running s3-tests (MinIO) ==="
+            nix develop --command deno run --allow-all x/s3-tests.ts --backend minio --no-abort
+            echo "--- s3-tests/s3-tests.log (MinIO) ---"
+            cat s3-tests/s3-tests.log || true
+            echo "--- s3-tests/herald-proxy.log (MinIO) ---"
+            cat s3-tests/herald-proxy.log || true
+          }
+
+          run_swift() {
+            echo "=== Running s3-tests (Swift) ==="
+            nix develop --command deno run --allow-all x/s3-tests.ts --backend swift --no-abort
+            echo "--- s3-tests/s3-tests-swift.log (Swift) ---"
+            cat s3-tests/s3-tests-swift.log || true
+            echo "--- s3-tests/herald-proxy-swift.log (Swift) ---"
+            cat s3-tests/herald-proxy-swift.log || true
+          }
+
+          run_minio &
+          pid_minio=$!
+
+          run_swift &
+          pid_swift=$!
+
+          wait $pid_minio
+          status_minio=$?
+
+          wait $pid_swift
+          status_swift=$?
+
+          # Fail the step if either failed
+          if [ $status_minio -ne 0 ] || [ $status_swift -ne 0 ]; then
+            # exit 1
+          fi
+
+      - name: prune uv cache
+        run: nix develop --command uv cache prune --ci
