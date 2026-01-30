@@ -34,7 +34,14 @@ function addCorsHeaders(
 
   if (cors.allowedOrigins) {
     if (cors.allowedOrigins.includes("*")) {
-      headers["access-control-allow-origin"] = "*";
+      if (cors.credentials && origin) {
+        headers["access-control-allow-origin"] = origin;
+        headers["vary"] = headers["vary"]
+          ? `${headers["vary"]}, Origin`
+          : "Origin";
+      } else if (!cors.credentials) {
+        headers["access-control-allow-origin"] = "*";
+      }
     } else if (origin && cors.allowedOrigins.includes(origin)) {
       headers["access-control-allow-origin"] = origin;
       headers["vary"] = headers["vary"]
@@ -68,7 +75,12 @@ function makePreflightResponse(
 
   if (cors.allowedOrigins) {
     if (cors.allowedOrigins.includes("*")) {
-      headers["access-control-allow-origin"] = "*";
+      if (cors.credentials && origin) {
+        headers["access-control-allow-origin"] = origin;
+        headers["vary"] = "Origin";
+      } else if (!cors.credentials) {
+        headers["access-control-allow-origin"] = "*";
+      }
     } else if (origin && cors.allowedOrigins.includes(origin)) {
       headers["access-control-allow-origin"] = origin;
       headers["vary"] = "Origin";
