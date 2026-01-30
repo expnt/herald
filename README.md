@@ -52,8 +52,10 @@ aws s3 ls --endpoint-url http://localhost:3000/s3
 aws s3 ls --endpoint-url http://localhost:3000/s3 s3://my-bucket/
 ```
 
-**Images:** [ghcr.io/expnt/herald](https://ghcr.io/expnt/herald) **Helm chart:**
-[chart/](chart/) for Kubernetes (chart may be outdated; update planned).
+Deployment resources:
+
+- **Images:** [ghcr.io/expnt/herald](https://ghcr.io/expnt/herald)
+- **Helm chart:** [chart/](chart/) for Kubernetes.
 
 ## Config
 
@@ -274,8 +276,7 @@ credential keys go under `credentials`).
 - **Docker:** Images are published at
   [ghcr.io/expnt/herald](https://ghcr.io/expnt/herald). Use env vars (see table
   above) or mount a `herald.yaml` and set `HERALD_CONFIG_PATH`.
-- **Kubernetes:** A Helm chart is in [chart/](chart/). It may be outdated;
-  updates are planned.
+- **Kubernetes:** A Helm chart is in [chart/](chart/).
 
 ## Limitations
 

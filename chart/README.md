@@ -33,7 +33,3 @@ Config schema: each backend has `protocol` (`s3` or `swift`), optional `endpoint
 
 - **Health:** `GET /health` returns `{ "status": "ok" }` (used for liveness/readiness).
 - **S3 API:** Path prefix `/s3`. Use `https://<ingress-host>/s3` as the S3 endpoint URL with path-style.
-
-## Service account
-
-The chart can create a Kubernetes ServiceAccount for the deployment (set `serviceAccount.create: true`). Herald itself does not use a custom “service account” concept; this is only for pod identity and RBAC.

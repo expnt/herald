@@ -1,5 +1,11 @@
 # Contributing
 
+## Environment
+
+Herald reads configuration from the process environment (see main README). For
+local development, copy `.env.example` to `.env` and set variables (e.g.
+`HERALD_*`, Swift test creds). `.env` is gitignored; never commit secrets.
+
 ## Starting Services
 
 You can start the containers used for development using the provided scripts:
@@ -78,7 +84,27 @@ deno bench --allow-all benchmarks/
   - `x/compose-up.ts` & `x/compose-down.ts`: Helpers for managing local Docker
     dependencies.
 
-- `chart/`: Helm charts for Kubernetes deployment.
+- `chart/`: Helm chart for Kubernetes deployment.
 
 - `tools/`: Infrastructure and development tools (Docker Compose,
   Containerfiles).
+
+### Repo features
+
+- **Nix flake** (`flake.nix`): Dev shell with Deno, uv, prek, infisical, etc.
+  Run `nix develop` to enter the environment; `x/` is on `PATH`.
+
+- **Commitizen** (`.cz.yaml`): Conventional commits and changelog bumps. Use
+  `cz` or `prek` to commit; version and `CHANGELOG.md` are updated on bump.
+
+- **Pre-commit** (`.pre-commit-config.yaml`): Hooks for deno fmt/lint/check,
+  YAML/JSON checks, trailing whitespace, etc. CI runs `prek run --all-files`
+  (see `.github/workflows/checks.yml`).
+
+- **GitHub Actions** (`.github/workflows/`):
+  - `pr-title-check.yml`: Enforces semantic pull request titles (e.g.
+    `feat(proxy): add X`) via amannn/action-semantic-pull-request.
+  - `checks.yml`: On push/PR — Nix dev shell, pre-commit hooks, deno cache, uv
+    cache, tests; submodules included.
+  - `build-image.yml`: Builds and pushes OCI image (e.g. ghcr.io) on push to
+    main when `src/` or `tools/` change; supports pull_request for validation.
