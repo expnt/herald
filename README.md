@@ -6,7 +6,7 @@
 	<em>herald: Orchestrating object storage services</em>
 </p>
 <p align="center">
-	<img src="https://img.shields.io/github/license/expnt/herald?style=default&logo=opensourceinitiative&logoColor=white&color=0080ff" alt="license">
+	<!-- <img src="https://img.shields.io/github/license/expnt/herald?style=default&logo=opensourceinitiative&logoColor=white&color=0080ff" alt="license"> -->
 	<img src="https://img.shields.io/github/last-commit/expnt/herald?style=default&logo=git&logoColor=white&color=0080ff" alt="last-commit">
 	<img src="https://img.shields.io/github/languages/top/expnt/herald?style=default&color=0080ff" alt="repo-top-language">
 	<img src="https://img.shields.io/github/languages/count/expnt/herald?style=default&color=0080ff" alt="repo-language-count">
@@ -63,58 +63,53 @@ Herald is configured via a YAML file (typically `herald.yaml`). The
 configuration defines backends and how incoming requests are routed to them.
 
 ```yaml
+# Optional: require S3 SigV4 auth for incoming requests (see Auth section)
+auth:
+  accessKeysRefs: [admin, readonly]
+
 backends:
   # Unique identifier for the backend
-  minio:
+  minio_stg_aa:
     # Backend protocol: "s3" or "swift"
     protocol: s3
-
-    # Base URL of the backend service
+    # Default config values for backend
     endpoint: http://127.0.0.1:9000
-
-    # Default region for this backend
     region: us-east-1
-
-    # Authentication credentials for the backend
     credentials:
       accessKeyId: minioadmin
       secretAccessKey: minioadmin
-
+    # Optional: auth to access buckets that route to this backend
+    # (bucket > backend > global)
+    auth:
+      accessKeysRefs: [app1]
     # Bucket routing rules.
     # Can be:
     # 1. "*" to match all buckets not claimed by other backends
     # 2. A glob pattern like "logs-*"
     # 3. A map of bucket definitions for granular control
-    # Optional: auth for this backend (bucket > backend > global)
-    auth:
-      accessKeysRefs: [admin]
-
     buckets:
       # Simple bucket mapping (inherits backend settings)
       my-bucket: {}
-
       # Mapping with overrides; bucket-level auth overrides backend/global
       external-data:
-        auth:
-          accessKeysRefs: [readonly]
         # Map proxy bucket "external-data" to backend bucket "data-v1"
         bucket_name: data-v1
-        # Override endpoint for this specific bucket
+        # Backend overrides for this specific bucket
         endpoint: http://special-endpoint:9000
-        # Override region
         region: us-west-2
-
+        auth:
+          accessKeysRefs: [ci]
       # Glob pattern support within the map
       "test-*":
         region: us-east-1
 
   # Example Swift backend
-  swift-storage:
+  swift_prd_bb:
     protocol: swift
     auth_url: http://keystone.example.com/v3
     region: RegionOne
-    # Optional: override the Swift container name for all buckets in this backend
-    # container: my-fixed-container
+    # Optional: map all buckets in this backend to a specific container
+    container: my-fixed-container
     credentials:
       username: my-user
       password: my-password
@@ -123,10 +118,6 @@ backends:
       project_domain_name: Default
     # Route all archive buckets to Swift
     buckets: "archive-*"
-
-# Optional: require S3 SigV4 auth for incoming requests (see Auth section)
-auth:
-  accessKeysRefs: [admin, readonly]
 
 cors:
   # Global CORS defaults
@@ -138,6 +129,20 @@ cors:
   credentials: false
 ```
 
+### Routing Logic
+
+When a request comes in for a bucket (e.g., `GET /my-bucket/file.txt`), Herald
+resolves the backend using the following priority:
+
+1. **Direct match**: Looks for `my-bucket` in all backends' `buckets` maps.
+2. **Glob match (map)**: Looks for glob patterns (like `test-*`) in all
+   backends' `buckets` maps.
+3. **Glob match (string)**: If a backend has `buckets: "string-*"`, it checks if
+   the bucket name matches that pattern.
+
+When several backends could match (e.g. two globs), the **first backend in
+config order** wins.
+
 ### Auth (incoming request verification)
 
 Herald can verify incoming S3 requests using AWS Signature Version 4 (SigV4).
@@ -146,13 +151,9 @@ keys are accepted. Credentials are never stored in the config file; you
 reference them by name (_refs_) and supply the actual keys via environment
 variables.
 
-#### Precedence
-
 Auth is resolved at three levels with the same precedence as CORS: **Bucket >
 Backend > Global**. The most specific definition wins (e.g. a bucket’s `auth`
 overrides its backend’s `auth`).
-
-#### Config shape
 
 At each level you set `auth.accessKeysRefs`: a list of ref names (strings). Each
 ref maps to a pair of env vars:
@@ -160,18 +161,9 @@ ref maps to a pair of env vars:
 - `HERALD_AUTH_<REF>_ACCESS_KEY_ID` — access key id
 - `HERALD_AUTH_<REF>_SECRET_KEY` — secret key
 
-`<REF>` is the ref name in UPPERCASE (e.g. ref `admin` →
-`HERALD_AUTH_ADMIN_ACCESS_KEY_ID`). Only refs that have both env vars set are
+`<REF>` is the ref name in UPPERCASE (e.g. ref `app1` →
+`HERALD_AUTH_APP1_ACCESS_KEY_ID`). Only refs that have both env vars set are
 used; missing refs are skipped.
-
-Example: global `auth.accessKeysRefs: [admin, readonly]` with
-`HERALD_AUTH_ADMIN_ACCESS_KEY_ID`, `HERALD_AUTH_ADMIN_SECRET_KEY` and
-`HERALD_AUTH_READONLY_ACCESS_KEY_ID`, `HERALD_AUTH_READONLY_SECRET_KEY` set in
-the environment allows requests signed with either key. You can override at
-backend or bucket level (e.g. a backend that only accepts `admin`, or a bucket
-that only accepts `readonly`).
-
-#### When auth is not configured
 
 If no `auth` is defined at any level for a request, Herald does not perform
 SigV4 verification and the request is not gated by these credentials.
@@ -186,8 +178,6 @@ precedence: **Bucket > Backend > Global**.
   settings.
 - **Bucket**: Defined within a bucket definition under `cors`. Overrides both
   backend and global settings.
-
-#### Default Behavior
 
 If no CORS configuration is provided at any level, **CORS is disabled** and
 Herald will not add any CORS-related headers to responses. Preflight `OPTIONS`
@@ -222,20 +212,6 @@ backends:
         cors: # Bucket-level override
           allowedOrigins: ["https://cdn.example.com"]
 ```
-
-### Routing Logic
-
-When a request comes in for a bucket (e.g., `GET /my-bucket/file.txt`), Herald
-resolves the backend using the following priority:
-
-1. **Direct match**: Looks for `my-bucket` in all backends' `buckets` maps.
-2. **Glob match (map)**: Looks for glob patterns (like `test-*`) in all
-   backends' `buckets` maps.
-3. **Glob match (string)**: If a backend has `buckets: "string-*"`, it checks if
-   the bucket name matches that pattern.
-
-When several backends could match (e.g. two globs), the **first backend in
-config order** wins.
 
 ### Environment variable configuration
 

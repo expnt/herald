@@ -1,5 +1,13 @@
 # Contributing
 
+## Requirements
+
+There's a nix flake at [`flake.nix`](./flake.nix) that provisions all dependencies required for development.
+Namely:
+- [Deno](https://deno.com/): the javascript runtime in use.
+- [uv](https://docs.astral.sh/uv/): python package and runtime manager used for [s3-tests](./s3-tests/).
+- [Prek](https://prek.j178.dev/): the pre-commit hook runner.
+
 ## Environment
 
 Herald reads configuration from the process environment (see main README). For
@@ -11,11 +19,8 @@ local development, copy `.env.example` to `.env` and set variables (e.g.
 You can start the containers used for development using the provided scripts:
 
 ```bash
-# Start MinIO and Redis
-deno run --allow-all x/compose-up.ts s3 db
-
-# Start Swift (SAIO)
-deno run --allow-all x/compose-up.ts swift
+# Start MinIO and SAIO
+deno run -A x/compose-up.ts s3 swift
 ```
 
 ## Running Tests
