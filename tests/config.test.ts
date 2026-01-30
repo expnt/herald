@@ -1,8 +1,13 @@
-import { Effect, Either, Layer, Option, Schema } from "effect";
+import { Cause, Effect, Either, Layer, Option, Schema } from "effect";
 import { FetchHttpClient } from "@effect/platform";
 import { S3ClientFactory } from "../src/Backends/S3/Client.ts";
 import { SwiftClient } from "../src/Backends/Swift/Client.ts";
-import { HeraldConfig, parseConfig } from "../src/Config/Layer.ts";
+import {
+  ConfigValidationError,
+  HeraldConfig,
+  parseConfig,
+  validateConfig,
+} from "../src/Config/Layer.ts";
 import {
   GlobalConfig,
   lookupBucket,
@@ -12,6 +17,7 @@ import { BackendResolver } from "../src/Services/BackendResolver.ts";
 import { Checksum } from "../src/Services/Checksum.ts";
 import { S3HeaderService } from "../src/Services/S3HeaderService.ts";
 import { assertEquals, EffectAssert, testEffect } from "./utils.ts";
+import { Exit } from "effect";
 
 interface TestCase {
   id: string;
@@ -441,12 +447,385 @@ testEffect("config/parseConfig/auth_env_vars", () =>
   }));
 
 testEffect(
+  "config/parseConfig/backend_id_with_underscores",
+  () =>
+    Effect.gen(function* () {
+      const env = {
+        HERALD_OPENSTACK_SWIFT_PROTOCOL: "swift",
+        HERALD_OPENSTACK_SWIFT_AUTH_URL: "https://api.example.com/identity/v3",
+        HERALD_OPENSTACK_SWIFT_USERNAME: "swift-user",
+        HERALD_OPENSTACK_SWIFT_PASSWORD: "swift-secret",
+        HERALD_OPENSTACK_SWIFT_PROJECT_NAME: "my-project",
+      };
+      const config = parseConfig({ backends: {} }, env);
+
+      const swift = config.backends.openstack_swift;
+      yield* EffectAssert.strictEqual(swift.protocol, "swift");
+      if (swift.protocol === "swift") {
+        yield* EffectAssert.strictEqual(
+          swift.auth_url,
+          "https://api.example.com/identity/v3",
+        );
+        yield* EffectAssert.strictEqual(
+          swift.credentials?.username,
+          "swift-user",
+        );
+        yield* EffectAssert.strictEqual(
+          swift.credentials?.password,
+          "swift-secret",
+        );
+        yield* EffectAssert.strictEqual(
+          swift.credentials?.project_name,
+          "my-project",
+        );
+      }
+    }),
+);
+
+testEffect(
   "config/parseConfig/default_fallback",
   () =>
     Effect.gen(function* () {
       const config = parseConfig({ backends: {} }, {});
       yield* EffectAssert.strictEqual(config.backends.default.protocol, "s3");
       yield* EffectAssert.strictEqual(config.backends.default.buckets, "*");
+    }),
+);
+
+// --- validateConfig ---
+
+testEffect(
+  "config/validateConfig/swift_missing_credentials",
+  () =>
+    Effect.gen(function* () {
+      const config: GlobalConfig = {
+        backends: {
+          swift1: {
+            protocol: "swift",
+            auth_url: "https://api.example.com/identity/v3",
+            buckets: "*",
+          },
+        },
+      };
+      const exit = yield* validateConfig(config).pipe(Effect.exit);
+      yield* EffectAssert.strictEqual(Exit.isFailure(exit), true);
+      const failure = Exit.isFailure(exit)
+        ? Option.getOrUndefined(Cause.failureOption(exit.cause))
+        : undefined;
+      yield* EffectAssert.strictEqual(
+        failure instanceof ConfigValidationError,
+        true,
+      );
+      if (failure instanceof ConfigValidationError) {
+        yield* EffectAssert.strictEqual(
+          failure.messages.some((m) =>
+            m.includes('Swift backend "swift1"') && m.includes("credentials")
+          ),
+          true,
+        );
+      }
+    }),
+);
+
+testEffect(
+  "config/validateConfig/swift_incomplete_credentials",
+  () =>
+    Effect.gen(function* () {
+      const config: GlobalConfig = {
+        backends: {
+          swift1: {
+            protocol: "swift",
+            auth_url: "https://api.example.com/identity/v3",
+            credentials: { username: "u", password: "" },
+            buckets: "*",
+          },
+        },
+      };
+      const exit = yield* validateConfig(config).pipe(Effect.exit);
+      yield* EffectAssert.strictEqual(Exit.isFailure(exit), true);
+      const failure = Exit.isFailure(exit)
+        ? Option.getOrUndefined(Cause.failureOption(exit.cause))
+        : undefined;
+      if (failure instanceof ConfigValidationError) {
+        yield* EffectAssert.strictEqual(
+          failure.messages.some((m) => m.includes("password")),
+          true,
+        );
+      }
+    }),
+);
+
+testEffect(
+  "config/validateConfig/s3_missing_endpoint",
+  () =>
+    Effect.gen(function* () {
+      const config: GlobalConfig = {
+        backends: {
+          s3_1: {
+            protocol: "s3",
+            region: "us-east-1",
+            buckets: "*",
+          },
+        },
+      };
+      const exit = yield* validateConfig(config).pipe(Effect.exit);
+      yield* EffectAssert.strictEqual(Exit.isFailure(exit), true);
+      const failure = Exit.isFailure(exit)
+        ? Option.getOrUndefined(Cause.failureOption(exit.cause))
+        : undefined;
+      if (failure instanceof ConfigValidationError) {
+        yield* EffectAssert.strictEqual(
+          failure.messages.some((m) =>
+            m.includes('S3 backend "s3_1"') && m.includes("endpoint")
+          ),
+          true,
+        );
+      }
+    }),
+);
+
+testEffect(
+  "config/validateConfig/s3_missing_region",
+  () =>
+    Effect.gen(function* () {
+      const config: GlobalConfig = {
+        backends: {
+          s3_1: {
+            protocol: "s3",
+            endpoint: "http://localhost:9000",
+            buckets: "*",
+          },
+        },
+      };
+      const exit = yield* validateConfig(config).pipe(Effect.exit);
+      yield* EffectAssert.strictEqual(Exit.isFailure(exit), true);
+      const failure = Exit.isFailure(exit)
+        ? Option.getOrUndefined(Cause.failureOption(exit.cause))
+        : undefined;
+      if (failure instanceof ConfigValidationError) {
+        yield* EffectAssert.strictEqual(
+          failure.messages.some((m) =>
+            m.includes('S3 backend "s3_1"') && m.includes("region")
+          ),
+          true,
+        );
+      }
+    }),
+);
+
+testEffect(
+  "config/validateConfig/s3_incomplete_credentials",
+  () =>
+    Effect.gen(function* () {
+      const config: GlobalConfig = {
+        backends: {
+          s3_1: {
+            protocol: "s3",
+            endpoint: "http://localhost:9000",
+            region: "us-east-1",
+            credentials: { accessKeyId: "key", secretAccessKey: "" },
+            buckets: "*",
+          },
+        },
+      };
+      const exit = yield* validateConfig(config).pipe(Effect.exit);
+      yield* EffectAssert.strictEqual(Exit.isFailure(exit), true);
+      const failure = Exit.isFailure(exit)
+        ? Option.getOrUndefined(Cause.failureOption(exit.cause))
+        : undefined;
+      if (failure instanceof ConfigValidationError) {
+        yield* EffectAssert.strictEqual(
+          failure.messages.some((m) => m.includes("secretAccessKey")),
+          true,
+        );
+      }
+    }),
+);
+
+testEffect(
+  "config/validateConfig/auth_refs_empty_string",
+  () =>
+    Effect.gen(function* () {
+      const config: GlobalConfig = {
+        backends: {
+          s3_1: {
+            protocol: "s3",
+            endpoint: "http://localhost:9000",
+            region: "us-east-1",
+            buckets: "*",
+            auth: { accessKeysRefs: ["valid", ""] },
+          },
+        },
+      };
+      const exit = yield* validateConfig(config).pipe(Effect.exit);
+      yield* EffectAssert.strictEqual(Exit.isFailure(exit), true);
+      const failure = Exit.isFailure(exit)
+        ? Option.getOrUndefined(Cause.failureOption(exit.cause))
+        : undefined;
+      if (failure instanceof ConfigValidationError) {
+        yield* EffectAssert.strictEqual(
+          failure.messages.some((m) =>
+            m.includes("accessKeysRefs") && m.includes("non-empty")
+          ),
+          true,
+        );
+      }
+    }),
+);
+
+testEffect(
+  "config/validateConfig/global_auth_refs_empty_string",
+  () =>
+    Effect.gen(function* () {
+      const config: GlobalConfig = {
+        backends: {
+          s3_1: {
+            protocol: "s3",
+            endpoint: "http://localhost:9000",
+            region: "us-east-1",
+            buckets: "*",
+          },
+        },
+        auth: { accessKeysRefs: [""] },
+      };
+      const exit = yield* validateConfig(config).pipe(Effect.exit);
+      yield* EffectAssert.strictEqual(Exit.isFailure(exit), true);
+      const failure = Exit.isFailure(exit)
+        ? Option.getOrUndefined(Cause.failureOption(exit.cause))
+        : undefined;
+      if (failure instanceof ConfigValidationError) {
+        yield* EffectAssert.strictEqual(
+          failure.messages.some((m) =>
+            m.includes("Global auth") && m.includes("accessKeysRefs")
+          ),
+          true,
+        );
+      }
+    }),
+);
+
+testEffect(
+  "config/validateConfig/bucket_auth_refs_empty_string",
+  () =>
+    Effect.gen(function* () {
+      const config: GlobalConfig = {
+        backends: {
+          s3_1: {
+            protocol: "s3",
+            endpoint: "http://localhost:9000",
+            region: "us-east-1",
+            buckets: {
+              mybucket: { auth: { accessKeysRefs: ["ok", ""] } },
+            },
+          },
+        },
+      };
+      const exit = yield* validateConfig(config).pipe(Effect.exit);
+      yield* EffectAssert.strictEqual(Exit.isFailure(exit), true);
+      const failure = Exit.isFailure(exit)
+        ? Option.getOrUndefined(Cause.failureOption(exit.cause))
+        : undefined;
+      if (failure instanceof ConfigValidationError) {
+        yield* EffectAssert.strictEqual(
+          failure.messages.some((m) =>
+            m.includes('bucket "mybucket"') && m.includes("accessKeysRefs")
+          ),
+          true,
+        );
+      }
+    }),
+);
+
+testEffect(
+  "config/validateConfig/valid_swift_with_creds",
+  () =>
+    Effect.gen(function* () {
+      const config: GlobalConfig = {
+        backends: {
+          swift1: {
+            protocol: "swift",
+            auth_url: "https://api.example.com/identity/v3",
+            credentials: { username: "u", password: "p" },
+            buckets: "*",
+          },
+        },
+      };
+      yield* validateConfig(config);
+    }),
+);
+
+testEffect(
+  "config/validateConfig/valid_s3_anonymous",
+  () =>
+    Effect.gen(function* () {
+      const config: GlobalConfig = {
+        backends: {
+          s3_1: {
+            protocol: "s3",
+            endpoint: "http://localhost:9000",
+            region: "us-east-1",
+            buckets: "*",
+          },
+        },
+      };
+      yield* validateConfig(config);
+    }),
+);
+
+testEffect(
+  "config/validateConfig/valid_s3_with_creds",
+  () =>
+    Effect.gen(function* () {
+      const config: GlobalConfig = {
+        backends: {
+          s3_1: {
+            protocol: "s3",
+            endpoint: "http://localhost:9000",
+            region: "us-east-1",
+            credentials: { accessKeyId: "key", secretAccessKey: "secret" },
+            buckets: "*",
+          },
+        },
+      };
+      yield* validateConfig(config);
+    }),
+);
+
+testEffect(
+  "config/validateConfig/valid_auth_refs_non_empty",
+  () =>
+    Effect.gen(function* () {
+      const config: GlobalConfig = {
+        backends: {
+          s3_1: {
+            protocol: "s3",
+            endpoint: "http://localhost:9000",
+            region: "us-east-1",
+            buckets: "*",
+            auth: { accessKeysRefs: ["main", "alt"] },
+          },
+        },
+      };
+      yield* validateConfig(config);
+    }),
+);
+
+testEffect(
+  "config/validateConfig/valid_empty_auth_refs_allowed",
+  () =>
+    Effect.gen(function* () {
+      const config: GlobalConfig = {
+        backends: {
+          s3_1: {
+            protocol: "s3",
+            endpoint: "http://localhost:9000",
+            region: "us-east-1",
+            buckets: "*",
+            auth: { accessKeysRefs: [] },
+          },
+        },
+      };
+      yield* validateConfig(config);
     }),
 );
 

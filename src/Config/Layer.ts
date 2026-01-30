@@ -1,4 +1,4 @@
-import { Config, Context, Effect, Layer, Option, Schema } from "effect";
+import { Config, Context, Data, Effect, Layer, Option, Schema } from "effect";
 import { parse } from "@std/yaml";
 import {
   type BackendConfig,
@@ -25,6 +25,121 @@ export class HeraldConfig extends Context.Tag("HeraldConfig")<
     ) => Option.Option<AuthCredentials[]>;
   }
 >() {}
+
+export class ConfigValidationError
+  extends Data.TaggedError("ConfigValidationError")<{
+    readonly messages: readonly string[];
+  }> {}
+
+/**
+ * Validates global config at startup. Fails with ConfigValidationError if any
+ * backend or auth config is invalid (e.g. Swift without credentials, S3
+ * without endpoint/region, auth refs empty string).
+ */
+export function validateConfig(
+  config: GlobalConfig,
+): Effect.Effect<void, ConfigValidationError> {
+  const messages: string[] = [];
+
+  for (const [backendId, backend] of Object.entries(config.backends)) {
+    if (backend.protocol === "swift") {
+      const creds = backend.credentials;
+      if (!creds || !("username" in creds)) {
+        messages.push(
+          `Swift backend "${backendId}": credentials (username, password) are required`,
+        );
+      } else {
+        if (!creds.username?.trim()) {
+          messages.push(
+            `Swift backend "${backendId}": credentials.username is required`,
+          );
+        }
+        if (!creds.password?.trim()) {
+          messages.push(
+            `Swift backend "${backendId}": credentials.password is required`,
+          );
+        }
+      }
+    }
+
+    if (backend.protocol === "s3") {
+      if (
+        backend.endpoint === undefined || backend.endpoint === null ||
+        String(backend.endpoint).trim() === ""
+      ) {
+        messages.push(
+          `S3 backend "${backendId}": endpoint is required`,
+        );
+      }
+      if (
+        backend.region === undefined || backend.region === null ||
+        String(backend.region).trim() === ""
+      ) {
+        messages.push(
+          `S3 backend "${backendId}": region is required`,
+        );
+      }
+      const creds = backend.credentials;
+      if (creds && "accessKeyId" in creds) {
+        if (!creds.accessKeyId?.trim()) {
+          messages.push(
+            `S3 backend "${backendId}": credentials.accessKeyId is required when credentials are set`,
+          );
+        }
+        if (!creds.secretAccessKey?.trim()) {
+          messages.push(
+            `S3 backend "${backendId}": credentials.secretAccessKey is required when credentials are set`,
+          );
+        }
+      }
+    }
+
+    const auth = backend.auth;
+    if (auth?.accessKeysRefs) {
+      for (let i = 0; i < auth.accessKeysRefs.length; i++) {
+        const ref = auth.accessKeysRefs[i];
+        if (typeof ref !== "string" || ref.trim() === "") {
+          messages.push(
+            `Backend "${backendId}": auth.accessKeysRefs[${i}] must be a non-empty string`,
+          );
+        }
+      }
+    }
+
+    const buckets = backend.buckets;
+    if (buckets && typeof buckets !== "string") {
+      for (const [bucketKey, override] of Object.entries(buckets)) {
+        const bucketAuth = override?.auth;
+        if (bucketAuth?.accessKeysRefs) {
+          for (let i = 0; i < bucketAuth.accessKeysRefs.length; i++) {
+            const ref = bucketAuth.accessKeysRefs[i];
+            if (typeof ref !== "string" || ref.trim() === "") {
+              messages.push(
+                `Backend "${backendId}" bucket "${bucketKey}": auth.accessKeysRefs[${i}] must be a non-empty string`,
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (config.auth?.accessKeysRefs) {
+    for (let i = 0; i < config.auth.accessKeysRefs.length; i++) {
+      const ref = config.auth.accessKeysRefs[i];
+      if (typeof ref !== "string" || ref.trim() === "") {
+        messages.push(
+          `Global auth.accessKeysRefs[${i}] must be a non-empty string`,
+        );
+      }
+    }
+  }
+
+  if (messages.length > 0) {
+    return Effect.fail(new ConfigValidationError({ messages }));
+  }
+  return Effect.void;
+}
 
 function toConfigKey(str: string): string {
   const mapping: Record<string, string> = {
@@ -76,6 +191,21 @@ export function parseConfig(
     "AUTH_ACCESS_KEYS_REFS",
   ];
 
+  const credentialKeys = [
+    "accessKeyId",
+    "secretAccessKey",
+    "username",
+    "password",
+    "project_name",
+    "user_domain_name",
+    "project_domain_name",
+  ];
+  const validConfigKeys = new Set([
+    ...credentialKeys,
+    ...commonKeys.map((k) => toConfigKey(k)),
+  ]);
+  validConfigKeys.add("auth_access_keys_refs");
+
   for (const [key, value] of Object.entries(env)) {
     if (!key.startsWith("HERALD_")) continue;
     if (key === "HERALD_CONFIG_PATH") continue;
@@ -84,28 +214,34 @@ export function parseConfig(
     const parts = key.substring(7).split("_");
     let backendName: string;
     let configParts: string[];
+    let configKey: string;
 
     if (parts.length === 1 || commonKeys.includes(parts[0])) {
       backendName = "default";
       configParts = parts;
+      configKey = toConfigKey(parts.join("_"));
     } else {
+      // Backend id can contain underscores (e.g. openstack_swift).
+      // Use longest prefix that leaves a known config key.
       backendName = parts[0].toLowerCase();
       configParts = parts.slice(1);
+      configKey = toConfigKey(configParts.join("_"));
+      for (let i = parts.length - 1; i >= 1; i--) {
+        const candidateParts = parts.slice(i);
+        const candidateKey = toConfigKey(candidateParts.join("_"));
+        if (
+          validConfigKeys.has(candidateKey) ||
+          candidateKey.startsWith("cors_")
+        ) {
+          backendName = parts.slice(0, i).join("_").toLowerCase();
+          configParts = candidateParts;
+          configKey = candidateKey;
+          break;
+        }
+      }
     }
-
-    const configKey = toConfigKey(configParts.join("_"));
     if (!backends[backendName]) backends[backendName] = {};
     const backend = backends[backendName];
-
-    const credentialKeys = [
-      "accessKeyId",
-      "secretAccessKey",
-      "username",
-      "password",
-      "project_name",
-      "user_domain_name",
-      "project_domain_name",
-    ];
 
     if (credentialKeys.includes(configKey)) {
       if (!backend.credentials) {
@@ -237,6 +373,7 @@ export const HeraldConfigLive = Layer.effect(
     const env = yield* Effect.sync(() => Deno.env.toObject());
 
     const raw = parseConfig(yamlConfig, env);
+    yield* validateConfig(raw);
 
     return {
       raw,
