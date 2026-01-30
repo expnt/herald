@@ -225,9 +225,32 @@ export const HttpS3Live = Layer.unwrapEffect(
             HttpServerRequest.HttpServerRequest,
             req.request,
           ),
-          Effect.catchAll((err) =>
-            Effect.fail(new BadGateway({ message: String(err) }))
-          ),
+          Effect.catchAll((err: unknown) => {
+            const request = req.request;
+            const method = request.method ?? "UNKNOWN";
+            const url = request.url.startsWith("http")
+              ? new URL(request.url).pathname
+              : request.url.split("?")[0];
+            const errorType =
+              err != null && typeof err === "object" && "constructor" in err &&
+                typeof (err as { constructor: { name?: string } })
+                    .constructor?.name === "string"
+                ? (err as { constructor: { name: string } }).constructor.name
+                : "Unknown";
+            const message = err instanceof Error ? err.message : String(err);
+            return Effect.gen(function* () {
+              yield* Effect.logError("Request failed", {
+                status: 502,
+                errorType,
+                message,
+                method,
+                url,
+              });
+              return yield* Effect.fail(
+                new BadGateway({ message: String(err) }),
+              );
+            });
+          }),
         ) as Effect.Effect<
           HttpServerResponse.HttpServerResponse,
           BadGateway,
