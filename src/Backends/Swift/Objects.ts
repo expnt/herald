@@ -19,6 +19,7 @@ import {
 import { normalizeHeaders } from "../../Services/S3HeaderService.ts";
 import {
   encodeObjectKeyForSwift,
+  formatSwiftTransportError,
   mapError,
   type SwiftTarget,
 } from "./Utils.ts";
@@ -69,7 +70,9 @@ export const makeObjectOps = (
             HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
           ),
         ).pipe(
-          Effect.mapError((e) => mapError(500, String(e), container)),
+          Effect.mapError((e) =>
+            mapError(500, formatSwiftTransportError(e), container)
+          ),
         );
 
       if (response.status < 200 || response.status >= 300) {
@@ -146,7 +149,9 @@ export const makeObjectOps = (
             HttpClientRequest.setHeaders(swiftHeaders),
           ),
         ).pipe(
-          Effect.mapError((e) => mapError(500, String(e), container)),
+          Effect.mapError((e) =>
+            mapError(500, formatSwiftTransportError(e), container)
+          ),
         );
 
       if (response.status < 200 || response.status >= 300) {
@@ -290,7 +295,9 @@ export const makeObjectOps = (
               HttpClientRequest.setHeaders(swiftHeaders),
             ),
           ).pipe(
-            Effect.mapError((e) => mapError(500, String(e), container)),
+            Effect.mapError((e) =>
+              mapError(500, formatSwiftTransportError(e), container)
+            ),
           );
 
         if (response.status < 200 || response.status >= 300) {
@@ -480,7 +487,9 @@ export const makeObjectOps = (
                     return Effect.fail(new BadDigest({ message: causeStr }));
                   }
                 }
-                return Effect.fail(mapError(500, errorStr, container));
+                return Effect.fail(
+                  mapError(500, formatSwiftTransportError(e), container),
+                );
               },
             ),
           );
@@ -534,7 +543,9 @@ export const makeObjectOps = (
               }),
             ),
           ).pipe(
-            Effect.mapError((e) => mapError(500, String(e), container)),
+            Effect.mapError((e) =>
+              mapError(500, formatSwiftTransportError(e), container)
+            ),
           );
 
         const responseBody = yield* response.text.pipe(
@@ -552,7 +563,9 @@ export const makeObjectOps = (
                 HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
               ),
             ).pipe(
-              Effect.mapError((e) => mapError(500, String(e), container)),
+              Effect.mapError((e) =>
+                mapError(500, formatSwiftTransportError(e), container)
+              ),
             );
 
           if (regResponse.status < 200 || regResponse.status >= 300) {
@@ -611,7 +624,9 @@ export const makeObjectOps = (
                     }),
                   ),
                 ).pipe(
-                  Effect.mapError((e) => mapError(500, String(e), container)),
+                  Effect.mapError((e) =>
+                    mapError(500, formatSwiftTransportError(e), container)
+                  ),
                 );
 
               let responseBody = yield* response.text.pipe(
@@ -628,7 +643,9 @@ export const makeObjectOps = (
                     HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
                   ),
                 ).pipe(
-                  Effect.mapError((e) => mapError(500, String(e), container)),
+                  Effect.mapError((e) =>
+                    mapError(500, formatSwiftTransportError(e), container)
+                  ),
                 );
                 // Refresh responseBody cache for the new response
                 responseBody = yield* response.text.pipe(

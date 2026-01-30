@@ -2,6 +2,10 @@
 
 import { $, DOCKER_CMD } from "./utils.ts";
 
-await $.raw`${DOCKER_CMD} compose -f compose.yml down`.cwd(
+const profiles = $.argv
+  .map((prof) => `--profile ${prof}`)
+  .join(" ");
+
+await $.raw`${DOCKER_CMD} compose -f compose.yml ${profiles} down`.cwd(
   $.path(import.meta.resolve("../tools/")),
 );

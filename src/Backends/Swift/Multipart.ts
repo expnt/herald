@@ -18,6 +18,7 @@ import {
 } from "../../Services/Backend.ts";
 import {
   encodeObjectKeyForSwift,
+  formatSwiftTransportError,
   mapError,
   MP_META_PREFIX,
   MP_SEGMENTS_PREFIX,
@@ -167,12 +168,14 @@ export const makeMultipartOps = (
                 s.includes("NoSuchKey") || s.includes("NoSuchBucket") ||
                 s.includes("InvalidRequest") || s.includes("BadDigest")
               ) return Effect.fail(e as BackendError);
-              // Preserve error context: include original error message and type
-              const errorMessage = e instanceof Error
-                ? `${e.constructor.name}: ${e.message}`
-                : s;
               return Effect.fail(
-                mapError(500, errorMessage, container, "PUT", _key),
+                mapError(
+                  500,
+                  formatSwiftTransportError(e),
+                  container,
+                  "PUT",
+                  _key,
+                ),
               );
             }),
           );
@@ -335,9 +338,9 @@ export const makeMultipartOps = (
 
         const response: HttpClientResponse.HttpClientResponse = yield* client
           .execute(request).pipe(
-            Effect.mapError((e) => {
-              return mapError(500, String(e), container);
-            }),
+            Effect.mapError((e) =>
+              mapError(500, formatSwiftTransportError(e), container)
+            ),
           );
 
         if (response.status < 200 || response.status >= 300) {
@@ -532,7 +535,9 @@ export const makeMultipartOps = (
                 HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
               ),
             ).pipe(
-              Effect.mapError((e) => mapError(500, String(e), container)),
+              Effect.mapError((e) =>
+                mapError(500, formatSwiftTransportError(e), container)
+              ),
             );
 
           if (metaResponse.status === 200) {

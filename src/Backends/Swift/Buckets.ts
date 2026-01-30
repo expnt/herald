@@ -7,8 +7,13 @@ import type {
   ListObjectsResult,
 } from "../../Services/Backend.ts";
 import { BucketAlreadyOwnedByYou } from "../../Services/Backend.ts";
-import { MP_META_PREFIX, MP_SEGMENTS_PREFIX } from "./Utils.ts";
-import { mapError, type SwiftTarget } from "./Utils.ts";
+import {
+  formatSwiftTransportError,
+  mapError,
+  MP_META_PREFIX,
+  MP_SEGMENTS_PREFIX,
+  type SwiftTarget,
+} from "./Utils.ts";
 
 export interface SwiftContainer {
   readonly name: string;
@@ -37,7 +42,9 @@ export const makeBucketOps = (
             HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
           ),
         ).pipe(
-          Effect.mapError((e) => mapError(500, String(e), container)),
+          Effect.mapError((e) =>
+            mapError(500, formatSwiftTransportError(e), container)
+          ),
         );
 
         if (response.status < 200 || response.status >= 300) {
@@ -81,7 +88,9 @@ export const makeBucketOps = (
             HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
           ),
         ).pipe(
-          Effect.mapError((e) => mapError(500, String(e), container)),
+          Effect.mapError((e) =>
+            mapError(500, formatSwiftTransportError(e), container)
+          ),
         );
 
         // Swift returns 201 (Created) for new containers, 202/204 for existing containers
@@ -138,7 +147,9 @@ export const makeBucketOps = (
             HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
           ),
         ).pipe(
-          Effect.mapError((e) => mapError(500, String(e), container)),
+          Effect.mapError((e) =>
+            mapError(500, formatSwiftTransportError(e), container)
+          ),
         );
 
         if (response.status < 200 || response.status >= 300) {
@@ -163,7 +174,9 @@ export const makeBucketOps = (
             HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
           ),
         ).pipe(
-          Effect.mapError((e) => mapError(500, String(e), container)),
+          Effect.mapError((e) =>
+            mapError(500, formatSwiftTransportError(e), container)
+          ),
         );
 
         if (response.status < 200 || response.status >= 300) {

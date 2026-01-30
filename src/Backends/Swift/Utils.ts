@@ -39,6 +39,27 @@ export function encodeObjectKeyForSwift(key: string): string {
   }).join("/");
 }
 
+/**
+ * Format an unknown error from Swift HTTP client for logging. Extracts
+ * cause/reason when present so transport failures can be diagnosed.
+ */
+export function formatSwiftTransportError(e: unknown): string {
+  const base = String(e);
+  if (e === null || typeof e !== "object") return base;
+  const parts = [base];
+  if ("cause" in e && (e as { cause?: unknown }).cause !== undefined) {
+    parts.push(
+      `cause=${String((e as { cause: unknown }).cause)}`,
+    );
+  }
+  if ("reason" in e && (e as { reason?: unknown }).reason !== undefined) {
+    parts.push(
+      `reason=${String((e as { reason: unknown }).reason)}`,
+    );
+  }
+  return parts.join(" ");
+}
+
 export const mapError = (
   status: number,
   message: string,
