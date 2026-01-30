@@ -2,10 +2,12 @@
 
 ## Requirements
 
-There's a nix flake at [`flake.nix`](./flake.nix) that provisions all dependencies required for development.
-Namely:
+There's a nix flake at [`flake.nix`](./flake.nix) that provisions all
+dependencies required for development. Namely:
+
 - [Deno](https://deno.com/): the javascript runtime in use.
-- [uv](https://docs.astral.sh/uv/): python package and runtime manager used for [s3-tests](./s3-tests/).
+- [uv](https://docs.astral.sh/uv/): python package and runtime manager used for
+  [s3-tests](./s3-tests/).
 - [Prek](https://prek.j178.dev/): the pre-commit hook runner.
 
 ## Environment
