@@ -35,6 +35,9 @@ export const uploadPart = Effect.gen(function* () {
     );
   }
 
+  // S3 allows 0-byte for the last part; no Frontend rejection here.
+  // Swift backend rejects 0-byte segments at CompleteMultipartUpload (SLO manifest requirement).
+
   const result = yield* backend.uploadPart(
     key,
     s3Params.uploadId,

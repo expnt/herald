@@ -357,6 +357,8 @@ export type ProxyTestCase = {
   ignore?: boolean;
   /** When true, skip only the Swift runner (Baseline and Proxy still run). */
   ignoreSwift?: boolean;
+  /** When true, skip only the Baseline runner (direct to backend; Proxy and Swift still run). */
+  ignoreBaseline?: boolean;
   only?: boolean;
   skipSnapshot?: boolean;
 };
@@ -803,7 +805,7 @@ export function harness(cases: ProxyTestCase[]) {
       `${namePrefix}Baseline/${tc.name}`,
       (t) => baselineRunner(tc, t),
       {
-        ignore: tc.ignore,
+        ignore: tc.ignore ?? tc.ignoreBaseline,
         only: tc.only,
       },
     );

@@ -303,11 +303,19 @@ export const makeMultipartOps = (
           }),
         );
 
-        // 1. Build SLO manifest
+        // 1. Build SLO manifest (Swift requires each segment >= 1 byte)
         const manifest = [];
         for (const p of parts) {
           const segmentKey = `${MP_SEGMENTS_PREFIX}${uploadId}/${p.partNumber}`;
           const info = segmentMap.get(segmentKey)!;
+          if (info.size < 1) {
+            return yield* Effect.fail(
+              new InvalidPart({
+                message:
+                  `Part ${p.partNumber} has size 0; each part must be at least 1 byte`,
+              }),
+            );
+          }
           manifest.push({
             path: `/${container}/${segmentKey}`,
             etag: p.etag.replace(/"/g, ""),

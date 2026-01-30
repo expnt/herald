@@ -37,6 +37,10 @@ interface ObjectTestSpec {
   setup?: (client: S3Client) => Promise<void>;
   teardown?: (client: S3Client) => Promise<void>;
   expectedErrorCode?: string;
+  skipSnapshot?: boolean;
+  /** Skip Baseline (minio may accept 0-byte parts; we assert Herald rejects). */
+  ignoreBaseline?: boolean;
+  ignoreSwift?: boolean;
 }
 
 const BUCKET = "test-objects-bucket";
@@ -300,6 +304,114 @@ const specs: ObjectTestSpec[] = [
       }
     },
   },
+  // S3 spec: last part has no minimum size (can be 0 bytes). So 0-byte part + complete succeeds for S3/MinIO.
+  {
+    name: "objects/multipart/zero-byte-last-part-succeeds",
+    fn: async (c) => {
+      const key = "multipart-zero-last-part.txt";
+      const { UploadId } = await c.send(
+        new CreateMultipartUploadCommand({ Bucket: BUCKET, Key: key }),
+      );
+      if (!UploadId) throw new Error("No UploadId");
+
+      const { ETag } = await c.send(
+        new UploadPartCommand({
+          Bucket: BUCKET,
+          Key: key,
+          UploadId,
+          PartNumber: 1,
+          Body: new Uint8Array(0),
+        }),
+      );
+      if (!ETag) throw new Error("No ETag");
+
+      await c.send(
+        new CompleteMultipartUploadCommand({
+          Bucket: BUCKET,
+          Key: key,
+          UploadId,
+          MultipartUpload: { Parts: [{ PartNumber: 1, ETag }] },
+        }),
+      );
+
+      const { ContentLength } = await c.send(
+        new HeadObjectCommand({ Bucket: BUCKET, Key: key }),
+      );
+      if (ContentLength !== 0) {
+        throw new Error(`Expected size 0, got ${ContentLength}`);
+      }
+    },
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: "multipart-zero-last-part.txt",
+          }),
+        );
+      } catch { /* ignore */ }
+    },
+    skipSnapshot: true,
+    ignoreSwift: true,
+  },
+  // Swift SLO requires each segment >= 1 byte; rejection at Complete. S3 allows 0-byte last part.
+  // So: Proxy (S3) complete succeeds; Swift complete returns InvalidPart.
+  {
+    name: "objects/multipart/zero-byte-part-complete",
+    fn: async (c) => {
+      const key = "multipart-zero-part-complete.txt";
+      const { UploadId } = await c.send(
+        new CreateMultipartUploadCommand({ Bucket: BUCKET, Key: key }),
+      );
+      if (!UploadId) throw new Error("No UploadId");
+
+      const { ETag } = await c.send(
+        new UploadPartCommand({
+          Bucket: BUCKET,
+          Key: key,
+          UploadId,
+          PartNumber: 1,
+          Body: new Uint8Array(0),
+        }),
+      );
+      if (!ETag) throw new Error("No ETag");
+
+      try {
+        await c.send(
+          new CompleteMultipartUploadCommand({
+            Bucket: BUCKET,
+            Key: key,
+            UploadId,
+            MultipartUpload: { Parts: [{ PartNumber: 1, ETag }] },
+          }),
+        );
+        // S3/MinIO: complete succeeds (0-byte last part allowed)
+      } catch (e) {
+        if (
+          e instanceof S3ServiceException &&
+          e.name === "InvalidPart" &&
+          e.message &&
+          (e.message.includes("size 0") ||
+            e.message.includes("at least 1 byte"))
+        ) {
+          // Swift: complete fails with InvalidPart (SLO segment >= 1 byte)
+          try {
+            await c.send(
+              new AbortMultipartUploadCommand({
+                Bucket: BUCKET,
+                Key: key,
+                UploadId,
+              }),
+            );
+          } catch { /* ignore */ }
+          return;
+        }
+        throw e;
+      }
+    },
+    skipSnapshot: true,
+    ignoreBaseline: true,
+  },
 ];
 
 async function runObjectTest(tc: ObjectTestSpec, client: S3Client) {
@@ -347,6 +459,9 @@ const cases: ProxyTestCase[] = specs.map((spec) => ({
     } catch { /* ignore */ }
   },
   fn: (client: S3Client) => runObjectTest(spec, client),
+  skipSnapshot: spec.skipSnapshot,
+  ignoreBaseline: spec.ignoreBaseline,
+  ignoreSwift: spec.ignoreSwift,
 }));
 
 harness(cases);
