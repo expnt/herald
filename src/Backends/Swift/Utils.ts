@@ -24,6 +24,21 @@ export interface SwiftTarget {
 export const MP_META_PREFIX = ".mp_meta/";
 export const MP_SEGMENTS_PREFIX = ".mp_segments/";
 
+/**
+ * Encodes an object key for use in Swift URL paths. Decodes each segment first
+ * to avoid double-encoding when the key already contains percent-encoded chars
+ * (e.g. %2F from the client).
+ */
+export function encodeObjectKeyForSwift(key: string): string {
+  return key.split("/").map((seg) => {
+    try {
+      return encodeURIComponent(decodeURIComponent(seg));
+    } catch {
+      return encodeURIComponent(seg);
+    }
+  }).join("/");
+}
+
 export const mapError = (
   status: number,
   message: string,

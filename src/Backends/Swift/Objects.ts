@@ -17,7 +17,11 @@ import {
   InvalidRequest,
 } from "../../Services/Backend.ts";
 import { normalizeHeaders } from "../../Services/S3HeaderService.ts";
-import { mapError, type SwiftTarget } from "./Utils.ts";
+import {
+  encodeObjectKeyForSwift,
+  mapError,
+  type SwiftTarget,
+} from "./Utils.ts";
 
 export interface SwiftObject {
   readonly name?: string;
@@ -132,7 +136,7 @@ export const makeObjectOps = (
     headers: Record<string, string | string[] | undefined>,
   ): Effect.Effect<HeadObjectResult, BackendError> =>
     Effect.gen(function* () {
-      const encodedKey = key.split("/").map(encodeURIComponent).join("/");
+      const encodedKey = encodeObjectKeyForSwift(key);
       const swiftHeaders: Record<string, string> = {
         "X-Auth-Token": token,
       };
@@ -250,7 +254,7 @@ export const makeObjectOps = (
       headers: Record<string, string | string[] | undefined>,
     ) =>
       Effect.gen(function* () {
-        const encodedKey = key.split("/").map(encodeURIComponent).join("/");
+        const encodedKey = encodeObjectKeyForSwift(key);
         const swiftHeaders: Record<string, string> = {
           "X-Auth-Token": token,
         };
@@ -376,7 +380,7 @@ export const makeObjectOps = (
       stream: Stream.Stream<Uint8Array, Error>,
       headers: Record<string, string | string[] | undefined>,
     ) => {
-      const encodedKey = key.split("/").map(encodeURIComponent).join("/");
+      const encodedKey = encodeObjectKeyForSwift(key);
 
       return Effect.gen(function* () {
         const { checksums, metadata } = headerService.fromRequestHeaders(
@@ -515,7 +519,7 @@ export const makeObjectOps = (
 
     deleteObject: (key: string) =>
       Effect.gen(function* () {
-        const encodedKey = key.split("/").map(encodeURIComponent).join("/");
+        const encodedKey = encodeObjectKeyForSwift(key);
 
         // Try SLO delete first (recursive)
         const response: HttpClientResponse.HttpClientResponse = yield* client
@@ -594,10 +598,7 @@ export const makeObjectOps = (
         const results = yield* Effect.all(
           objects.map((obj) =>
             Effect.gen(function* () {
-              const encodedKey = obj.key.split("/").map(encodeURIComponent)
-                .join(
-                  "/",
-                );
+              const encodedKey = encodeObjectKeyForSwift(obj.key);
               let response: HttpClientResponse.HttpClientResponse =
                 yield* client.execute(
                   HttpClientRequest.del(`${url}/${encodedKey}`).pipe(

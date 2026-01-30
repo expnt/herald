@@ -17,6 +17,7 @@ import {
   type UploadPartResult,
 } from "../../Services/Backend.ts";
 import {
+  encodeObjectKeyForSwift,
   mapError,
   MP_META_PREFIX,
   MP_SEGMENTS_PREFIX,
@@ -126,8 +127,7 @@ export const makeMultipartOps = (
           headers,
         );
         const segmentKey = `${MP_SEGMENTS_PREFIX}${uploadId}/${partNumber}`;
-        const encodedSegmentKey = segmentKey.split("/").map(encodeURIComponent)
-          .join("/");
+        const encodedSegmentKey = encodeObjectKeyForSwift(segmentKey);
 
         const swiftHeaders: Record<string, string> = {
           "X-Auth-Token": token,
@@ -253,7 +253,7 @@ export const makeMultipartOps = (
           }
         }
 
-        const encodedKey = key.split("/").map(encodeURIComponent).join("/");
+        const encodedKey = encodeObjectKeyForSwift(key);
 
         // Fetch segment info to get sizes
         const segmentMap = new Map<string, ObjectInfo>();
@@ -368,9 +368,7 @@ export const makeMultipartOps = (
 
         // 4. Cleanup segments metadata object if it exists (for compatibility)
         const metaKey = `${MP_META_PREFIX}${key}/${uploadId}`;
-        const encodedMetaKey = metaKey.split("/").map(encodeURIComponent).join(
-          "/",
-        );
+        const encodedMetaKey = encodeObjectKeyForSwift(metaKey);
         yield* client.execute(
           HttpClientRequest.del(`${url}/${encodedMetaKey}`).pipe(
             HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
@@ -408,8 +406,7 @@ export const makeMultipartOps = (
 
           yield* Effect.all(
             segmentsResult.contents.map((content) => {
-              const encodedKey = content.key.split("/").map(encodeURIComponent)
-                .join("/");
+              const encodedKey = encodeObjectKeyForSwift(content.key);
               return client.execute(
                 HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
                   HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
@@ -432,9 +429,7 @@ export const makeMultipartOps = (
 
         // 3. Delete metadata object (compatibility)
         const metaKey = `${MP_META_PREFIX}${key}/${uploadId}`;
-        const encodedMetaKey = metaKey.split("/").map(encodeURIComponent).join(
-          "/",
-        );
+        const encodedMetaKey = encodeObjectKeyForSwift(metaKey);
         yield* client.execute(
           HttpClientRequest.del(`${url}/${encodedMetaKey}`).pipe(
             HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
@@ -530,10 +525,7 @@ export const makeMultipartOps = (
         );
         if (Option.isNone(metadataOpt)) {
           const metaKey = `${MP_META_PREFIX}${key}/${uploadId}`;
-          const encodedMetaKey = metaKey.split("/").map(encodeURIComponent)
-            .join(
-              "/",
-            );
+          const encodedMetaKey = encodeObjectKeyForSwift(metaKey);
           const metaResponse: HttpClientResponse.HttpClientResponse =
             yield* client.execute(
               HttpClientRequest.head(`${url}/${encodedMetaKey}`).pipe(
