@@ -4,7 +4,6 @@ import {
   Backend,
   InternalError,
   InvalidRequest,
-  NoSuchBucket,
 } from "../../Services/Backend.ts";
 import { BackendResolver } from "../../Services/BackendResolver.ts";
 import { S3Xml } from "../../Services/S3Xml.ts";
@@ -78,6 +77,13 @@ function parseCopySource(
         }),
       );
     }
+    if (!sourceKey) {
+      return yield* Effect.fail(
+        new InvalidRequest({
+          message: "x-amz-copy-source source key is empty",
+        }),
+      );
+    }
     let versionId: string | undefined;
     if (decoded.includes("?versionId=")) {
       const versionPart = decoded.split("?versionId=")[1];
@@ -126,18 +132,7 @@ const copyObject = Effect.gen(function* () {
     "x-amz-metadata-directive",
   )?.toUpperCase() || "COPY") as "COPY" | "REPLACE";
 
-  // Let's look at how we resolve the source backend.
-  const sourceBackend = yield* resolver.getLayerForBucket(sourceBucket).pipe(
-    Effect.mapError((err) =>
-      err instanceof Error &&
-        err.message.includes("No configuration found for bucket")
-        ? new NoSuchBucket({
-          bucket: sourceBucket,
-          message: err.message,
-        })
-        : err
-    ),
-  );
+  const sourceBackend = yield* resolver.getLayerForBucket(sourceBucket);
 
   // If source and dest backends are the same instance, use native copy.
   if (sourceBackend === backend) {

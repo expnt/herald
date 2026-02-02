@@ -24,19 +24,39 @@ import {
   type SwiftTarget,
 } from "./Utils.ts";
 
-/** Convert Fetch Headers or Record to a plain Record so fromSwiftHeaders and bracket access work. */
-function headersToRecord(
-  headers: unknown,
-): Record<string, string | string[] | undefined> {
+/**
+ * Resolves Content-Type from Swift response headers with multiple fallbacks.
+ */
+function resolveContentType(
+  response: HttpClientResponse.HttpClientResponse,
+  normalizedResp: Record<string, string | undefined>,
+  s3Headers: Record<string, string>,
+): string | undefined {
+  let contentType = normalizedResp["content-type"];
+
+  // Platform may wrap Fetch Response; try native Response.headers first (case-insensitive get).
   if (
-    headers != null &&
-    typeof headers === "object" &&
-    "entries" in headers &&
-    typeof (headers as Headers).entries === "function"
+    contentType === undefined &&
+    (response as unknown as { source?: unknown }).source instanceof Response
   ) {
-    return Object.fromEntries((headers as Headers).entries());
+    const src = (response as unknown as { source: Response }).source;
+    contentType = src.headers.get("content-type") ?? undefined;
   }
-  return (headers as Record<string, string | string[] | undefined>) ?? {};
+
+  if (contentType === undefined) {
+    const h = response.headers as unknown as {
+      get?: (n: string) => string | null;
+    };
+    if (typeof h.get === "function") {
+      contentType = h.get("content-type") ?? h.get("Content-Type") ?? undefined;
+    }
+  }
+
+  if (contentType === undefined) {
+    contentType = s3Headers["Content-Type"] ?? s3Headers["content-type"];
+  }
+
+  return contentType;
 }
 
 export interface SwiftObject {
@@ -330,25 +350,17 @@ export const makeObjectOps = (
           );
         }
 
-        const respHeaders = headersToRecord(response.headers);
+        const normalizedResp = normalizeHeaders(response.headers);
         const { metadata, s3Headers, checksums, partsCount } = headerService
-          .fromSwiftHeaders(respHeaders);
+          .fromSwiftHeaders(normalizedResp);
 
-        const contentLengthHeader = respHeaders["content-length"];
-        const contentLengthRaw = Array.isArray(contentLengthHeader)
-          ? contentLengthHeader[0]
-          : contentLengthHeader;
+        const contentLengthRaw = normalizedResp["content-length"];
         const contentLength = contentLengthRaw
           ? parseInt(contentLengthRaw, 10)
           : NaN;
 
-        const etagHeader = respHeaders["etag"];
-        const etag = Array.isArray(etagHeader) ? etagHeader[0] : etagHeader;
-
-        const lastModifiedHeader = respHeaders["last-modified"];
-        const lastModified = Array.isArray(lastModifiedHeader)
-          ? lastModifiedHeader[0]
-          : lastModifiedHeader;
+        const etag = normalizedResp["etag"];
+        const lastModified = normalizedResp["last-modified"];
 
         // S3 clients (e.g. Restate) require Content-Length on GetObject; match old impl and fail if Swift omits it
         if (
@@ -395,30 +407,11 @@ export const makeObjectOps = (
             ? (response as unknown as { source: Response }).source.body
             : undefined;
 
-        const normalizedResp = normalizeHeaders(respHeaders);
-        let contentType = normalizedResp["content-type"] ?? undefined;
-        // Platform may wrap Fetch Response; try native Response.headers first (case-insensitive get).
-        if (
-          contentType === undefined &&
-          (response as unknown as { source?: unknown }).source instanceof
-            Response
-        ) {
-          const src = (response as unknown as { source: Response }).source;
-          contentType = src.headers.get("content-type") ?? undefined;
-        }
-        if (contentType === undefined) {
-          const h = response.headers as unknown as {
-            get?: (n: string) => string | null;
-          };
-          if (typeof h.get === "function") {
-            contentType = h.get("content-type") ?? h.get("Content-Type") ??
-              undefined;
-          }
-        }
-        if (contentType === undefined) {
-          contentType = s3Headers["Content-Type"] ??
-            s3Headers["content-type"] ?? undefined;
-        }
+        const contentType = resolveContentType(
+          response,
+          normalizedResp,
+          s3Headers,
+        );
 
         return {
           stream: response.stream,
@@ -457,8 +450,6 @@ export const makeObjectOps = (
 
         const swiftHeaders: Record<string, string> = {
           "X-Auth-Token": token,
-          "content-type": (normalized["content-type"] ||
-            "application/octet-stream") as string,
           ...headerService.toSwiftHeaders(metadata, checksums),
         };
 
@@ -827,13 +818,16 @@ export const makeObjectOps = (
           "X-Auth-Token": token,
           "X-Copy-From": srcPath,
           "Content-Length": "0", // Swift COPY/X-Copy-From requires 0 length or no body
-          ...headerService.toSwiftHeaders(metadata, checksums),
         };
 
         if (metadataDirective === "REPLACE") {
           swiftHeaders["X-Fresh-Metadata"] = "True";
           swiftHeaders["content-type"] = (normalized["content-type"] ||
             "application/octet-stream") as string;
+          Object.assign(
+            swiftHeaders,
+            headerService.toSwiftHeaders(metadata, checksums),
+          );
         }
 
         const request = HttpClientRequest.put(`${url}/${encodedDestKey}`).pipe(

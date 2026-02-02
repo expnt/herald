@@ -252,6 +252,7 @@ export const makeObjectOps = (
               Key: key,
               Range: normalized["range"],
               PartNumber: s3Params.partNumber,
+              VersionId: s3Params.versionId,
               ChecksumMode: s3Params.checksumMode as "ENABLED",
               IfMatch: normalized["if-match"],
               IfNoneMatch: normalized["if-none-match"],
@@ -660,7 +661,7 @@ export const makeObjectOps = (
   ) =>
     Effect.gen(function* () {
       const srcBucket = sourceBucket || bucketName;
-      const { s3Params } = headerService.fromRequestHeaders(headers);
+      const { s3Params, metadata } = headerService.fromRequestHeaders(headers);
 
       const result = yield* Effect.tryPromise({
         try: () =>
@@ -668,12 +669,13 @@ export const makeObjectOps = (
             new CopyObjectCommand({
               Bucket: bucketName,
               Key: destKey,
-              CopySource: encodeURIComponent(
-                `${srcBucket}/${sourceKey}${
-                  s3Params.versionId ? `?versionId=${s3Params.versionId}` : ""
-                }`,
-              ),
+              CopySource: `${encodeURIComponent(srcBucket)}/${
+                encodeURIComponent(
+                  sourceKey,
+                )
+              }${s3Params.versionId ? `?versionId=${s3Params.versionId}` : ""}`,
               MetadataDirective: metadataDirective,
+              Metadata: metadataDirective === "REPLACE" ? metadata : undefined,
             }),
           ),
         catch: (e) => mapS3Error(e, bucketName),

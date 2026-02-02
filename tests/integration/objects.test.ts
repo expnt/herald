@@ -670,6 +670,52 @@ const specs: ObjectTestSpec[] = [
       } catch { /* ignore */ }
     },
   },
+  // CopyObject: replace metadata
+  {
+    name: "objects/copy/replace_metadata",
+    fn: async (c) => {
+      const srcKey = "copy-replace-src";
+      const destKey = "copy-replace-dest";
+      await c.send(
+        new PutObjectCommand({
+          Bucket: BUCKET,
+          Key: srcKey,
+          Body: "data",
+          Metadata: { "old-meta": "old-value" },
+        }),
+      );
+      await c.send(
+        new CopyObjectCommand({
+          Bucket: BUCKET,
+          Key: destKey,
+          CopySource: `${BUCKET}/${srcKey}`,
+          MetadataDirective: "REPLACE",
+          Metadata: { "new-meta": "new-value" },
+        }),
+      );
+      const head = await c.send(
+        new HeadObjectCommand({ Bucket: BUCKET, Key: destKey }),
+      );
+      if (head.Metadata?.["new-meta"] !== "new-value") {
+        throw new Error(
+          `Expected new-meta: new-value, got ${head.Metadata?.["new-meta"]}`,
+        );
+      }
+      if (head.Metadata?.["old-meta"]) {
+        throw new Error("old-meta should have been replaced");
+      }
+    },
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({ Bucket: BUCKET, Key: "copy-replace-src" }),
+        );
+        await c.send(
+          new DeleteObjectCommand({ Bucket: BUCKET, Key: "copy-replace-dest" }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
 ];
 
 async function runObjectTest(tc: ObjectTestSpec, client: S3Client) {

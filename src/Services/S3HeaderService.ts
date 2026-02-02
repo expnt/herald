@@ -9,11 +9,29 @@ import type {
 import { ChecksumHeaders } from "./S3Schema.ts";
 
 export const normalizeHeaders = (
-  raw: Record<string, string | string[] | undefined>,
+  raw: Record<string, string | string[] | undefined> | Headers | unknown,
 ): Record<string, string | undefined> => {
   const normalized: Record<string, string | undefined> = {};
-  for (const [key, value] of Object.entries(raw)) {
-    normalized[key.toLowerCase()] = Array.isArray(value) ? value[0] : value;
+  if (
+    raw != null &&
+    typeof raw === "object" &&
+    "entries" in raw &&
+    typeof (raw as Headers).entries === "function"
+  ) {
+    for (const [key, value] of (raw as Headers).entries()) {
+      normalized[key.toLowerCase()] = value;
+    }
+    return normalized;
+  }
+
+  if (raw == null || typeof raw !== "object") {
+    return normalized;
+  }
+
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    normalized[key.toLowerCase()] = Array.isArray(value)
+      ? value[0]
+      : String(value);
   }
   return normalized;
 };
