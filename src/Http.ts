@@ -13,7 +13,7 @@ export { HttpHealthLive } from "./Frontend/Health/Http.ts";
 export { HttpS3Live } from "./Frontend/Http.ts";
 import { HeraldConfigLive } from "./Config/Layer.ts";
 import { HttpHealthLive } from "./Frontend/Health/Http.ts";
-import { HttpS3Live } from "./Frontend/Http.ts";
+import { HttpS3Live, responseDebugLoggingMiddleware } from "./Frontend/Http.ts";
 import { HttpHeraldApi } from "./Api.ts";
 import { corsMiddleware } from "./Frontend/Cors.ts";
 import { heraldHttpMetricsMiddleware } from "./Instrumentation.ts";
@@ -38,6 +38,7 @@ export const HttpServerHeraldLive = Layer.unwrapEffect(
     const middleware = flow(
       corsMiddleware,
       heraldHttpMetricsMiddleware,
+      responseDebugLoggingMiddleware,
       HttpMiddleware.logger,
     );
     return HttpApiBuilder.serve(middleware).pipe(

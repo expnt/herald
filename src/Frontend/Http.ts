@@ -1,5 +1,6 @@
 import {
   HttpApiBuilder,
+  HttpMiddleware,
   HttpRouter,
   HttpServerResponse,
 } from "@effect/platform";
@@ -20,6 +21,32 @@ import { headBucket } from "./Buckets/Head.ts";
 import { HttpHeraldApi } from "../Api.ts";
 import { BadGateway } from "./Api.ts";
 import * as HttpServerRequest from "@effect/platform/HttpServerRequest";
+
+/**
+ * Middleware that at debug log level logs every outgoing response's status and
+ * all headers. Centralized here so all S3/health responses get consistent
+ * debug logging.
+ */
+export const responseDebugLoggingMiddleware = HttpMiddleware.make((app) =>
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const response = yield* app;
+    const status = response.status ?? 0;
+    const headers = response.headers ?? {};
+    const headersStr = JSON.stringify(headers);
+    const method = request.method ?? "UNKNOWN";
+    const url = request.url.startsWith("http")
+      ? new URL(request.url).pathname
+      : request.url.split("?")[0];
+    yield* Effect.logDebug("Outgoing response", {
+      status,
+      method,
+      url,
+      headers: headersStr,
+    });
+    return response;
+  })
+);
 
 /** Build annotations and log 5xx as error, 4xx as warning; return response. */
 function logRequestFailureAndReturn(
