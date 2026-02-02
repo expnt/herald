@@ -24,8 +24,12 @@ export const putObject = Effect.gen(function* () {
     request.headers,
   );
 
+  const headers = headerService.toResponseHeaders(result);
+  if (headers["Content-Length"] === undefined) {
+    headers["Content-Length"] = "0";
+  }
   return HttpServerResponse.empty({
     status: 200,
-    headers: headerService.toResponseHeaders(result),
+    headers,
   });
 });

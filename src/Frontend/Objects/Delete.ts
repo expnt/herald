@@ -16,5 +16,8 @@ export const deleteObject = Effect.gen(function* () {
   }
 
   yield* backend.deleteObject(key);
-  return HttpServerResponse.empty({ status: 204 });
+  return HttpServerResponse.empty({
+    status: 204,
+    headers: { "Content-Length": "0" },
+  });
 });

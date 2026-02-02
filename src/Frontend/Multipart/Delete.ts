@@ -19,5 +19,8 @@ export const abortMultipartUpload = Effect.gen(function* () {
   }
 
   yield* backend.abortMultipartUpload(key, s3Params.uploadId);
-  return HttpServerResponse.empty({ status: 204 });
+  return HttpServerResponse.empty({
+    status: 204,
+    headers: { "Content-Length": "0" },
+  });
 });
