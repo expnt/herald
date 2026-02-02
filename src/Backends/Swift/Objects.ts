@@ -319,9 +319,12 @@ export const makeObjectOps = (
           .fromSwiftHeaders(response.headers);
 
         const contentLengthHeader = response.headers["content-length"];
-        const contentLength = Array.isArray(contentLengthHeader)
-          ? parseInt(contentLengthHeader[0] || "0")
-          : parseInt(contentLengthHeader || "0");
+        const contentLengthRaw = Array.isArray(contentLengthHeader)
+          ? contentLengthHeader[0]
+          : contentLengthHeader;
+        const contentLength = contentLengthRaw
+          ? parseInt(contentLengthRaw, 10)
+          : NaN;
 
         const etagHeader = response.headers["etag"];
         const etag = Array.isArray(etagHeader) ? etagHeader[0] : etagHeader;
@@ -330,6 +333,24 @@ export const makeObjectOps = (
         const lastModified = Array.isArray(lastModifiedHeader)
           ? lastModifiedHeader[0]
           : lastModifiedHeader;
+
+        // S3 clients (e.g. Restate) require Content-Length on GetObject; match old impl and fail if Swift omits it
+        if (
+          !contentLengthRaw?.trim() ||
+          !Number.isFinite(contentLength) ||
+          !etag?.trim() ||
+          !lastModified?.trim()
+        ) {
+          return yield* Effect.fail(
+            mapError(
+              502,
+              "Missing essential headers in Swift response (etag, last-modified, Content-Length required)",
+              container,
+              "GET",
+              key,
+            ),
+          );
+        }
 
         const checksumMode = s3Params.checksumMode === "ENABLED";
 
