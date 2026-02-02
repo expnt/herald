@@ -70,17 +70,29 @@ export const getObject = Effect.gen(function* () {
     ? 206
     : 200;
 
+  // S3 clients (e.g. Restate) may require Content-Length; ensure it is set when known
+  const responseHeaders: Record<string, string> = {
+    ...result.headers,
+  };
+  if (
+    result.contentLength !== undefined &&
+    result.contentLength !== null &&
+    responseHeaders["Content-Length"] === undefined
+  ) {
+    responseHeaders["Content-Length"] = String(result.contentLength);
+  }
+
   if (result.nativeStream) {
     return HttpServerResponse.raw(result.nativeStream, {
       status,
-      headers: result.headers,
+      headers: responseHeaders,
       contentType: result.contentType,
     });
   }
 
   return HttpServerResponse.stream(result.stream, {
     status,
-    headers: result.headers,
+    headers: responseHeaders,
     contentType: result.contentType,
   });
 });
