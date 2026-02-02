@@ -344,6 +344,14 @@ export class Backend extends Context.Tag("Backend")<
       headers: Record<string, string | string[] | undefined>,
     ) => Effect.Effect<ObjectAttributes, BackendError>;
 
+    copyObject: (
+      sourceKey: string,
+      destKey: string,
+      metadataDirective: "COPY" | "REPLACE",
+      headers: Record<string, string | string[] | undefined>,
+      sourceBucket?: string,
+    ) => Effect.Effect<PutObjectResult, BackendError>;
+
     // Multipart Upload
     createMultipartUpload: (
       key: string,

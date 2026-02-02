@@ -1,4 +1,5 @@
 import {
+  CopyObjectCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
   GetObjectAttributesCommand,
@@ -647,6 +648,40 @@ export const makeObjectOps = (
           : undefined,
         objectSize: result.ObjectSize,
         storageClass: result.StorageClass,
+      };
+    }),
+
+  copyObject: (
+    sourceKey: string,
+    destKey: string,
+    metadataDirective: "COPY" | "REPLACE",
+    headers: Record<string, string | string[] | undefined>,
+    sourceBucket?: string,
+  ) =>
+    Effect.gen(function* () {
+      const srcBucket = sourceBucket || bucketName;
+      const { s3Params } = headerService.fromRequestHeaders(headers);
+
+      const result = yield* Effect.tryPromise({
+        try: () =>
+          client.send(
+            new CopyObjectCommand({
+              Bucket: bucketName,
+              Key: destKey,
+              CopySource: encodeURIComponent(
+                `${srcBucket}/${sourceKey}${
+                  s3Params.versionId ? `?versionId=${s3Params.versionId}` : ""
+                }`,
+              ),
+              MetadataDirective: metadataDirective,
+            }),
+          ),
+        catch: (e) => mapS3Error(e, bucketName),
+      });
+
+      return {
+        etag: result.CopyObjectResult?.ETag,
+        versionId: result.VersionId,
       };
     }),
 });

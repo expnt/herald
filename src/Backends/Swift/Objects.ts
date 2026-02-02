@@ -24,6 +24,21 @@ import {
   type SwiftTarget,
 } from "./Utils.ts";
 
+/** Convert Fetch Headers or Record to a plain Record so fromSwiftHeaders and bracket access work. */
+function headersToRecord(
+  headers: unknown,
+): Record<string, string | string[] | undefined> {
+  if (
+    headers != null &&
+    typeof headers === "object" &&
+    "entries" in headers &&
+    typeof (headers as Headers).entries === "function"
+  ) {
+    return Object.fromEntries((headers as Headers).entries());
+  }
+  return (headers as Record<string, string | string[] | undefined>) ?? {};
+}
+
 export interface SwiftObject {
   readonly name?: string;
   readonly hash?: string;
@@ -315,10 +330,11 @@ export const makeObjectOps = (
           );
         }
 
+        const respHeaders = headersToRecord(response.headers);
         const { metadata, s3Headers, checksums, partsCount } = headerService
-          .fromSwiftHeaders(response.headers);
+          .fromSwiftHeaders(respHeaders);
 
-        const contentLengthHeader = response.headers["content-length"];
+        const contentLengthHeader = respHeaders["content-length"];
         const contentLengthRaw = Array.isArray(contentLengthHeader)
           ? contentLengthHeader[0]
           : contentLengthHeader;
@@ -326,10 +342,10 @@ export const makeObjectOps = (
           ? parseInt(contentLengthRaw, 10)
           : NaN;
 
-        const etagHeader = response.headers["etag"];
+        const etagHeader = respHeaders["etag"];
         const etag = Array.isArray(etagHeader) ? etagHeader[0] : etagHeader;
 
-        const lastModifiedHeader = response.headers["last-modified"];
+        const lastModifiedHeader = respHeaders["last-modified"];
         const lastModified = Array.isArray(lastModifiedHeader)
           ? lastModifiedHeader[0]
           : lastModifiedHeader;
@@ -379,12 +395,35 @@ export const makeObjectOps = (
             ? (response as unknown as { source: Response }).source.body
             : undefined;
 
+        const normalizedResp = normalizeHeaders(respHeaders);
+        let contentType = normalizedResp["content-type"] ?? undefined;
+        // Platform may wrap Fetch Response; try native Response.headers first (case-insensitive get).
+        if (
+          contentType === undefined &&
+          (response as unknown as { source?: unknown }).source instanceof
+            Response
+        ) {
+          const src = (response as unknown as { source: Response }).source;
+          contentType = src.headers.get("content-type") ?? undefined;
+        }
+        if (contentType === undefined) {
+          const h = response.headers as unknown as {
+            get?: (n: string) => string | null;
+          };
+          if (typeof h.get === "function") {
+            contentType = h.get("content-type") ?? h.get("Content-Type") ??
+              undefined;
+          }
+        }
+        if (contentType === undefined) {
+          contentType = s3Headers["Content-Type"] ??
+            s3Headers["content-type"] ?? undefined;
+        }
+
         return {
           stream: response.stream,
           nativeStream: nativeStream || undefined,
-          contentType: (Array.isArray(response.headers["content-type"])
-            ? response.headers["content-type"][0]
-            : response.headers["content-type"]) || undefined,
+          contentType,
           contentLength,
           etag: etag || undefined,
           lastModified: lastModified ? new Date(lastModified) : undefined,
@@ -418,7 +457,7 @@ export const makeObjectOps = (
 
         const swiftHeaders: Record<string, string> = {
           "X-Auth-Token": token,
-          "Content-Type": (normalized["content-type"] ||
+          "content-type": (normalized["content-type"] ||
             "application/octet-stream") as string,
           ...headerService.toSwiftHeaders(metadata, checksums),
         };
@@ -469,8 +508,13 @@ export const makeObjectOps = (
             : validatedStream;
 
         const request = HttpClientRequest.put(`${url}/${encodedKey}`).pipe(
-          HttpClientRequest.setHeaders(swiftHeaders),
           HttpClientRequest.bodyStream(bodyStream),
+          HttpClientRequest.setHeaders(swiftHeaders),
+          HttpClientRequest.setHeader(
+            "Content-Type",
+            (normalized["content-type"] ||
+              "application/octet-stream") as string,
+          ),
         );
 
         const response: HttpClientResponse.HttpClientResponse = yield* client
@@ -761,5 +805,70 @@ export const makeObjectOps = (
 
         return result;
       }),
+
+    copyObject: (
+      sourceKey: string,
+      destKey: string,
+      metadataDirective: "COPY" | "REPLACE",
+      headers: Record<string, string | string[] | undefined>,
+      sourceBucket?: string,
+    ) => {
+      const encodedDestKey = encodeObjectKeyForSwift(destKey);
+      const srcBucket = sourceBucket || container;
+      const srcPath = `/${srcBucket}/${encodeObjectKeyForSwift(sourceKey)}`;
+
+      return Effect.gen(function* () {
+        const { checksums, metadata } = headerService.fromRequestHeaders(
+          headers,
+        );
+        const normalized = normalizeHeaders(headers);
+
+        const swiftHeaders: Record<string, string> = {
+          "X-Auth-Token": token,
+          "X-Copy-From": srcPath,
+          "Content-Length": "0", // Swift COPY/X-Copy-From requires 0 length or no body
+          ...headerService.toSwiftHeaders(metadata, checksums),
+        };
+
+        if (metadataDirective === "REPLACE") {
+          swiftHeaders["X-Fresh-Metadata"] = "True";
+          swiftHeaders["content-type"] = (normalized["content-type"] ||
+            "application/octet-stream") as string;
+        }
+
+        const request = HttpClientRequest.put(`${url}/${encodedDestKey}`).pipe(
+          HttpClientRequest.setHeaders(swiftHeaders),
+        );
+
+        const response: HttpClientResponse.HttpClientResponse = yield* client
+          .execute(request).pipe(
+            Effect.mapError((e) =>
+              mapError(500, formatSwiftTransportError(e), container)
+            ),
+          );
+
+        if (response.status < 200 || response.status >= 300) {
+          const message = yield* response.text.pipe(
+            Effect.orElseSucceed(() => "Error"),
+          );
+          return yield* Effect.fail(
+            mapError(
+              response.status,
+              message || "Error",
+              container,
+              "PUT",
+              destKey,
+            ),
+          );
+        }
+
+        const etagHeader = response.headers["etag"];
+        const etag = Array.isArray(etagHeader) ? etagHeader[0] : etagHeader;
+
+        return {
+          etag: etag || undefined,
+        };
+      });
+    },
   };
 };

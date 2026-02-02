@@ -306,3 +306,226 @@ snapshot[`Swift/objects/multipart/empty metadata 1`] = `
   status: 204,
 }
 `;
+
+snapshot[`Baseline/objects/copy/same_bucket metadata 1`] = `
+{
+  headers: {
+    "accept-ranges": "bytes",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-xss-protection": "1; mode=block",
+    vary: "Origin, Accept-Encoding",
+  },
+  status: 204,
+}
+`;
+
+snapshot[`Proxy/objects/copy/same_bucket metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Swift/objects/copy/same_bucket metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Baseline/objects/copy/zero_size metadata 1`] = `
+{
+  headers: {
+    "accept-ranges": "bytes",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-xss-protection": "1; mode=block",
+    vary: "Origin, Accept-Encoding",
+  },
+  status: 204,
+}
+`;
+
+snapshot[`Proxy/objects/copy/zero_size metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Swift/objects/copy/zero_size metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Baseline/objects/copy/copy_to_itself metadata 1`] = `
+{
+  headers: {
+    "accept-ranges": "bytes",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-xss-protection": "1; mode=block",
+    vary: "Origin, Accept-Encoding",
+  },
+  status: 204,
+}
+`;
+
+snapshot[`Proxy/objects/copy/copy_to_itself metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Swift/objects/copy/copy_to_itself metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Baseline/objects/copy/source_key_not_found metadata 1`] = `
+{
+  headers: {
+    "accept-ranges": "bytes",
+    "content-length": "376",
+    "content-type": "application/xml",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-xss-protection": "1; mode=block",
+    vary: "Origin, Accept-Encoding",
+  },
+  status: 404,
+}
+`;
+
+snapshot[`Baseline/objects/copy/source_key_not_found body 1`] = `
+'<?xml version="1.0" encoding="UTF-8"?>
+<Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message><Key>no-such-source-key</Key><BucketName>test-objects-bucket</BucketName><Resource>/test-objects-bucket/copy-dest-any</Resource><RequestId>ID</RequestId><HostId>HOST</HostId></Error>'
+`;
+
+snapshot[`Proxy/objects/copy/source_key_not_found metadata 1`] = `
+{
+  headers: {
+    "content-type": "application/xml",
+    vary: "Accept-Encoding",
+  },
+  status: 404,
+}
+`;
+
+snapshot[`Proxy/objects/copy/source_key_not_found body 1`] = `'<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message></Error>'`;
+
+snapshot[`Swift/objects/copy/source_key_not_found metadata 1`] = `
+{
+  headers: {
+    "content-type": "application/xml",
+    vary: "Accept-Encoding",
+  },
+  status: 404,
+}
+`;
+
+snapshot[`Swift/objects/copy/source_key_not_found body 1`] = `'<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchKey</Code><Message><html><h1>Not Found</h1><p>The resource could not be found.</p></html></Message></Error>'`;
+
+snapshot[`Baseline/objects/copy/source_bucket_not_found metadata 1`] = `
+{
+  headers: {
+    "accept-ranges": "bytes",
+    "content-length": "377",
+    "content-type": "application/xml",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-xss-protection": "1; mode=block",
+    vary: "Origin, Accept-Encoding",
+  },
+  status: 404,
+}
+`;
+
+snapshot[`Baseline/objects/copy/source_bucket_not_found body 1`] = `
+'<?xml version="1.0" encoding="UTF-8"?>
+<Error><Code>NoSuchBucket</Code><Message>The specified bucket does not exist</Message><Key>any-key</Key><BucketName>nonexistent-bucket-xyz-123</BucketName><Resource>/test-objects-bucket/copy-dest-any</Resource><RequestId>ID</RequestId><HostId>HOST</HostId></Error>'
+`;
+
+snapshot[`Proxy/objects/copy/source_bucket_not_found metadata 1`] = `
+{
+  headers: {
+    "content-type": "application/xml",
+    vary: "Accept-Encoding",
+  },
+  status: 404,
+}
+`;
+
+snapshot[`Proxy/objects/copy/source_bucket_not_found body 1`] = `'<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchBucket</Code><Message>The specified bucket does not exist</Message></Error>'`;
+
+snapshot[`Swift/objects/copy/source_bucket_not_found metadata 1`] = `
+{
+  headers: {
+    "content-type": "application/xml",
+    vary: "Accept-Encoding",
+  },
+  status: 404,
+}
+`;
+
+snapshot[`Swift/objects/copy/source_bucket_not_found body 1`] = `'<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchKey</Code><Message><html><h1>Not Found</h1><p>The resource could not be found.</p></html></Message></Error>'`;
+
+snapshot[`Baseline/objects/copy/diff_bucket metadata 1`] = `
+{
+  headers: {
+    "accept-ranges": "bytes",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-xss-protection": "1; mode=block",
+    vary: "Origin, Accept-Encoding",
+  },
+  status: 204,
+}
+`;
+
+snapshot[`Proxy/objects/copy/diff_bucket metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Swift/objects/copy/diff_bucket metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Baseline/objects/copy/verify_content_type metadata 1`] = `
+{
+  headers: {
+    "accept-ranges": "bytes",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-xss-protection": "1; mode=block",
+    vary: "Origin, Accept-Encoding",
+  },
+  status: 204,
+}
+`;
+
+snapshot[`Proxy/objects/copy/verify_content_type metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;
+
+snapshot[`Swift/objects/copy/verify_content_type metadata 1`] = `
+{
+  headers: {},
+  status: 204,
+}
+`;

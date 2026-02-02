@@ -264,8 +264,8 @@ operations. The following are **not** currently supported (or are partial):
   (`?acl`), website (`?website`), public access block (`?publicAccessBlock`),
   replication, logging, inventory, metrics, ownership controls.
 - **Object subresources:** Object ACLs, tagging, legal hold, retention (Object
-  Lock), S3 Select. Copy Object (`x-amz-copy-source`) and Multi-Object Delete
-  (`POST ?delete`) are not implemented.
+  Lock), S3 Select. Multi-Object Delete (`POST ?delete`) is not implemented.
+  Copy Object (`PUT` with `x-amz-copy-source`) is supported.
 - **Object operations:** GetObjectAttributes (`?attributes`) is not implemented.
   Checksum headers (`x-amz-checksum-*`) and conditional requests (`If-Match`,
   etc.) are not fully supported.

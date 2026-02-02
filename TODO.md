@@ -72,7 +72,7 @@ implementation.
 - [ ] **Unicode Metadata**: Fix support for non-ASCII characters in object
       metadata. Currently failing across all backends. _(Focus tests:
       `test_object_set_get_unicode_metadata`)_
-- [ ] **Copy Object**: Support for `PUT` with `x-amz-copy-source` header.
+- [x] **Copy Object**: Support for `PUT` with `x-amz-copy-source` header.
       _(Focus tests: `test_object_copy`)_
 - [ ] **Tagging**: Implementation of `GET/PUT/DELETE /?tagging` for objects.
       _(Focus tests: `test_object_tagging`)_
@@ -88,7 +88,7 @@ implementation.
 - [ ] **Checksums**: Support for `x-amz-checksum-sha1`, `x-amz-checksum-sha256`,
       `x-amz-checksum-crc32`, and `x-amz-checksum-crc32c`. Currently failing
       validation tests. _(Focus tests: `test_object_checksum_sha256`)_
-  - [ ] **Fix S3 Buffering**: Refactor S3 `putObject` and `uploadPart` to stream
+  - [x] **Fix S3 Buffering**: Refactor S3 `putObject` and `uploadPart` to stream
         directly to the AWS SDK instead of collecting chunks into a
         `Uint8Array`.
   - [ ] **Fix Swift Validation Timing**: Move Swift checksum validation before

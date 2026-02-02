@@ -35,6 +35,8 @@ import { GlobalConfig } from "../src/Domain/Config.ts";
 const DEFAULT_TAGS =
   "not appendobject and not bucket_policy and not copy and not cors and not encryption and not fails_strict_rfc2616 and not iam_tenant and not iam_user and not iam_account and not lifecycle and not object_lock and not policy and not policy_status and not s3select and not s3website and not sse_s3 and not tagging and not test_of_sts and not user_policy and not versioning and not webidentity_test";
 
+// To run only copy tests: S3TEST_TAGS=copy ./x/s3-tests.ts  or  ./x/s3-tests.ts -- -m copy
+
 function getMinioConfig(): GlobalConfig {
   return {
     backends: {
