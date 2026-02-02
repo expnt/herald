@@ -17,8 +17,17 @@ export const headObject = Effect.gen(function* () {
   }
 
   const result = yield* backend.headObject(key, combinedHeaders);
+  // S3 clients (e.g. Restate) may require Content-Length on HEAD; ensure it is set when known
+  const responseHeaders: Record<string, string> = { ...result.headers };
+  if (
+    result.contentLength !== undefined &&
+    result.contentLength !== null &&
+    responseHeaders["Content-Length"] === undefined
+  ) {
+    responseHeaders["Content-Length"] = String(result.contentLength);
+  }
   return HttpServerResponse.empty({
     status: 200,
-    headers: result.headers,
+    headers: responseHeaders,
   });
 });

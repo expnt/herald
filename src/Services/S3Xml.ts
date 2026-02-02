@@ -180,7 +180,10 @@ export const makeS3Xml = Effect.sync(() => {
         `<?xml version="1.0" encoding="UTF-8"?><Error><Code>${code}</Code><Message>${message}</Message></Error>`;
       return HttpServerResponse.text(xml, {
         status,
-        headers: { "Content-Type": "application/xml" },
+        headers: {
+          "Content-Type": "application/xml",
+          "Content-Length": String(new TextEncoder().encode(xml).length),
+        },
       });
     },
 
@@ -195,6 +198,7 @@ export const makeS3Xml = Effect.sync(() => {
       return HttpServerResponse.text(xml, {
         headers: {
           "Content-Type": "application/xml",
+          "Content-Length": String(new TextEncoder().encode(xml).length),
         },
       });
     },
@@ -251,7 +255,10 @@ export const makeS3Xml = Effect.sync(() => {
         }${contentsXml}${commonPrefixesXml}</ListBucketResult>`;
 
       return HttpServerResponse.text(xml, {
-        headers: { "Content-Type": "application/xml" },
+        headers: {
+          "Content-Type": "application/xml",
+          "Content-Length": String(new TextEncoder().encode(xml).length),
+        },
       });
     },
 
@@ -295,7 +302,10 @@ export const makeS3Xml = Effect.sync(() => {
         }${versionsXml}${commonPrefixesXml}</ListVersionsResult>`;
 
       return HttpServerResponse.text(xml, {
-        headers: { "Content-Type": "application/xml" },
+        headers: {
+          "Content-Type": "application/xml",
+          "Content-Length": String(new TextEncoder().encode(xml).length),
+        },
       });
     },
 
@@ -314,7 +324,10 @@ export const makeS3Xml = Effect.sync(() => {
         }</Key><UploadId>${result.uploadId}</UploadId><Initiator><ID>${result.initiator.id}</ID><DisplayName>${result.initiator.displayName}</DisplayName></Initiator><Owner><ID>${result.owner.id}</ID><DisplayName>${result.owner.displayName}</DisplayName></Owner><StorageClass>${result.storageClass}</StorageClass><PartNumberMarker>${result.partNumberMarker}</PartNumberMarker><NextPartNumberMarker>${result.nextPartNumberMarker}</NextPartNumberMarker><MaxParts>${result.maxParts}</MaxParts><IsTruncated>${result.isTruncated}</IsTruncated>${partsXml}</ListPartsResult>`;
 
       return HttpServerResponse.text(xml, {
-        headers: { "Content-Type": "application/xml" },
+        headers: {
+          "Content-Type": "application/xml",
+          "Content-Length": String(new TextEncoder().encode(xml).length),
+        },
       });
     },
 
@@ -343,7 +356,10 @@ export const makeS3Xml = Effect.sync(() => {
         }</NextUploadIdMarker><MaxUploads>${result.maxUploads}</MaxUploads><IsTruncated>${result.isTruncated}</IsTruncated>${uploadsXml}${commonPrefixesXml}</ListMultipartUploadsResult>`;
 
       return HttpServerResponse.text(xml, {
-        headers: { "Content-Type": "application/xml" },
+        headers: {
+          "Content-Type": "application/xml",
+          "Content-Length": String(new TextEncoder().encode(xml).length),
+        },
       });
     },
     formatInitiateMultipartUpload: (
@@ -365,6 +381,7 @@ export const makeS3Xml = Effect.sync(() => {
       return HttpServerResponse.text(xml, {
         headers: {
           "Content-Type": "application/xml",
+          "Content-Length": String(new TextEncoder().encode(xml).length),
           ...(result.checksumAlgorithm
             ? {
               "x-amz-checksum-algorithm": result.checksumAlgorithm
@@ -410,6 +427,7 @@ export const makeS3Xml = Effect.sync(() => {
       return HttpServerResponse.text(xml, {
         headers: {
           "Content-Type": "application/xml",
+          "Content-Length": String(new TextEncoder().encode(xml).length),
         },
       });
     },
@@ -426,7 +444,10 @@ export const makeS3Xml = Effect.sync(() => {
       const xml =
         `<?xml version="1.0" encoding="UTF-8"?><DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">${deletedXml}${errorsXml}</DeleteResult>`;
       return HttpServerResponse.text(xml, {
-        headers: { "Content-Type": "application/xml" },
+        headers: {
+          "Content-Type": "application/xml",
+          "Content-Length": String(new TextEncoder().encode(xml).length),
+        },
       });
     },
 
@@ -439,7 +460,10 @@ export const makeS3Xml = Effect.sync(() => {
         }</Key><ETag>${encode(args.etag)}</ETag></PostResponse>`;
       return HttpServerResponse.text(xml, {
         status: 201,
-        headers: { "Content-Type": "application/xml" },
+        headers: {
+          "Content-Type": "application/xml",
+          "Content-Length": String(new TextEncoder().encode(xml).length),
+        },
       });
     },
 
@@ -534,7 +558,10 @@ export const makeS3Xml = Effect.sync(() => {
         }</GetObjectAttributesResponse>`;
 
       return HttpServerResponse.text(xml, {
-        headers: { "Content-Type": "application/xml" },
+        headers: {
+          "Content-Type": "application/xml",
+          "Content-Length": String(new TextEncoder().encode(xml).length),
+        },
       });
     },
   });
