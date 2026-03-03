@@ -2,6 +2,7 @@ import { HttpServerRequest, Url } from "@effect/platform";
 import { Context, Effect, Either, Schema } from "effect";
 import { InternalError } from "../Services/Backend.ts";
 import { S3HeaderService } from "../Services/S3HeaderService.ts";
+import type { SigV4VerifiedContext } from "../Services/Auth.ts";
 
 /**
  * Context for S3 operations (bucket or object).
@@ -10,6 +11,7 @@ export class RequestContext extends Context.Tag("RequestContext")<
   RequestContext,
   {
     readonly bucket: string;
+    readonly sigV4Context?: SigV4VerifiedContext;
   }
 >() {}
 

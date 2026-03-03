@@ -4,8 +4,15 @@ import {
   HttpRouter,
   HttpServerResponse,
 } from "@effect/platform";
-import { Effect, Layer } from "effect";
-import { Backend, MethodNotAllowed } from "../Services/Backend.ts";
+import { Effect, Layer, Option } from "effect";
+import {
+  AccessDenied,
+  Backend,
+  InvalidAccessKeyId,
+  InvalidArgument,
+  MethodNotAllowed,
+  RequestTimeTooSkewed,
+} from "../Services/Backend.ts";
 import { BackendResolver } from "../Services/BackendResolver.ts";
 import { S3Xml } from "../Services/S3Xml.ts";
 import { RequestContext } from "./Utils.ts";
@@ -21,6 +28,9 @@ import { headBucket } from "./Buckets/Head.ts";
 import { HttpHeraldApi } from "../Api.ts";
 import { BadGateway } from "./Api.ts";
 import * as HttpServerRequest from "@effect/platform/HttpServerRequest";
+import { HeraldConfig } from "../Config/Layer.ts";
+import { verifyIncomingSigV4Detailed } from "../Services/Auth.ts";
+import type { SigV4VerifiedContext } from "../Services/Auth.ts";
 
 /**
  * Middleware that at debug log level logs every outgoing response's status and
@@ -47,6 +57,56 @@ export const responseDebugLoggingMiddleware = HttpMiddleware.make((app) =>
     return response;
   })
 );
+
+function hasSigV4Credentials(
+  request: HttpServerRequest.HttpServerRequest,
+): boolean {
+  if (typeof request.headers["authorization"] === "string") {
+    return true;
+  }
+  const hostHeader = request.headers["host"];
+  const host = typeof hostHeader === "string" ? hostHeader : "localhost";
+  const protocol = request.url.startsWith("https") ? "https:" : "http:";
+  const url = new URL(request.url, `${protocol}//${host}`);
+  return url.searchParams.has("X-Amz-Signature");
+}
+
+function isPostObjectMultipartRequest(
+  request: HttpServerRequest.HttpServerRequest,
+): boolean {
+  if (request.method !== "POST") {
+    return false;
+  }
+  const contentType = request.headers["content-type"] ??
+    request.headers["Content-Type"];
+  const contentTypeValue = Array.isArray(contentType)
+    ? contentType[0]
+    : contentType;
+  return typeof contentTypeValue === "string" &&
+    contentTypeValue.toLowerCase().startsWith("multipart/form-data");
+}
+
+function isLegacyAwsAuthorizationRequest(
+  request: HttpServerRequest.HttpServerRequest,
+): boolean {
+  const authorization = request.headers["authorization"];
+  return typeof authorization === "string" &&
+    authorization.startsWith("AWS ");
+}
+
+function getHeaderValue(
+  headers: Record<string, string | string[] | undefined>,
+  name: string,
+): string | undefined {
+  const entry = Object.entries(headers).find(([key]) =>
+    key.toLowerCase() === name.toLowerCase()
+  );
+  if (!entry) {
+    return undefined;
+  }
+  const value = entry[1];
+  return Array.isArray(value) ? value[0] : value;
+}
 
 /** Build annotations and log 5xx as error, 4xx as warning; return response. */
 function logRequestFailureAndReturn(
@@ -99,6 +159,7 @@ export const makeS3Router = (prefix = "") =>
   Effect.gen(function* () {
     const s3Xml = yield* S3Xml;
     const resolver = yield* BackendResolver;
+    const config = yield* HeraldConfig;
 
     const frontHandler = <R, E>(
       handler: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,
@@ -135,20 +196,137 @@ export const makeS3Router = (prefix = "") =>
         const bucket = pathWithoutPrefix.split("/").filter(Boolean)[0] || "";
         const isHead = request.method === "HEAD";
         const method = request.method ?? "UNKNOWN";
-
-        const backend = yield* resolver.getLayerForBucket(bucket);
-        const backendLayer = Layer.succeed(Backend, backend);
+        const query = request.url.includes("?")
+          ? request.url.slice(request.url.indexOf("?") + 1)
+          : "";
 
         const attrs = { bucket, method };
-        return yield* handler.pipe(
-          Effect.provideService(RequestContext, { bucket }),
-          Effect.provide(backendLayer),
+        return yield* Effect.gen(function* () {
+          let sigV4Context: SigV4VerifiedContext | undefined;
+
+          yield* Effect.logDebug("Incoming request", {
+            method,
+            path: pathname,
+            query,
+            bucket,
+            contentEncoding: getHeaderValue(
+              request.headers,
+              "content-encoding",
+            ),
+            transferEncoding: getHeaderValue(
+              request.headers,
+              "transfer-encoding",
+            ),
+            amzContentSha256: getHeaderValue(
+              request.headers,
+              "x-amz-content-sha256",
+            ),
+            amzDecodedContentLength: getHeaderValue(
+              request.headers,
+              "x-amz-decoded-content-length",
+            ),
+            contentLength: getHeaderValue(request.headers, "content-length"),
+            contentType: getHeaderValue(request.headers, "content-type"),
+            hasAuthorization:
+              getHeaderValue(request.headers, "authorization") !==
+                undefined,
+          });
+
+          if (bucket !== "") {
+            const authCredentials = config.resolveAuth(bucket);
+            const skipSigV4Auth = isPostObjectMultipartRequest(request);
+            if (Option.isSome(authCredentials) && !skipSigV4Auth) {
+              if (isLegacyAwsAuthorizationRequest(request)) {
+                return yield* Effect.fail(
+                  new InvalidArgument({
+                    message:
+                      "The authorization mechanism you have provided is not supported. Please use AWS4-HMAC-SHA256.",
+                  }),
+                );
+              }
+              if (!hasSigV4Credentials(request)) {
+                return yield* Effect.fail(
+                  new AccessDenied({ message: "Access Denied" }),
+                );
+              }
+
+              const resolvedBucket = config.lookupBucket(bucket);
+              if (Option.isNone(resolvedBucket)) {
+                return yield* Effect.fail(
+                  new AccessDenied({ message: "Access Denied" }),
+                );
+              }
+              const bucketRegion = resolvedBucket.value.region;
+              if (
+                bucketRegion === undefined || bucketRegion.trim() === ""
+              ) {
+                return yield* Effect.fail(
+                  new AccessDenied({ message: "Access Denied" }),
+                );
+              }
+
+              const validation = yield* verifyIncomingSigV4Detailed(
+                request,
+                authCredentials.value,
+                bucketRegion,
+              );
+              if (!validation.valid) {
+                if (
+                  validation.failure === "MalformedAuthorization" ||
+                  validation.failure === "InvalidExpires"
+                ) {
+                  return yield* Effect.fail(
+                    new InvalidArgument({
+                      message: "Authorization header is malformed",
+                    }),
+                  );
+                }
+                if (validation.failure === "RequestTimeTooSkewed") {
+                  return yield* Effect.fail(
+                    new RequestTimeTooSkewed({
+                      message:
+                        "The difference between the request time and the current time is too large.",
+                    }),
+                  );
+                }
+                if (
+                  validation.failure === "ExpiredPresign" ||
+                  validation.failure === "PresignNotYetValid" ||
+                  validation.failure === "PresignExpiresTooLong"
+                ) {
+                  return yield* Effect.fail(
+                    new AccessDenied({ message: "Request has expired" }),
+                  );
+                }
+                if (validation.failure === "UnknownAccessKey") {
+                  return yield* Effect.fail(
+                    new InvalidAccessKeyId({
+                      message:
+                        "The AWS Access Key Id you provided does not exist in our records.",
+                    }),
+                  );
+                }
+                return yield* Effect.fail(
+                  new AccessDenied({ message: "Access Denied" }),
+                );
+              }
+              sigV4Context = validation.context;
+            }
+          }
+
+          const backend = yield* resolver.getLayerForBucket(bucket);
+          const backendLayer = Layer.succeed(Backend, backend);
+
+          return yield* handler.pipe(
+            Effect.provideService(RequestContext, { bucket, sigV4Context }),
+            Effect.provide(backendLayer),
+          );
+        }).pipe(
           // convert the frontend errors to xml and log failure details
           Effect.catchAll((err: unknown) => {
             const response = s3Xml.formatError(err, isHead);
             return logRequestFailureAndReturn(err, response, bucket, method);
           }),
-        ).pipe(
           Effect.annotateLogs(attrs),
           Effect.withSpan("herald.s3.request", { attributes: attrs }),
         );

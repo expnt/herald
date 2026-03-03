@@ -41,6 +41,9 @@ export const makeTestHarness = (
       ? LogLevel.Debug
       : LogLevel.Info,
   ),
+  options?: {
+    disableDefaultAuth?: boolean;
+  },
 ) =>
   Effect.gen(function* () {
     const testCredentials = {
@@ -49,20 +52,22 @@ export const makeTestHarness = (
     };
 
     // Ensure auth is configured so tests don't fail due to "Deny by default" policy
-    const configWithAuth: GlobalConfig = {
-      ...config,
-      auth: config.auth ?? {
-        accessKeysRefs: [
-          "test",
-          "main",
-          "alt",
-          "tenant",
-          "iam",
-          "iam_root",
-          "iam_alt_root",
-        ],
-      },
-    };
+    const configWithAuth: GlobalConfig = options?.disableDefaultAuth
+      ? config
+      : {
+        ...config,
+        auth: config.auth ?? {
+          accessKeysRefs: [
+            "test",
+            "main",
+            "alt",
+            "tenant",
+            "iam",
+            "iam_root",
+            "iam_alt_root",
+          ],
+        },
+      };
 
     const HeraldConfigLive = Layer.succeed(HeraldConfig, {
       raw: configWithAuth,
@@ -143,14 +148,12 @@ export const makeTestHarness = (
       Effect.tryPromise({
         try: () =>
           server.shutdown(),
-        catch: (e) =>
-          new Error(`Server shutdown failed: ${e}`),
+        catch: (e) => new Error(`Server shutdown failed: ${e}`),
       }).pipe(Effect.orDie)
     );
     yield* Effect.addFinalizer(() =>
       Effect.tryPromise({
-        try: () =>
-          webHandler.dispose(),
+        try: () => webHandler.dispose(),
         catch: (e) => new Error(`Web handler disposal failed: ${e}`),
       }).pipe(Effect.orDie)
     );
@@ -361,11 +364,14 @@ export type ProxyTestCase = {
   ignoreBaseline?: boolean;
   only?: boolean;
   skipSnapshot?: boolean;
+  disableDefaultAuth?: boolean;
 };
 
 function baselineRunner(tc: ProxyTestCase, t: Deno.TestContext) {
   return Effect.gen(function* () {
-    const h = yield* makeTestHarness(tc.config);
+    const h = yield* makeTestHarness(tc.config, undefined, {
+      disableDefaultAuth: tc.disableDefaultAuth,
+    });
 
     if (tc.beforeAll) {
       const beforeResult = tc.beforeAll(h.client);
@@ -487,7 +493,9 @@ function baselineRunner(tc: ProxyTestCase, t: Deno.TestContext) {
 
 function proxyRunner(tc: ProxyTestCase, t: Deno.TestContext) {
   return Effect.gen(function* () {
-    const h = yield* makeTestHarness(tc.config);
+    const h = yield* makeTestHarness(tc.config, undefined, {
+      disableDefaultAuth: tc.disableDefaultAuth,
+    });
 
     if (tc.beforeAll) {
       const beforeResult = tc.beforeAll(h.proxyClient);
@@ -678,7 +686,9 @@ function swiftRunner(tc: ProxyTestCase, t: Deno.TestContext) {
       );
     }
 
-    const h = yield* makeTestHarness(swiftConfig.value);
+    const h = yield* makeTestHarness(swiftConfig.value, undefined, {
+      disableDefaultAuth: tc.disableDefaultAuth,
+    });
 
     if (tc.beforeAll) {
       const beforeResult = tc.beforeAll(h.proxyClient);

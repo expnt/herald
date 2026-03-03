@@ -12,11 +12,13 @@ import type {
   PutObjectResult,
 } from "../../Services/Backend.ts";
 import {
+  AccessDenied,
   BadDigest,
   InternalError,
   InvalidRequest,
 } from "../../Services/Backend.ts";
 import { normalizeHeaders } from "../../Services/S3HeaderService.ts";
+import { stripAwsChunkedFromContentEncoding } from "../../Services/AwsChunked.ts";
 import {
   encodeObjectKeyForSwift,
   formatSwiftTransportError,
@@ -57,6 +59,39 @@ function resolveContentType(
   }
 
   return contentType;
+}
+
+function resolveContentEncoding(
+  response: HttpClientResponse.HttpClientResponse,
+  normalizedResp: Record<string, string | undefined>,
+  s3Headers: Record<string, string>,
+): string | undefined {
+  let contentEncoding = normalizedResp["content-encoding"];
+
+  if (
+    contentEncoding === undefined &&
+    (response as unknown as { source?: unknown }).source instanceof Response
+  ) {
+    const src = (response as unknown as { source: Response }).source;
+    contentEncoding = src.headers.get("content-encoding") ?? undefined;
+  }
+
+  if (contentEncoding === undefined) {
+    const h = response.headers as unknown as {
+      get?: (n: string) => string | null;
+    };
+    if (typeof h.get === "function") {
+      contentEncoding = h.get("content-encoding") ??
+        h.get("Content-Encoding") ?? undefined;
+    }
+  }
+
+  if (contentEncoding === undefined) {
+    contentEncoding = s3Headers["Content-Encoding"] ??
+      s3Headers["content-encoding"];
+  }
+
+  return contentEncoding;
 }
 
 export interface SwiftObject {
@@ -245,6 +280,9 @@ export const makeObjectOps = (
         contentType: (Array.isArray(response.headers["content-type"])
           ? response.headers["content-type"][0]
           : response.headers["content-type"]) || undefined,
+        contentEncoding: (Array.isArray(response.headers["content-encoding"])
+          ? response.headers["content-encoding"][0]
+          : response.headers["content-encoding"]) || undefined,
         contentLength,
         etag: etag || undefined,
         lastModified: lastModified ? new Date(lastModified) : undefined,
@@ -417,6 +455,11 @@ export const makeObjectOps = (
           stream: response.stream,
           nativeStream: nativeStream || undefined,
           contentType,
+          contentEncoding: resolveContentEncoding(
+            response,
+            normalizedResp,
+            s3Headers,
+          ),
           contentLength,
           etag: etag || undefined,
           lastModified: lastModified ? new Date(lastModified) : undefined,
@@ -447,6 +490,9 @@ export const makeObjectOps = (
           headers,
         );
         const normalized = normalizeHeaders(headers);
+        const contentEncoding = stripAwsChunkedFromContentEncoding(
+          normalized["content-encoding"],
+        );
 
         const swiftHeaders: Record<string, string> = {
           "X-Auth-Token": token,
@@ -465,8 +511,12 @@ export const makeObjectOps = (
           checksums,
         )).pipe(
           Stream.catchAll((e) => {
-            // Preserve BadDigest and InvalidRequest errors from checksum validation
-            if (e instanceof BadDigest || e instanceof InvalidRequest) {
+            // Preserve known S3-compatible errors from checksum/chunk-signature validation.
+            if (
+              e instanceof BadDigest ||
+              e instanceof InvalidRequest ||
+              e instanceof AccessDenied
+            ) {
               return Stream.fail(e as BackendError);
             }
             return Stream.fail(
@@ -498,7 +548,7 @@ export const makeObjectOps = (
             })
             : validatedStream;
 
-        const request = HttpClientRequest.put(`${url}/${encodedKey}`).pipe(
+        let request = HttpClientRequest.put(`${url}/${encodedKey}`).pipe(
           HttpClientRequest.bodyStream(bodyStream),
           HttpClientRequest.setHeaders(swiftHeaders),
           HttpClientRequest.setHeader(
@@ -507,6 +557,11 @@ export const makeObjectOps = (
               "application/octet-stream") as string,
           ),
         );
+        if (contentEncoding !== undefined) {
+          request = request.pipe(
+            HttpClientRequest.setHeader("Content-Encoding", contentEncoding),
+          );
+        }
 
         const response: HttpClientResponse.HttpClientResponse = yield* client
           .execute(request).pipe(

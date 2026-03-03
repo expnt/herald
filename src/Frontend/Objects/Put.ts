@@ -7,6 +7,10 @@ import {
 } from "../../Services/Backend.ts";
 import { BackendResolver } from "../../Services/BackendResolver.ts";
 import {
+  decodeAwsChunkedBodyStream,
+  hasAwsChunkedContentEncoding,
+} from "../../Services/AwsChunked.ts";
+import {
   ensureClientReadableKey,
   ensureClientWritableKey,
 } from "../../Services/InternalNamespace.ts";
@@ -228,6 +232,7 @@ const copyObject = Effect.gen(function* () {
 export const putObject = Effect.gen(function* () {
   const backend = yield* Backend;
   const request = yield* HttpServerRequest.HttpServerRequest;
+  const { sigV4Context } = yield* RequestContext;
   const { key, s3Params } = yield* S3RequestParser;
   yield* ensureClientWritableKey(key);
   const headerService = yield* S3HeaderService;
@@ -241,9 +246,37 @@ export const putObject = Effect.gen(function* () {
     return yield* copyObject;
   }
 
+  const hasAwsChunked = hasAwsChunkedContentEncoding(request.headers);
+  yield* Effect.logDebug("PutObject aws-chunked decision", {
+    key,
+    hasAwsChunked,
+    contentEncoding: getHeader(request.headers, "content-encoding"),
+    transferEncoding: getHeader(request.headers, "transfer-encoding"),
+    amzContentSha256: getHeader(request.headers, "x-amz-content-sha256"),
+    amzDecodedContentLength: getHeader(
+      request.headers,
+      "x-amz-decoded-content-length",
+    ),
+    contentLength: getHeader(request.headers, "content-length"),
+    contentType: getHeader(request.headers, "content-type"),
+  });
+
+  const bodyStream = hasAwsChunked
+    ? decodeAwsChunkedBodyStream(request.stream, {
+      headers: hasAwsChunked && sigV4Context === undefined
+        ? {
+          ...request.headers,
+          // No auth context available: decode framing only and skip chunk-signature verification.
+          "x-amz-content-sha256": "UNSIGNED-PAYLOAD",
+        }
+        : request.headers,
+      sigV4Context,
+    })
+    : request.stream;
+
   const result = yield* backend.putObject(
     key,
-    request.stream,
+    bodyStream,
     request.headers,
   );
 

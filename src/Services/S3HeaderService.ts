@@ -46,6 +46,14 @@ export const normalizeHeaders = (
   return normalized;
 };
 
+const parseNonNegativeInteger = (value: string): number | undefined => {
+  const parsed = parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    return undefined;
+  }
+  return parsed;
+};
+
 export class S3HeaderService
   extends Effect.Service<S3HeaderService>()("S3HeaderService", {
     succeed: {
@@ -71,6 +79,9 @@ export class S3HeaderService
         }
         if ("contentType" in result && result.contentType) {
           headers["Content-Type"] = result.contentType;
+        }
+        if ("contentEncoding" in result && result.contentEncoding) {
+          headers["Content-Encoding"] = result.contentEncoding;
         }
 
         // Metadata
@@ -190,9 +201,27 @@ export class S3HeaderService
             (normalized["x-amz-version-id"] || normalized["versionid"]) ||
             undefined,
           checksumMode: normalized["x-amz-checksum-mode"],
-          contentLength: normalized["content-length"]
-            ? parseInt(normalized["content-length"])
-            : undefined,
+          contentLength: (() => {
+            const contentEncoding = normalized["content-encoding"];
+            const hasAwsChunked = contentEncoding !== undefined &&
+              contentEncoding.toLowerCase().split(",").map((s) => s.trim())
+                .includes("aws-chunked");
+            const amzContentSha256 = normalized["x-amz-content-sha256"];
+            const hasStreamingSigV4 = amzContentSha256 !== undefined &&
+              amzContentSha256.trim().toUpperCase().startsWith("STREAMING-");
+            if (
+              (hasAwsChunked || hasStreamingSigV4) &&
+              normalized["x-amz-decoded-content-length"] !== undefined
+            ) {
+              return parseNonNegativeInteger(
+                normalized["x-amz-decoded-content-length"],
+              );
+            }
+            if (normalized["content-length"] !== undefined) {
+              return parseNonNegativeInteger(normalized["content-length"]);
+            }
+            return undefined;
+          })(),
         };
 
         return { checksums, metadata, objectAttributes, s3Params };
@@ -230,6 +259,8 @@ export class S3HeaderService
             s3Headers[`x-amz-meta-${metaKey}`] = decodedValue;
           } else if (k === "content-type") {
             s3Headers["Content-Type"] = v;
+          } else if (k === "content-encoding") {
+            s3Headers["Content-Encoding"] = v;
           } else if (k === "content-length") {
             s3Headers["Content-Length"] = v;
           } else if (k === "etag") {
