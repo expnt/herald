@@ -684,6 +684,7 @@ export const makeObjectOps = (
       return {
         etag: result.CopyObjectResult?.ETag,
         versionId: result.VersionId,
+        lastModified: result.CopyObjectResult?.LastModified,
       };
     }),
 });

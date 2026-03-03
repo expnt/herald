@@ -143,9 +143,12 @@ const copyObject = Effect.gen(function* () {
       request.headers,
       sourceBucket,
     );
+    const lastModified = result.lastModified !== undefined
+      ? result.lastModified
+      : new Date();
     return s3Xml.formatCopyObjectResult({
       etag: result.etag || "",
-      lastModified: new Date(),
+      lastModified,
     });
   }
 

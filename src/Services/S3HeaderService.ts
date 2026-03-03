@@ -29,9 +29,19 @@ export const normalizeHeaders = (
   }
 
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-    normalized[key.toLowerCase()] = Array.isArray(value)
-      ? value[0]
-      : String(value);
+    const lowerKey = key.toLowerCase();
+    if (value === undefined) {
+      normalized[lowerKey] = undefined;
+      continue;
+    }
+    if (Array.isArray(value)) {
+      const first = value[0];
+      normalized[lowerKey] = first === undefined || typeof first === "string"
+        ? first
+        : String(first);
+      continue;
+    }
+    normalized[lowerKey] = typeof value === "string" ? value : String(value);
   }
   return normalized;
 };
