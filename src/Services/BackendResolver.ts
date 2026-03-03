@@ -3,6 +3,7 @@ import { makeS3Backend } from "../Backends/S3/Backend.ts";
 import { makeSwiftBackend } from "../Backends/Swift/Backend.ts";
 import { HeraldConfig } from "../Config/Layer.ts";
 import type { MaterializedBucket } from "../Domain/Config.ts";
+import { NoSuchBucket } from "./Backend.ts";
 
 export class BackendResolver
   extends Effect.Service<BackendResolver>()("BackendResolver", {
@@ -36,7 +37,10 @@ export class BackendResolver
             const matched = config.lookupBucket(bucketName);
             if (Option.isNone(matched)) {
               return yield* Effect.fail(
-                new Error(`No configuration found for bucket: ${bucketName}`),
+                new NoSuchBucket({
+                  bucket: bucketName,
+                  message: `No configuration found for bucket: ${bucketName}`,
+                }),
               );
             }
             return yield* makeBackend(matched.value);

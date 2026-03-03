@@ -1,6 +1,7 @@
 import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
+  CopyObjectCommand,
   CreateBucketCommand,
   CreateMultipartUploadCommand,
   DeleteBucketCommand,
@@ -44,6 +45,7 @@ interface ObjectTestSpec {
 }
 
 const BUCKET = "test-objects-bucket";
+const BUCKET_COPY_DIFF = "test-objects-bucket-copy-dest";
 
 const specs: ObjectTestSpec[] = [
   {
@@ -411,6 +413,308 @@ const specs: ObjectTestSpec[] = [
     },
     skipSnapshot: true,
     ignoreBaseline: true,
+  },
+  // CopyObject: same bucket
+  {
+    name: "objects/copy/same_bucket",
+    fn: async (c) => {
+      const srcKey = "copy-src-key";
+      const destKey = "copy-dest-key";
+      await c.send(
+        new PutObjectCommand({
+          Bucket: BUCKET,
+          Key: srcKey,
+          Body: "content to copy",
+        }),
+      );
+      await c.send(
+        new CopyObjectCommand({
+          Bucket: BUCKET,
+          Key: destKey,
+          CopySource: `${BUCKET}/${srcKey}`,
+        }),
+      );
+      const out = await c.send(
+        new GetObjectCommand({ Bucket: BUCKET, Key: destKey }),
+      );
+      const body = await out.Body?.transformToByteArray();
+      if (!body || new TextDecoder().decode(body) !== "content to copy") {
+        throw new Error(
+          `Copy body mismatch: expected "content to copy", got ${
+            body ? new TextDecoder().decode(body) : "null"
+          }`,
+        );
+      }
+    },
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({ Bucket: BUCKET, Key: "copy-src-key" }),
+        );
+        await c.send(
+          new DeleteObjectCommand({ Bucket: BUCKET, Key: "copy-dest-key" }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
+  // CopyObject: zero size
+  {
+    name: "objects/copy/zero_size",
+    fn: async (c) => {
+      const srcKey = "copy-zero-src";
+      const destKey = "copy-zero-dest";
+      await c.send(
+        new PutObjectCommand({
+          Bucket: BUCKET,
+          Key: srcKey,
+          Body: new Uint8Array(0),
+        }),
+      );
+      await c.send(
+        new CopyObjectCommand({
+          Bucket: BUCKET,
+          Key: destKey,
+          CopySource: `${BUCKET}/${srcKey}`,
+        }),
+      );
+      const head = await c.send(
+        new HeadObjectCommand({ Bucket: BUCKET, Key: destKey }),
+      );
+      if (head.ContentLength !== 0) {
+        throw new Error(
+          `Expected ContentLength 0, got ${head.ContentLength}`,
+        );
+      }
+    },
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({ Bucket: BUCKET, Key: "copy-zero-src" }),
+        );
+        await c.send(
+          new DeleteObjectCommand({ Bucket: BUCKET, Key: "copy-zero-dest" }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
+  // CopyObject: copy to self -> 400 InvalidRequest
+  {
+    name: "objects/copy/copy_to_itself",
+    fn: async (c) => {
+      const key = "copy-self-key";
+      await c.send(
+        new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: "x" }),
+      );
+      try {
+        await c.send(
+          new CopyObjectCommand({
+            Bucket: BUCKET,
+            Key: key,
+            CopySource: `${BUCKET}/${key}`,
+          }),
+        );
+        throw new Error("Expected CopyObject to self to fail with 400");
+      } catch (e) {
+        if (
+          e instanceof S3ServiceException &&
+          e.name === "InvalidRequest" &&
+          e.$metadata?.httpStatusCode === 400
+        ) {
+          return;
+        }
+        throw e;
+      } finally {
+        try {
+          await c.send(
+            new DeleteObjectCommand({ Bucket: BUCKET, Key: key }),
+          );
+        } catch { /* ignore */ }
+      }
+    },
+  },
+  // CopyObject: source key not found -> 404 NoSuchKey
+  {
+    name: "objects/copy/source_key_not_found",
+    fn: (c) =>
+      c.send(
+        new CopyObjectCommand({
+          Bucket: BUCKET,
+          Key: "copy-dest-any",
+          CopySource: `${BUCKET}/no-such-source-key`,
+        }),
+      ),
+    expectedErrorCode: "NoSuchKey",
+  },
+  // CopyObject: source bucket not found -> 404 (NoSuchBucket or backend 404)
+  {
+    name: "objects/copy/source_bucket_not_found",
+    fn: async (c) => {
+      try {
+        await c.send(
+          new CopyObjectCommand({
+            Bucket: BUCKET,
+            Key: "copy-dest-any",
+            CopySource: "nonexistent-bucket-xyz-123/any-key",
+          }),
+        );
+        throw new Error("Expected CopyObject to fail with 404");
+      } catch (e) {
+        if (e instanceof S3ServiceException) {
+          if (e.$metadata?.httpStatusCode !== 404) {
+            throw new Error(
+              `Expected 404, got ${e.$metadata?.httpStatusCode} (${e.name})`,
+            );
+          }
+          return;
+        }
+        throw e;
+      }
+    },
+  },
+  // CopyObject: different bucket (same backend)
+  {
+    name: "objects/copy/diff_bucket",
+    fn: async (c) => {
+      const srcKey = "copy-diff-src";
+      const destKey = "copy-diff-dest";
+      await c.send(
+        new PutObjectCommand({
+          Bucket: BUCKET,
+          Key: srcKey,
+          Body: "foo from A",
+        }),
+      );
+      await c.send(
+        new CopyObjectCommand({
+          Bucket: BUCKET_COPY_DIFF,
+          Key: destKey,
+          CopySource: `${BUCKET}/${srcKey}`,
+        }),
+      );
+      const out = await c.send(
+        new GetObjectCommand({
+          Bucket: BUCKET_COPY_DIFF,
+          Key: destKey,
+        }),
+      );
+      const body = await out.Body?.transformToByteArray();
+      if (!body || new TextDecoder().decode(body) !== "foo from A") {
+        throw new Error(
+          `Copy diff_bucket body mismatch: got ${
+            body ? new TextDecoder().decode(body) : "null"
+          }`,
+        );
+      }
+    },
+    setup: async (c) => {
+      try {
+        await c.send(new CreateBucketCommand({ Bucket: BUCKET_COPY_DIFF }));
+      } catch { /* ignore if exists */ }
+    },
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({ Bucket: BUCKET, Key: "copy-diff-src" }),
+        );
+        await c.send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET_COPY_DIFF,
+            Key: "copy-diff-dest",
+          }),
+        );
+        await c.send(
+          new DeleteBucketCommand({ Bucket: BUCKET_COPY_DIFF }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
+  // CopyObject: verify Content-Type preserved (metadata COPY).
+  {
+    name: "objects/copy/verify_content_type",
+    fn: async (c) => {
+      const srcKey = "copy-ct-src";
+      const destKey = "copy-ct-dest";
+      const contentType = "application/x-custom-test";
+      await c.send(
+        new PutObjectCommand({
+          Bucket: BUCKET,
+          Key: srcKey,
+          Body: "data",
+          ContentType: contentType,
+        }),
+      );
+      await c.send(
+        new CopyObjectCommand({
+          Bucket: BUCKET,
+          Key: destKey,
+          CopySource: `${BUCKET}/${srcKey}`,
+        }),
+      );
+      const head = await c.send(
+        new HeadObjectCommand({ Bucket: BUCKET, Key: destKey }),
+      );
+      if (head.ContentType !== contentType) {
+        throw new Error(
+          `Expected Content-Type ${contentType}, got ${head.ContentType}`,
+        );
+      }
+    },
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({ Bucket: BUCKET, Key: "copy-ct-src" }),
+        );
+        await c.send(
+          new DeleteObjectCommand({ Bucket: BUCKET, Key: "copy-ct-dest" }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
+  // CopyObject: replace metadata
+  {
+    name: "objects/copy/replace_metadata",
+    fn: async (c) => {
+      const srcKey = "copy-replace-src";
+      const destKey = "copy-replace-dest";
+      await c.send(
+        new PutObjectCommand({
+          Bucket: BUCKET,
+          Key: srcKey,
+          Body: "data",
+          Metadata: { "old-meta": "old-value" },
+        }),
+      );
+      await c.send(
+        new CopyObjectCommand({
+          Bucket: BUCKET,
+          Key: destKey,
+          CopySource: `${BUCKET}/${srcKey}`,
+          MetadataDirective: "REPLACE",
+          Metadata: { "new-meta": "new-value" },
+        }),
+      );
+      const head = await c.send(
+        new HeadObjectCommand({ Bucket: BUCKET, Key: destKey }),
+      );
+      if (head.Metadata?.["new-meta"] !== "new-value") {
+        throw new Error(
+          `Expected new-meta: new-value, got ${head.Metadata?.["new-meta"]}`,
+        );
+      }
+      if (head.Metadata?.["old-meta"]) {
+        throw new Error("old-meta should have been replaced");
+      }
+    },
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({ Bucket: BUCKET, Key: "copy-replace-src" }),
+        );
+        await c.send(
+          new DeleteObjectCommand({ Bucket: BUCKET, Key: "copy-replace-dest" }),
+        );
+      } catch { /* ignore */ }
+    },
   },
 ];
 

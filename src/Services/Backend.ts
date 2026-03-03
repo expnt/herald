@@ -200,6 +200,10 @@ export interface PutObjectResult extends ChecksumInfo {
   readonly versionId?: string;
 }
 
+export interface CopyObjectResult extends PutObjectResult {
+  readonly lastModified?: Date;
+}
+
 export interface MultipartUploadResult extends ChecksumInfo {
   readonly uploadId: string;
 }
@@ -343,6 +347,14 @@ export class Backend extends Context.Tag("Backend")<
       attributes: readonly string[],
       headers: Record<string, string | string[] | undefined>,
     ) => Effect.Effect<ObjectAttributes, BackendError>;
+
+    copyObject: (
+      sourceKey: string,
+      destKey: string,
+      metadataDirective: "COPY" | "REPLACE",
+      headers: Record<string, string | string[] | undefined>,
+      sourceBucket?: string,
+    ) => Effect.Effect<CopyObjectResult, BackendError>;
 
     // Multipart Upload
     createMultipartUpload: (

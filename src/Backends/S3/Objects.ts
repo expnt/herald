@@ -1,4 +1,5 @@
 import {
+  CopyObjectCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
   GetObjectAttributesCommand,
@@ -251,6 +252,7 @@ export const makeObjectOps = (
               Key: key,
               Range: normalized["range"],
               PartNumber: s3Params.partNumber,
+              VersionId: s3Params.versionId,
               ChecksumMode: s3Params.checksumMode as "ENABLED",
               IfMatch: normalized["if-match"],
               IfNoneMatch: normalized["if-none-match"],
@@ -647,6 +649,42 @@ export const makeObjectOps = (
           : undefined,
         objectSize: result.ObjectSize,
         storageClass: result.StorageClass,
+      };
+    }),
+
+  copyObject: (
+    sourceKey: string,
+    destKey: string,
+    metadataDirective: "COPY" | "REPLACE",
+    headers: Record<string, string | string[] | undefined>,
+    sourceBucket?: string,
+  ) =>
+    Effect.gen(function* () {
+      const srcBucket = sourceBucket || bucketName;
+      const { s3Params, metadata } = headerService.fromRequestHeaders(headers);
+
+      const result = yield* Effect.tryPromise({
+        try: () =>
+          client.send(
+            new CopyObjectCommand({
+              Bucket: bucketName,
+              Key: destKey,
+              CopySource: `${encodeURIComponent(srcBucket)}/${
+                encodeURIComponent(
+                  sourceKey,
+                )
+              }${s3Params.versionId ? `?versionId=${s3Params.versionId}` : ""}`,
+              MetadataDirective: metadataDirective,
+              Metadata: metadataDirective === "REPLACE" ? metadata : undefined,
+            }),
+          ),
+        catch: (e) => mapS3Error(e, bucketName),
+      });
+
+      return {
+        etag: result.CopyObjectResult?.ETag,
+        versionId: result.VersionId,
+        lastModified: result.CopyObjectResult?.LastModified,
       };
     }),
 });

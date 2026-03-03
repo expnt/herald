@@ -74,6 +74,10 @@ export class S3Xml extends Context.Tag("S3Xml")<
       key: string;
       etag: string;
     }) => HttpServerResponse.HttpServerResponse;
+    formatCopyObjectResult: (args: {
+      etag: string;
+      lastModified: Date;
+    }) => HttpServerResponse.HttpServerResponse;
   }
 >() {}
 
@@ -460,6 +464,20 @@ export const makeS3Xml = Effect.sync(() => {
         }</Key><ETag>${encode(args.etag)}</ETag></PostResponse>`;
       return HttpServerResponse.text(xml, {
         status: 201,
+        headers: {
+          "Content-Type": "application/xml",
+          "Content-Length": String(new TextEncoder().encode(xml).length),
+        },
+      });
+    },
+
+    formatCopyObjectResult: (args) => {
+      const xml =
+        `<?xml version="1.0" encoding="UTF-8"?><CopyObjectResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><ETag>${
+          encode(args.etag)
+        }</ETag><LastModified>${args.lastModified.toISOString()}</LastModified></CopyObjectResult>`;
+      return HttpServerResponse.text(xml, {
+        status: 200,
         headers: {
           "Content-Type": "application/xml",
           "Content-Length": String(new TextEncoder().encode(xml).length),
