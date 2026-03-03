@@ -9,6 +9,19 @@ import { Backend, InvalidRequest } from "../../Services/Backend.ts";
 import { S3HeaderService } from "../../Services/S3HeaderService.ts";
 import { S3Xml } from "../../Services/S3Xml.ts";
 
+function getHeader(
+  headers: Record<string, string | string[] | undefined>,
+  name: string,
+): string | undefined {
+  const lower = name.toLowerCase();
+  const entry = Object.entries(headers).find(
+    ([k]) => k.toLowerCase() === lower,
+  );
+  if (!entry) return undefined;
+  const v = entry[1];
+  return Array.isArray(v) ? v[0] : v;
+}
+
 export const uploadPart = Effect.gen(function* () {
   const backend = yield* Backend;
   const request = yield* HttpServerRequest.HttpServerRequest;
@@ -41,7 +54,23 @@ export const uploadPart = Effect.gen(function* () {
 
   // S3 allows 0-byte for the last part; no Frontend rejection here.
   // Swift backend rejects 0-byte segments at CompleteMultipartUpload (SLO manifest requirement).
-  const bodyStream = hasAwsChunkedContentEncoding(request.headers)
+  const hasAwsChunked = hasAwsChunkedContentEncoding(request.headers);
+  yield* Effect.logDebug("UploadPart aws-chunked decision", {
+    key,
+    uploadId: s3Params.uploadId,
+    partNumber: s3Params.partNumber,
+    hasAwsChunked,
+    contentEncoding: getHeader(request.headers, "content-encoding"),
+    transferEncoding: getHeader(request.headers, "transfer-encoding"),
+    amzContentSha256: getHeader(request.headers, "x-amz-content-sha256"),
+    amzDecodedContentLength: getHeader(
+      request.headers,
+      "x-amz-decoded-content-length",
+    ),
+    contentLength: getHeader(request.headers, "content-length"),
+    contentType: getHeader(request.headers, "content-type"),
+  });
+  const bodyStream = hasAwsChunked
     ? decodeAwsChunkedBodyStream(request.stream)
     : request.stream;
 

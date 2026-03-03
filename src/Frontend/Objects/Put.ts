@@ -245,7 +245,22 @@ export const putObject = Effect.gen(function* () {
     return yield* copyObject;
   }
 
-  const bodyStream = hasAwsChunkedContentEncoding(request.headers)
+  const hasAwsChunked = hasAwsChunkedContentEncoding(request.headers);
+  yield* Effect.logDebug("PutObject aws-chunked decision", {
+    key,
+    hasAwsChunked,
+    contentEncoding: getHeader(request.headers, "content-encoding"),
+    transferEncoding: getHeader(request.headers, "transfer-encoding"),
+    amzContentSha256: getHeader(request.headers, "x-amz-content-sha256"),
+    amzDecodedContentLength: getHeader(
+      request.headers,
+      "x-amz-decoded-content-length",
+    ),
+    contentLength: getHeader(request.headers, "content-length"),
+    contentType: getHeader(request.headers, "content-type"),
+  });
+
+  const bodyStream = hasAwsChunked
     ? decodeAwsChunkedBodyStream(request.stream)
     : request.stream;
 

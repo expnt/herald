@@ -93,6 +93,20 @@ function isLegacyAwsAuthorizationRequest(
     authorization.startsWith("AWS ");
 }
 
+function getHeaderValue(
+  headers: Record<string, string | string[] | undefined>,
+  name: string,
+): string | undefined {
+  const entry = Object.entries(headers).find(([key]) =>
+    key.toLowerCase() === name.toLowerCase()
+  );
+  if (!entry) {
+    return undefined;
+  }
+  const value = entry[1];
+  return Array.isArray(value) ? value[0] : value;
+}
+
 /** Build annotations and log 5xx as error, 4xx as warning; return response. */
 function logRequestFailureAndReturn(
   err: unknown,
@@ -181,9 +195,40 @@ export const makeS3Router = (prefix = "") =>
         const bucket = pathWithoutPrefix.split("/").filter(Boolean)[0] || "";
         const isHead = request.method === "HEAD";
         const method = request.method ?? "UNKNOWN";
+        const query = request.url.includes("?")
+          ? request.url.slice(request.url.indexOf("?") + 1)
+          : "";
 
         const attrs = { bucket, method };
         return yield* Effect.gen(function* () {
+          yield* Effect.logDebug("Incoming request", {
+            method,
+            path: pathname,
+            query,
+            bucket,
+            contentEncoding: getHeaderValue(
+              request.headers,
+              "content-encoding",
+            ),
+            transferEncoding: getHeaderValue(
+              request.headers,
+              "transfer-encoding",
+            ),
+            amzContentSha256: getHeaderValue(
+              request.headers,
+              "x-amz-content-sha256",
+            ),
+            amzDecodedContentLength: getHeaderValue(
+              request.headers,
+              "x-amz-decoded-content-length",
+            ),
+            contentLength: getHeaderValue(request.headers, "content-length"),
+            contentType: getHeaderValue(request.headers, "content-type"),
+            hasAuthorization:
+              getHeaderValue(request.headers, "authorization") !==
+                undefined,
+          });
+
           if (bucket !== "") {
             const authCredentials = config.resolveAuth(bucket);
             const skipSigV4Auth = isPostObjectMultipartRequest(request);
