@@ -46,6 +46,14 @@ export const normalizeHeaders = (
   return normalized;
 };
 
+const parseNonNegativeInteger = (value: string): number | undefined => {
+  const parsed = parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    return undefined;
+  }
+  return parsed;
+};
+
 export class S3HeaderService
   extends Effect.Service<S3HeaderService>()("S3HeaderService", {
     succeed: {
@@ -199,10 +207,12 @@ export class S3HeaderService
               hasAwsChunked &&
               normalized["x-amz-decoded-content-length"] !== undefined
             ) {
-              return parseInt(normalized["x-amz-decoded-content-length"]);
+              return parseNonNegativeInteger(
+                normalized["x-amz-decoded-content-length"],
+              );
             }
             if (normalized["content-length"] !== undefined) {
-              return parseInt(normalized["content-length"]);
+              return parseNonNegativeInteger(normalized["content-length"]);
             }
             return undefined;
           })(),

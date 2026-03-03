@@ -4,6 +4,11 @@ import { normalizeHeaders } from "./S3HeaderService.ts";
 
 const CR = 13;
 const LF = 10;
+const MAX_CONTROL_LINE_LENGTH = 8 * 1024;
+const MAX_CHUNK_SIZE_BYTES = 128 * 1024 * 1024;
+const MAX_TOTAL_BUFFERED_BYTES = MAX_CHUNK_SIZE_BYTES +
+  MAX_CONTROL_LINE_LENGTH +
+  4;
 
 const appendBytes = (
   a: Uint8Array<ArrayBufferLike>,
@@ -27,29 +32,53 @@ const findCrlf = (buffer: Uint8Array<ArrayBufferLike>): number => {
 const parseChunkSizeLine = (line: string): number => {
   const semi = line.indexOf(";");
   const token = (semi === -1 ? line : line.slice(0, semi)).trim();
+  if (token.length === 0 || token.length > MAX_CONTROL_LINE_LENGTH) {
+    throw new InvalidRequest({
+      message: "Invalid aws-chunked chunk-size line",
+    });
+  }
   if (!/^[0-9a-fA-F]+$/.test(token)) {
     throw new InvalidRequest({
       message: "Invalid aws-chunked chunk-size line",
     });
   }
-  return Number.parseInt(token, 16);
+  const size = Number.parseInt(token, 16);
+  if (!Number.isFinite(size) || size < 0 || size > MAX_CHUNK_SIZE_BYTES) {
+    throw new InvalidRequest({
+      message: "Invalid aws-chunked chunk-size line",
+    });
+  }
+  return size;
 };
 
 class AwsChunkedParser {
   private buffer: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
   private expectedSize = 0;
   private phase: "size" | "data" | "data-crlf" | "trailers" | "done" = "size";
+  private readonly decoder = new TextDecoder();
 
   feed(chunk: Uint8Array<ArrayBufferLike>): Uint8Array<ArrayBufferLike>[] {
     this.buffer = appendBytes(this.buffer, chunk);
+    if (this.buffer.length > MAX_TOTAL_BUFFERED_BYTES) {
+      throw new InvalidRequest({
+        message: "Invalid aws-chunked framing",
+      });
+    }
     const out: Uint8Array<ArrayBufferLike>[] = [];
 
     while (true) {
       if (this.phase === "size") {
         const idx = findCrlf(this.buffer);
-        if (idx === -1) break;
+        if (idx === -1) {
+          if (this.buffer.length > MAX_CONTROL_LINE_LENGTH) {
+            throw new InvalidRequest({
+              message: "Invalid aws-chunked chunk-size line",
+            });
+          }
+          break;
+        }
         const lineBytes = this.buffer.slice(0, idx);
-        const line = new TextDecoder().decode(lineBytes);
+        const line = this.decoder.decode(lineBytes);
         this.buffer = this.buffer.slice(idx + 2);
         this.expectedSize = parseChunkSizeLine(line);
         if (this.expectedSize === 0) {
@@ -82,9 +111,16 @@ class AwsChunkedParser {
 
       if (this.phase === "trailers") {
         const idx = findCrlf(this.buffer);
-        if (idx === -1) break;
+        if (idx === -1) {
+          if (this.buffer.length > MAX_CONTROL_LINE_LENGTH) {
+            throw new InvalidRequest({
+              message: "Invalid aws-chunked framing",
+            });
+          }
+          break;
+        }
         const lineBytes = this.buffer.slice(0, idx);
-        const line = new TextDecoder().decode(lineBytes);
+        const line = this.decoder.decode(lineBytes);
         this.buffer = this.buffer.slice(idx + 2);
         if (line.length === 0) {
           this.phase = "done";

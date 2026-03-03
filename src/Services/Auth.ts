@@ -204,13 +204,13 @@ export function verifyIncomingSigV4Detailed(
       const dateHeader = headers["date"];
       let signingDate: Date | undefined;
 
-      if (amzDate) {
+      if (hasSigInQuery) {
+        const amzDateQuery = queryParams.get("X-Amz-Date");
+        signingDate = amzDateQuery ? parseSigV4Date(amzDateQuery) : undefined;
+      } else if (amzDate) {
         signingDate = parseSigV4Date(amzDate);
       } else if (dateHeader) {
         signingDate = parseSigV4Date(dateHeader);
-      } else if (hasSigInQuery) {
-        const amzDateQuery = queryParams.get("X-Amz-Date");
-        signingDate = amzDateQuery ? parseSigV4Date(amzDateQuery) : undefined;
       }
 
       // Validate signingDate: reject if missing or outside allowed windows
@@ -286,6 +286,9 @@ export function verifyIncomingSigV4Detailed(
           queryBag[k] = v;
         }
       });
+      if (hasSigInQuery) {
+        delete queryBag["X-Amz-Signature"];
+      }
 
       // Use raw path from request.url to avoid URL constructor decoding
       const urlString = request.url;

@@ -186,9 +186,16 @@ export const makeS3Router = (prefix = "") =>
         return yield* Effect.gen(function* () {
           if (bucket !== "") {
             const authCredentials = config.resolveAuth(bucket);
-            const skipSigV4Auth = isPostObjectMultipartRequest(request) ||
-              isLegacyAwsAuthorizationRequest(request);
+            const skipSigV4Auth = isPostObjectMultipartRequest(request);
             if (Option.isSome(authCredentials) && !skipSigV4Auth) {
+              if (isLegacyAwsAuthorizationRequest(request)) {
+                return yield* Effect.fail(
+                  new InvalidArgument({
+                    message:
+                      "The authorization mechanism you have provided is not supported. Please use AWS4-HMAC-SHA256.",
+                  }),
+                );
+              }
               if (!hasSigV4Credentials(request)) {
                 return yield* Effect.fail(
                   new AccessDenied({ message: "Access Denied" }),

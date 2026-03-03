@@ -9,6 +9,7 @@ import { createHash, createHmac } from "node-crypto";
 import {
   CreateBucketCommand,
   DeleteBucketCommand,
+  DeleteObjectCommand,
   GetObjectCommand,
   type S3Client,
 } from "@aws-sdk/client-s3";
@@ -763,6 +764,56 @@ async function postObjectExtraFormFieldNotInPolicy(
   );
 }
 
+async function postObjectBodyIntegrityChunkLikePayload(
+  client: S3Client,
+  context: ProxyTestContext,
+): Promise<void> {
+  const key = "chunk-like-body.txt";
+  const body =
+    "46f;chunk-signature=abc\r\nhello\r\n0;chunk-signature=def\r\n\r\n";
+  const { policy, signature } = buildPolicyAndSignature(
+    BUCKET,
+    "chunk-like",
+    4096,
+    "minioadmin",
+    "minioadmin",
+  );
+
+  const form = new FormData();
+  form.append("key", key);
+  form.append("AWSAccessKeyId", "minioadmin");
+  form.append("acl", "private");
+  form.append("signature", signature);
+  form.append("policy", policy);
+  form.append("Content-Type", "text/plain");
+  form.append("file", new Blob([body]), "file.txt");
+
+  const res = await fetch(`${context.baseUrl}/${BUCKET}`, {
+    method: "POST",
+    body: form,
+  });
+  const resText = await res.text();
+  assertEquals(
+    res.status,
+    204,
+    `Expected 204 for PostObject body integrity test, got ${res.status}. Body: ${
+      resText.slice(0, 400)
+    }`,
+  );
+
+  const getRes = await client.send(
+    new GetObjectCommand({ Bucket: BUCKET, Key: key }),
+  );
+  const gotBody = await getRes.Body?.transformToByteArray() ??
+    new Uint8Array(0);
+  const storedText = new TextDecoder().decode(gotBody);
+  assertEquals(storedText.includes("46f;chunk-signature=abc"), true);
+  assertEquals(storedText.includes("hello"), true);
+  assertEquals(storedText.includes("0;chunk-signature=def"), true);
+
+  await client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
+}
+
 const cases: ProxyTestCase[] = [
   {
     name: "postobject/authenticated",
@@ -1066,6 +1117,25 @@ const cases: ProxyTestCase[] = [
     fn: (client, context) => {
       if (!context) throw new Error("PostObject tests require baseUrl");
       return postObjectExtraFormFieldNotInPolicy(client, context);
+    },
+  },
+  {
+    name: "postobject/body_integrity_chunk_like_payload",
+    config: testConfig,
+    skipSnapshot: true,
+    beforeAll: async (c) => {
+      try {
+        await c.send(new CreateBucketCommand({ Bucket: BUCKET }));
+      } catch { /* ignore */ }
+    },
+    afterAll: async (c) => {
+      try {
+        await c.send(new DeleteBucketCommand({ Bucket: BUCKET }));
+      } catch { /* ignore */ }
+    },
+    fn: (client, context) => {
+      if (!context) throw new Error("PostObject tests require baseUrl");
+      return postObjectBodyIntegrityChunkLikePayload(client, context);
     },
   },
 ];
