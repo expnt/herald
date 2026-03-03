@@ -1,6 +1,10 @@
 import { Effect } from "effect";
 import { HttpServerRequest, HttpServerResponse } from "@effect/platform";
 import { S3RequestParser } from "../Utils.ts";
+import {
+  decodeAwsChunkedBodyStream,
+  hasAwsChunkedContentEncoding,
+} from "../../Services/AwsChunked.ts";
 import { Backend, InvalidRequest } from "../../Services/Backend.ts";
 import { S3HeaderService } from "../../Services/S3HeaderService.ts";
 import { S3Xml } from "../../Services/S3Xml.ts";
@@ -37,12 +41,15 @@ export const uploadPart = Effect.gen(function* () {
 
   // S3 allows 0-byte for the last part; no Frontend rejection here.
   // Swift backend rejects 0-byte segments at CompleteMultipartUpload (SLO manifest requirement).
+  const bodyStream = hasAwsChunkedContentEncoding(request.headers)
+    ? decodeAwsChunkedBodyStream(request.stream)
+    : request.stream;
 
   const result = yield* backend.uploadPart(
     key,
     s3Params.uploadId,
     s3Params.partNumber,
-    request.stream,
+    bodyStream,
     request.headers,
   ).pipe(
     Effect.catchAll((e) => {

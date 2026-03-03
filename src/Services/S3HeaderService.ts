@@ -190,9 +190,22 @@ export class S3HeaderService
             (normalized["x-amz-version-id"] || normalized["versionid"]) ||
             undefined,
           checksumMode: normalized["x-amz-checksum-mode"],
-          contentLength: normalized["content-length"]
-            ? parseInt(normalized["content-length"])
-            : undefined,
+          contentLength: (() => {
+            const contentEncoding = normalized["content-encoding"];
+            const hasAwsChunked = contentEncoding !== undefined &&
+              contentEncoding.toLowerCase().split(",").map((s) => s.trim())
+                .includes("aws-chunked");
+            if (
+              hasAwsChunked &&
+              normalized["x-amz-decoded-content-length"] !== undefined
+            ) {
+              return parseInt(normalized["x-amz-decoded-content-length"]);
+            }
+            if (normalized["content-length"] !== undefined) {
+              return parseInt(normalized["content-length"]);
+            }
+            return undefined;
+          })(),
         };
 
         return { checksums, metadata, objectAttributes, s3Params };

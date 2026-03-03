@@ -13,6 +13,7 @@ import {
   type DeleteObjectsResult,
   EntityTooSmall,
   InternalError,
+  InvalidAccessKeyId,
   InvalidArgument,
   InvalidBucketName,
   InvalidPart,
@@ -29,6 +30,7 @@ import {
   NoSuchUpload,
   type ObjectAttributes,
   type OwnerInfo,
+  RequestTimeTooSkewed,
 } from "./Backend.ts";
 
 export class S3Xml extends Context.Tag("S3Xml")<
@@ -120,6 +122,10 @@ export const makeS3Xml = Effect.sync(() => {
         code = "AccessDenied";
         message = err.message;
         status = 403;
+      } else if (err instanceof InvalidAccessKeyId) {
+        code = "InvalidAccessKeyId";
+        message = err.message;
+        status = 403;
       } else if (err instanceof BadGateway) {
         code = "BadGateway";
         message = err.message;
@@ -160,6 +166,10 @@ export const makeS3Xml = Effect.sync(() => {
         code = "InvalidArgument";
         message = err.message;
         status = 400;
+      } else if (err instanceof RequestTimeTooSkewed) {
+        code = "RequestTimeTooSkewed";
+        message = err.message;
+        status = 403;
       } else if (err instanceof MalformedXML) {
         code = "MalformedXML";
         message = err.message;

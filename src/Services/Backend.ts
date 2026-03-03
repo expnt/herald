@@ -39,6 +39,10 @@ export class AccessDenied extends Data.TaggedError("AccessDenied")<{
   readonly message: string;
 }> {}
 
+export class InvalidAccessKeyId extends Data.TaggedError("InvalidAccessKeyId")<{
+  readonly message: string;
+}> {}
+
 export class BadGateway extends Data.TaggedError("BadGateway")<{
   readonly message: string;
 }> {}
@@ -76,6 +80,11 @@ export class InvalidArgument extends Data.TaggedError("InvalidArgument")<{
   readonly message: string;
 }> {}
 
+export class RequestTimeTooSkewed
+  extends Data.TaggedError("RequestTimeTooSkewed")<{
+    readonly message: string;
+  }> {}
+
 export class MalformedXML extends Data.TaggedError("MalformedXML")<{
   readonly message: string;
 }> {}
@@ -100,6 +109,7 @@ export type BackendError =
   | BucketNotEmpty
   | InternalError
   | AccessDenied
+  | InvalidAccessKeyId
   | BadGateway
   | NoSuchUpload
   | InvalidPart
@@ -109,6 +119,7 @@ export type BackendError =
   | BadDigest
   | InvalidBucketName
   | InvalidArgument
+  | RequestTimeTooSkewed
   | MalformedXML
   | MethodNotAllowed
   | HttpClientError.HttpClientError

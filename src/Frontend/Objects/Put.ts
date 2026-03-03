@@ -7,6 +7,10 @@ import {
 } from "../../Services/Backend.ts";
 import { BackendResolver } from "../../Services/BackendResolver.ts";
 import {
+  decodeAwsChunkedBodyStream,
+  hasAwsChunkedContentEncoding,
+} from "../../Services/AwsChunked.ts";
+import {
   ensureClientReadableKey,
   ensureClientWritableKey,
 } from "../../Services/InternalNamespace.ts";
@@ -241,9 +245,13 @@ export const putObject = Effect.gen(function* () {
     return yield* copyObject;
   }
 
+  const bodyStream = hasAwsChunkedContentEncoding(request.headers)
+    ? decodeAwsChunkedBodyStream(request.stream)
+    : request.stream;
+
   const result = yield* backend.putObject(
     key,
-    request.stream,
+    bodyStream,
     request.headers,
   );
 

@@ -17,6 +17,24 @@ export class AuthError extends Schema.TaggedError<AuthError>()("AuthError", {
   message: Schema.String,
 }) {}
 
+export type SigV4ValidationFailure =
+  | "MissingCredentials"
+  | "MissingRegion"
+  | "MalformedAuthorization"
+  | "UnknownAccessKey"
+  | "MissingDate"
+  | "InvalidDate"
+  | "InvalidExpires"
+  | "ExpiredPresign"
+  | "PresignNotYetValid"
+  | "PresignExpiresTooLong"
+  | "RequestTimeTooSkewed"
+  | "InvalidSignature";
+
+export type SigV4ValidationResult =
+  | { readonly valid: true }
+  | { readonly valid: false; readonly failure: SigV4ValidationFailure };
+
 /**
  * Resolves authentication credentials from environment variables based on refs.
  */
@@ -43,9 +61,41 @@ export function verifyIncomingSigV4(
   credentials: AuthCredentials[],
   region: string,
 ): Effect.Effect<boolean, never> {
+  return verifyIncomingSigV4Detailed(request, credentials, region).pipe(
+    Effect.map((result) => result.valid),
+  );
+}
+
+function parseSigV4Date(rawDate: string): Date | undefined {
+  // SigV4 format: YYYYMMDDTHHMMSSZ
+  if (/^\d{8}T\d{6}Z$/.test(rawDate)) {
+    const year = rawDate.substring(0, 4);
+    const month = rawDate.substring(4, 6);
+    const day = rawDate.substring(6, 8);
+    const hour = rawDate.substring(9, 11);
+    const min = rawDate.substring(11, 13);
+    const sec = rawDate.substring(13, 15);
+    const parsed = new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}Z`);
+    return isNaN(parsed.getTime()) ? undefined : parsed;
+  }
+
+  // AWS2 and some clients send RFC 1123 dates in x-amz-date/date.
+  const parsed = new Date(rawDate);
+  return isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+/**
+ * Verifies a SigV4 signature for an incoming request and returns a failure
+ * reason that can be mapped to S3-compatible XML error codes.
+ */
+export function verifyIncomingSigV4Detailed(
+  request: HttpServerRequest.HttpServerRequest,
+  credentials: AuthCredentials[],
+  region: string,
+): Effect.Effect<SigV4ValidationResult, never> {
   return Effect.gen(function* () {
     if (credentials.length === 0) {
-      return false;
+      return { valid: false, failure: "UnknownAccessKey" } as const;
     }
 
     const headers: Record<string, string> = {};
@@ -61,12 +111,18 @@ export function verifyIncomingSigV4(
     const queryParams = url.searchParams;
     const hasSigInQuery = queryParams.has("X-Amz-Signature");
 
-    const authHeader = headers["authorization"];
-    if (!authHeader && !hasSigInQuery) {
-      return false;
+    const rawAuthorization = headers["authorization"];
+    const authHeader = rawAuthorization !== undefined &&
+        rawAuthorization.trim() !== ""
+      ? rawAuthorization
+      : undefined;
+    if (authHeader === undefined && !hasSigInQuery) {
+      return { valid: false, failure: "MissingCredentials" } as const;
     }
 
     let requestAccessKeyId: string | undefined;
+    let credentialDate: string | undefined;
+    let credentialService: string | undefined;
     let signedHeadersList: string[] = [];
     let headerRegion: string | undefined;
 
@@ -75,8 +131,10 @@ export function verifyIncomingSigV4(
       if (match && match[1]) {
         const parts = match[1].split("/");
         requestAccessKeyId = parts[0];
-        if (parts.length >= 4) {
+        if (parts.length >= 5) {
+          credentialDate = parts[1];
           headerRegion = parts[2];
+          credentialService = parts[3];
         }
       }
 
@@ -84,13 +142,22 @@ export function verifyIncomingSigV4(
       if (headersMatch && headersMatch[1]) {
         signedHeadersList = headersMatch[1].split(";");
       }
+    } else if (authHeader !== undefined && !hasSigInQuery) {
+      return { valid: false, failure: "MalformedAuthorization" } as const;
     } else if (hasSigInQuery) {
+      const algorithm = queryParams.get("X-Amz-Algorithm");
+      if (algorithm !== "AWS4-HMAC-SHA256") {
+        return { valid: false, failure: "MalformedAuthorization" } as const;
+      }
+
       const credential = queryParams.get("X-Amz-Credential");
       if (credential && typeof credential === "string") {
         const parts = credential.split("/");
         requestAccessKeyId = parts[0];
-        if (parts.length >= 4) {
+        if (parts.length >= 5) {
+          credentialDate = parts[1];
           headerRegion = parts[2];
+          credentialService = parts[3];
         }
       }
 
@@ -98,90 +165,62 @@ export function verifyIncomingSigV4(
       if (signedHeaders && typeof signedHeaders === "string") {
         signedHeadersList = signedHeaders.split(";");
       }
+
+      const dateParam = queryParams.get("X-Amz-Date");
+      const expiresParam = queryParams.get("X-Amz-Expires");
+      const signatureParam = queryParams.get("X-Amz-Signature");
+      if (
+        dateParam === null || expiresParam === null || signatureParam === null
+      ) {
+        return { valid: false, failure: "MalformedAuthorization" } as const;
+      }
     }
 
     if (!requestAccessKeyId) {
-      return false;
+      return { valid: false, failure: "MalformedAuthorization" } as const;
+    }
+    if (!credentialDate || !credentialService) {
+      return { valid: false, failure: "MalformedAuthorization" } as const;
     }
 
     // Use region from header if available, otherwise use provided region
     const effectiveRegion = headerRegion ?? region;
+    if (!effectiveRegion || effectiveRegion.trim() === "") {
+      return { valid: false, failure: "MissingRegion" } as const;
+    }
 
     const matchingCreds = credentials.filter(
       (c) => c.accessKeyId === requestAccessKeyId,
     );
     if (matchingCreds.length === 0) {
-      return false;
-    }
-
-    // Filter headers to only those that were signed
-    const filteredHeaders: Record<string, string> = {};
-    for (const h of signedHeadersList) {
-      const val = headers[h];
-      if (val !== undefined) {
-        filteredHeaders[h] = val;
-      }
+      return { valid: false, failure: "UnknownAccessKey" } as const;
     }
 
     const encoder = new TextEncoder();
 
     for (const cred of matchingCreds) {
-      const signer = new SignatureV4({
-        credentials: {
-          accessKeyId: cred.accessKeyId,
-          secretAccessKey: cred.secretAccessKey,
-        },
-        region: effectiveRegion,
-        service: "s3",
-        sha256: Sha256,
-        uriEscapePath: false, // Path is already encoded in rawPath
-      });
-
       // Extract signing date from request if possible
       const amzDate = headers["x-amz-date"];
       const dateHeader = headers["date"];
       let signingDate: Date | undefined;
 
       if (amzDate) {
-        // format: YYYYMMDDTHHMMSSZ (minimum 15 characters needed for extraction)
-        if (amzDate.length >= 15) {
-          const year = amzDate.substring(0, 4);
-          const month = amzDate.substring(4, 6);
-          const day = amzDate.substring(6, 8);
-          const hour = amzDate.substring(9, 11);
-          const min = amzDate.substring(11, 13);
-          const sec = amzDate.substring(13, 15);
-          signingDate = new Date(
-            `${year}-${month}-${day}T${hour}:${min}:${sec}Z`,
-          );
-        }
+        signingDate = parseSigV4Date(amzDate);
       } else if (dateHeader) {
-        signingDate = new Date(dateHeader);
+        signingDate = parseSigV4Date(dateHeader);
       } else if (hasSigInQuery) {
         const amzDateQuery = queryParams.get("X-Amz-Date");
-        if (
-          amzDateQuery && typeof amzDateQuery === "string" &&
-          amzDateQuery.length >= 15
-        ) {
-          const year = amzDateQuery.substring(0, 4);
-          const month = amzDateQuery.substring(4, 6);
-          const day = amzDateQuery.substring(6, 8);
-          const hour = amzDateQuery.substring(9, 11);
-          const min = amzDateQuery.substring(11, 13);
-          const sec = amzDateQuery.substring(13, 15);
-          signingDate = new Date(
-            `${year}-${month}-${day}T${hour}:${min}:${sec}Z`,
-          );
-        }
-      }
-
-      if (signingDate && isNaN(signingDate.getTime())) {
-        signingDate = undefined;
+        signingDate = amzDateQuery ? parseSigV4Date(amzDateQuery) : undefined;
       }
 
       // Validate signingDate: reject if missing or outside allowed windows
       if (!signingDate) {
-        return false;
+        return {
+          valid: false,
+          failure: amzDate || dateHeader || queryParams.get("X-Amz-Date")
+            ? "InvalidDate"
+            : "MissingDate",
+        } as const;
       }
 
       const now = new Date();
@@ -192,24 +231,44 @@ export function verifyIncomingSigV4(
         // For query-presigned requests: validate X-Amz-Expires
         const expiresParam = queryParams.get("X-Amz-Expires");
         if (!expiresParam) {
-          return false;
+          return { valid: false, failure: "InvalidExpires" } as const;
         }
 
         // Type-check X-Amz-Expires: must be a valid integer
         const expires = parseInt(expiresParam, 10);
         if (isNaN(expires) || expiresParam !== String(expires) || expires < 0) {
-          return false;
+          return { valid: false, failure: "InvalidExpires" } as const;
+        }
+
+        // AWS SigV4 presigned URLs support at most 7 days.
+        if (expires > 604800) {
+          return { valid: false, failure: "PresignExpiresTooLong" } as const;
         }
 
         // Reject if expired: now > signingDate + expires
         const expirationTime = new Date(signingDate.getTime() + expires * 1000);
         if (now > expirationTime) {
-          return false;
+          return { valid: false, failure: "ExpiredPresign" } as const;
+        }
+
+        // Presigned requests from the future are also invalid.
+        const nowWithSkew = new Date(now.getTime() + 15 * 60 * 1000);
+        if (nowWithSkew < signingDate) {
+          return { valid: false, failure: "PresignNotYetValid" } as const;
         }
       } else {
         // For header-signed requests: enforce ±15 minutes clock skew
         if (timeDiffMinutes > 15) {
-          return false;
+          return { valid: false, failure: "RequestTimeTooSkewed" } as const;
+        }
+      }
+
+      // Filter headers to only those that were signed
+      const filteredHeaders: Record<string, string> = {};
+      for (const h of signedHeadersList) {
+        const val = headers[h];
+        if (val !== undefined) {
+          filteredHeaders[h] = val;
         }
       }
 
@@ -229,14 +288,11 @@ export function verifyIncomingSigV4(
       });
 
       // Use raw path from request.url to avoid URL constructor decoding
-      // We want the part between the host and the query string, as-is.
       const urlString = request.url;
       const queryIndex = urlString.indexOf("?");
       const withoutQuery = queryIndex === -1
         ? urlString
         : urlString.substring(0, queryIndex);
-
-      // Remove protocol and host if present
       const rawPath = withoutQuery.replace(/^[a-z]+:\/\/[^/]+/, "");
 
       const signableReq: HttpRequest = {
@@ -249,12 +305,23 @@ export function verifyIncomingSigV4(
         headers: filteredHeaders,
       };
 
-      const signedResult = yield* Effect.tryPromise({
-        try: async () => {
-          return await signer.sign(signableReq, {
-            signingDate,
-          });
+      const signer = new SignatureV4({
+        credentials: {
+          accessKeyId: cred.accessKeyId,
+          secretAccessKey: cred.secretAccessKey,
         },
+        region: effectiveRegion,
+        service: "s3",
+        sha256: Sha256,
+        uriEscapePath: false,
+      });
+
+      const signedResult = yield* Effect.tryPromise({
+        try: async () =>
+          await signer.sign(signableReq, {
+            signingDate,
+            signableHeaders: new Set(signedHeadersList),
+          }),
         catch: (e) => e,
       }).pipe(Effect.either);
 
@@ -275,7 +342,7 @@ export function verifyIncomingSigV4(
           encoder.encode(authHeader),
           encoder.encode(expectedAuth),
         );
-        if (isValid) return true;
+        if (isValid) return { valid: true } as const;
       } else {
         const expectedSig = (signed.query as Record<string, string | string[]>)[
           "X-Amz-Signature"
@@ -291,10 +358,10 @@ export function verifyIncomingSigV4(
           encoder.encode(actualSig),
           encoder.encode(expectedSig),
         );
-        if (isValid) return true;
+        if (isValid) return { valid: true } as const;
       }
     }
 
-    return false;
+    return { valid: false, failure: "InvalidSignature" } as const;
   });
 }
