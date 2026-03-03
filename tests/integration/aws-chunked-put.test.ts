@@ -588,6 +588,49 @@ const cases: ProxyTestCase[] = [{
   ignoreBaseline: true,
   skipSnapshot: true,
 }, {
+  name:
+    "objects/put/aws-chunked-decoding/streaming-sha256-kopia-shape/no-auth-config",
+  config: testConfig,
+  disableDefaultAuth: true,
+  beforeAll: async (client) => {
+    try {
+      await client.send(new CreateBucketCommand({ Bucket: BUCKET }));
+    } catch {
+      // Ignore already-exists races.
+    }
+  },
+  fn: async (client, context) => {
+    if (!context?.baseUrl) {
+      throw new Error("Missing baseUrl in test context");
+    }
+    const putResponse = await sendKopiaStyleStreamingPut(context.baseUrl);
+    if (putResponse.status !== 200) {
+      const body = await putResponse.text();
+      throw new Error(
+        `aws-chunked PUT (kopia-shape no-auth-config) failed: status=${putResponse.status} body=${
+          body.slice(0, 200)
+        }`,
+      );
+    }
+    await verifyStoredBodyForKey(client, KOPIA_KEY, KOPIA_PLAINTEXT);
+  },
+  afterAll: async (client) => {
+    try {
+      await client.send(
+        new DeleteObjectCommand({ Bucket: BUCKET, Key: KOPIA_KEY }),
+      );
+    } catch {
+      // Ignore cleanup failures.
+    }
+    try {
+      await client.send(new DeleteBucketCommand({ Bucket: BUCKET }));
+    } catch {
+      // Ignore cleanup failures.
+    }
+  },
+  ignoreBaseline: true,
+  skipSnapshot: true,
+}, {
   name: "objects/multipart/aws-chunked-uploadpart-decoding",
   config: testConfig,
   beforeAll: async (client) => {

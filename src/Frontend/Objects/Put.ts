@@ -250,7 +250,6 @@ export const putObject = Effect.gen(function* () {
   yield* Effect.logDebug("PutObject aws-chunked decision", {
     key,
     hasAwsChunked,
-    hasSigV4Context: sigV4Context !== undefined,
     contentEncoding: getHeader(request.headers, "content-encoding"),
     transferEncoding: getHeader(request.headers, "transfer-encoding"),
     amzContentSha256: getHeader(request.headers, "x-amz-content-sha256"),
@@ -264,7 +263,13 @@ export const putObject = Effect.gen(function* () {
 
   const bodyStream = hasAwsChunked
     ? decodeAwsChunkedBodyStream(request.stream, {
-      headers: request.headers,
+      headers: hasAwsChunked && sigV4Context === undefined
+        ? {
+          ...request.headers,
+          // No auth context available: decode framing only and skip chunk-signature verification.
+          "x-amz-content-sha256": "UNSIGNED-PAYLOAD",
+        }
+        : request.headers,
       sigV4Context,
     })
     : request.stream;

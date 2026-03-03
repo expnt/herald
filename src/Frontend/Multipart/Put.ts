@@ -74,7 +74,13 @@ export const uploadPart = Effect.gen(function* () {
   });
   const bodyStream = hasAwsChunked
     ? decodeAwsChunkedBodyStream(request.stream, {
-      headers: request.headers,
+      headers: hasAwsChunked && sigV4Context === undefined
+        ? {
+          ...request.headers,
+          // No auth context available: decode framing only and skip chunk-signature verification.
+          "x-amz-content-sha256": "UNSIGNED-PAYLOAD",
+        }
+        : request.headers,
       sigV4Context,
     })
     : request.stream;
