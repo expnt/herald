@@ -188,6 +188,7 @@ export interface ObjectResponse extends ChecksumInfo {
   readonly stream: Stream.Stream<Uint8Array, Error>;
   readonly nativeStream?: ReadableStream<Uint8Array>;
   readonly contentType?: string;
+  readonly contentEncoding?: string;
   readonly contentLength?: number;
   readonly etag?: string;
   readonly lastModified?: Date;
@@ -198,6 +199,7 @@ export interface ObjectResponse extends ChecksumInfo {
 
 export interface HeadObjectResult extends ChecksumInfo {
   readonly contentType?: string;
+  readonly contentEncoding?: string;
   readonly contentLength?: number;
   readonly etag?: string;
   readonly lastModified?: Date;

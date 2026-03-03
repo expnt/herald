@@ -31,8 +31,20 @@ export type SigV4ValidationFailure =
   | "RequestTimeTooSkewed"
   | "InvalidSignature";
 
+export interface SigV4VerifiedContext {
+  readonly accessKeyId: string;
+  readonly secretAccessKey: string;
+  readonly scopeDate: string;
+  readonly scopeRegion: string;
+  readonly scopeService: string;
+  readonly amzDate: string;
+  readonly initialSignature: string;
+  readonly signedHeaders: readonly string[];
+  readonly isPresigned: boolean;
+}
+
 export type SigV4ValidationResult =
-  | { readonly valid: true }
+  | { readonly valid: true; readonly context: SigV4VerifiedContext }
   | { readonly valid: false; readonly failure: SigV4ValidationFailure };
 
 /**
@@ -125,6 +137,7 @@ export function verifyIncomingSigV4Detailed(
     let credentialService: string | undefined;
     let signedHeadersList: string[] = [];
     let headerRegion: string | undefined;
+    let parsedHeaderSignature: string | undefined;
 
     if (authHeader?.startsWith("AWS4-HMAC-SHA256")) {
       const match = authHeader.match(/Credential=([^, ]+)/);
@@ -141,6 +154,10 @@ export function verifyIncomingSigV4Detailed(
       const headersMatch = authHeader.match(/SignedHeaders=([^, ]+)/);
       if (headersMatch && headersMatch[1]) {
         signedHeadersList = headersMatch[1].split(";");
+      }
+      const signatureMatch = authHeader.match(/Signature=([0-9a-fA-F]+)/);
+      if (signatureMatch && signatureMatch[1]) {
+        parsedHeaderSignature = signatureMatch[1].toLowerCase();
       }
     } else if (authHeader !== undefined && !hasSigInQuery) {
       return { valid: false, failure: "MalformedAuthorization" } as const;
@@ -345,7 +362,32 @@ export function verifyIncomingSigV4Detailed(
           encoder.encode(authHeader),
           encoder.encode(expectedAuth),
         );
-        if (isValid) return { valid: true } as const;
+        if (isValid) {
+          const initialSignature = parsedHeaderSignature;
+          const amzDateFromRequest = headers["x-amz-date"] ??
+            queryParams.get("X-Amz-Date") ??
+            "";
+          if (
+            initialSignature === undefined ||
+            amzDateFromRequest === ""
+          ) {
+            continue;
+          }
+          return {
+            valid: true,
+            context: {
+              accessKeyId: cred.accessKeyId,
+              secretAccessKey: cred.secretAccessKey,
+              scopeDate: credentialDate,
+              scopeRegion: effectiveRegion,
+              scopeService: credentialService,
+              amzDate: amzDateFromRequest,
+              initialSignature,
+              signedHeaders: [...signedHeadersList],
+              isPresigned: false,
+            },
+          } as const;
+        }
       } else {
         const expectedSig = (signed.query as Record<string, string | string[]>)[
           "X-Amz-Signature"
@@ -361,7 +403,26 @@ export function verifyIncomingSigV4Detailed(
           encoder.encode(actualSig),
           encoder.encode(expectedSig),
         );
-        if (isValid) return { valid: true } as const;
+        if (isValid) {
+          const amzDateFromQuery = queryParams.get("X-Amz-Date");
+          if (amzDateFromQuery === null) {
+            continue;
+          }
+          return {
+            valid: true,
+            context: {
+              accessKeyId: cred.accessKeyId,
+              secretAccessKey: cred.secretAccessKey,
+              scopeDate: credentialDate,
+              scopeRegion: effectiveRegion,
+              scopeService: credentialService,
+              amzDate: amzDateFromQuery,
+              initialSignature: actualSig.toLowerCase(),
+              signedHeaders: [...signedHeadersList],
+              isPresigned: true,
+            },
+          } as const;
+        }
       }
     }
 

@@ -8,6 +8,7 @@ import {
 import { Backend, InvalidRequest } from "../../Services/Backend.ts";
 import { S3HeaderService } from "../../Services/S3HeaderService.ts";
 import { S3Xml } from "../../Services/S3Xml.ts";
+import { RequestContext } from "../Utils.ts";
 
 function getHeader(
   headers: Record<string, string | string[] | undefined>,
@@ -25,6 +26,7 @@ function getHeader(
 export const uploadPart = Effect.gen(function* () {
   const backend = yield* Backend;
   const request = yield* HttpServerRequest.HttpServerRequest;
+  const { sigV4Context } = yield* RequestContext;
   const { key, s3Params } = yield* S3RequestParser;
   const headerService = yield* S3HeaderService;
   const s3Xml = yield* S3Xml;
@@ -71,7 +73,10 @@ export const uploadPart = Effect.gen(function* () {
     contentType: getHeader(request.headers, "content-type"),
   });
   const bodyStream = hasAwsChunked
-    ? decodeAwsChunkedBodyStream(request.stream)
+    ? decodeAwsChunkedBodyStream(request.stream, {
+      headers: request.headers,
+      sigV4Context,
+    })
     : request.stream;
 
   const result = yield* backend.uploadPart(

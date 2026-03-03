@@ -30,6 +30,7 @@ import { BadGateway } from "./Api.ts";
 import * as HttpServerRequest from "@effect/platform/HttpServerRequest";
 import { HeraldConfig } from "../Config/Layer.ts";
 import { verifyIncomingSigV4Detailed } from "../Services/Auth.ts";
+import type { SigV4VerifiedContext } from "../Services/Auth.ts";
 
 /**
  * Middleware that at debug log level logs every outgoing response's status and
@@ -201,6 +202,8 @@ export const makeS3Router = (prefix = "") =>
 
         const attrs = { bucket, method };
         return yield* Effect.gen(function* () {
+          let sigV4Context: SigV4VerifiedContext | undefined;
+
           yield* Effect.logDebug("Incoming request", {
             method,
             path: pathname,
@@ -307,6 +310,7 @@ export const makeS3Router = (prefix = "") =>
                   new AccessDenied({ message: "Access Denied" }),
                 );
               }
+              sigV4Context = validation.context;
             }
           }
 
@@ -314,7 +318,7 @@ export const makeS3Router = (prefix = "") =>
           const backendLayer = Layer.succeed(Backend, backend);
 
           return yield* handler.pipe(
-            Effect.provideService(RequestContext, { bucket }),
+            Effect.provideService(RequestContext, { bucket, sigV4Context }),
             Effect.provide(backendLayer),
           );
         }).pipe(

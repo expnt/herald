@@ -28,6 +28,7 @@ import {
   type ObjectResponse,
 } from "../../Services/Backend.ts";
 import { normalizeHeaders } from "../../Services/S3HeaderService.ts";
+import { stripAwsChunkedFromContentEncoding } from "../../Services/AwsChunked.ts";
 import type {
   ChecksumAlgorithm,
   ChecksumType,
@@ -313,6 +314,7 @@ export const makeObjectOps = (
         stream,
         nativeStream: webStream,
         contentType: result.ContentType,
+        contentEncoding: result.ContentEncoding,
         contentLength: result.ContentLength,
         etag: result.ETag,
         lastModified: result.LastModified,
@@ -325,6 +327,7 @@ export const makeObjectOps = (
           partsCount: result.PartsCount,
           contentLength: result.ContentLength,
           contentType: result.ContentType,
+          contentEncoding: result.ContentEncoding,
           etag: result.ETag,
           lastModified: result.LastModified,
         }),
@@ -365,6 +368,7 @@ export const makeObjectOps = (
 
       return {
         contentType: result.ContentType,
+        contentEncoding: result.ContentEncoding,
         contentLength: result.ContentLength,
         etag: result.ETag,
         lastModified: result.LastModified,
@@ -377,6 +381,7 @@ export const makeObjectOps = (
           partsCount: result.PartsCount,
           contentLength: result.ContentLength,
           contentType: result.ContentType,
+          contentEncoding: result.ContentEncoding,
           etag: result.ETag,
           lastModified: result.LastModified,
         }),
@@ -395,7 +400,10 @@ export const makeObjectOps = (
       const normalized = normalizeHeaders(headers);
 
       const contentType = normalized["content-type"]!;
-      const contentLength = s3Params.contentLength;
+      const contentEncoding = stripAwsChunkedFromContentEncoding(
+        normalized["content-encoding"],
+      );
+      let contentLength = s3Params.contentLength;
 
       const validatedStream = (yield* checksumService.validate(
         bodyStream,
@@ -414,10 +422,10 @@ export const makeObjectOps = (
         }),
       );
 
-      const isSmall = contentLength !== undefined &&
+      const shouldBuffer = contentLength === undefined ||
         contentLength < 1024 * 1024;
 
-      const body = isSmall
+      const body = shouldBuffer
         ? yield* Stream.runCollect(validatedStream).pipe(
           Effect.map((chunks) => {
             const total = Chunk.reduce(chunks, 0, (acc, c) => acc + c.length);
@@ -426,6 +434,10 @@ export const makeObjectOps = (
             for (const c of chunks) {
               res.set(c, off);
               off += c.length;
+            }
+            // For chunked transfer uploads without Content-Length, infer exact size.
+            if (contentLength === undefined) {
+              contentLength = total;
             }
             return res;
           }),
@@ -448,6 +460,7 @@ export const makeObjectOps = (
             Key: key,
             Body: body,
             ContentType: contentType,
+            ContentEncoding: contentEncoding,
             ContentLength: contentLength,
             Metadata: metadata,
           });
@@ -477,7 +490,7 @@ export const makeObjectOps = (
           // Manually inject validated checksums
           if (
             checksums.sha256 || checksums.sha1 || checksums.crc32 ||
-            checksums.crc32c || checksums.crc64nvme || !isSmall
+            checksums.crc32c || checksums.crc64nvme || !shouldBuffer
           ) {
             command.middlewareStack.add(
               (next) => (args) => {
@@ -485,7 +498,7 @@ export const makeObjectOps = (
                   headers: Record<string, string>;
                   duplex?: string;
                 };
-                if (!isSmall) {
+                if (!shouldBuffer) {
                   request.duplex = "half";
                   request.headers["x-amz-content-sha256"] = "UNSIGNED-PAYLOAD";
                   if (contentLength !== undefined) {

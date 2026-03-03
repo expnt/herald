@@ -232,6 +232,7 @@ const copyObject = Effect.gen(function* () {
 export const putObject = Effect.gen(function* () {
   const backend = yield* Backend;
   const request = yield* HttpServerRequest.HttpServerRequest;
+  const { sigV4Context } = yield* RequestContext;
   const { key, s3Params } = yield* S3RequestParser;
   yield* ensureClientWritableKey(key);
   const headerService = yield* S3HeaderService;
@@ -261,7 +262,10 @@ export const putObject = Effect.gen(function* () {
   });
 
   const bodyStream = hasAwsChunked
-    ? decodeAwsChunkedBodyStream(request.stream)
+    ? decodeAwsChunkedBodyStream(request.stream, {
+      headers: request.headers,
+      sigV4Context,
+    })
     : request.stream;
 
   const result = yield* backend.putObject(

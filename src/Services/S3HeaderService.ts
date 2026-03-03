@@ -80,6 +80,9 @@ export class S3HeaderService
         if ("contentType" in result && result.contentType) {
           headers["Content-Type"] = result.contentType;
         }
+        if ("contentEncoding" in result && result.contentEncoding) {
+          headers["Content-Encoding"] = result.contentEncoding;
+        }
 
         // Metadata
         if ("metadata" in result && result.metadata) {
@@ -203,8 +206,11 @@ export class S3HeaderService
             const hasAwsChunked = contentEncoding !== undefined &&
               contentEncoding.toLowerCase().split(",").map((s) => s.trim())
                 .includes("aws-chunked");
+            const amzContentSha256 = normalized["x-amz-content-sha256"];
+            const hasStreamingSigV4 = amzContentSha256 !== undefined &&
+              amzContentSha256.trim().toUpperCase().startsWith("STREAMING-");
             if (
-              hasAwsChunked &&
+              (hasAwsChunked || hasStreamingSigV4) &&
               normalized["x-amz-decoded-content-length"] !== undefined
             ) {
               return parseNonNegativeInteger(
@@ -253,6 +259,8 @@ export class S3HeaderService
             s3Headers[`x-amz-meta-${metaKey}`] = decodedValue;
           } else if (k === "content-type") {
             s3Headers["Content-Type"] = v;
+          } else if (k === "content-encoding") {
+            s3Headers["Content-Encoding"] = v;
           } else if (k === "content-length") {
             s3Headers["Content-Length"] = v;
           } else if (k === "etag") {
