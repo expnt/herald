@@ -19,10 +19,12 @@
 - When mapping external errors (like S3 SDK exceptions), be as specific as
   possible. Avoid generic "Unknown" or "S3 error" messages.
 
-- Reference ./herald, ./s3proxy and ./s3-tests for S3 behavior and other S3
-  proxy imps.
-- Reference ./ghjk for Deno typescript conventions especially ./ghjk/tests/.
-- Reference ./sample-http for how to do some things using the Effect library.
+- Reference ./symlinks/herald, ./symlinks/s3proxy and ./symlinks/s3-tests for S3
+  behavior and other S3 proxy imps.
+- Reference ./symlinks/ghjk for Deno typescript conventions especially
+  ./symlinks/ghjk/tests/.
+- Reference ./symlinks/sample-http for how to do some things using the Effect
+  library.
 
 - Prefer to preserve comments unless they are progress comments written by an
   agent.

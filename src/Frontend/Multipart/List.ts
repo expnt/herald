@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import { S3RequestParser } from "../Utils.ts";
 import { S3Xml } from "../../Services/S3Xml.ts";
 import { Backend } from "../../Services/Backend.ts";
+import { filterVisibleMultipartUploads } from "../../Services/InternalNamespace.ts";
 
 export const listMultipartUploads = Effect.gen(function* () {
   const backend = yield* Backend;
@@ -16,5 +17,7 @@ export const listMultipartUploads = Effect.gen(function* () {
     maxUploads: s3Params["max-uploads"],
     encodingType: s3Params["encoding-type"],
   });
-  return s3Xml.formatListMultipartUploads(result);
+  return s3Xml.formatListMultipartUploads(
+    filterVisibleMultipartUploads(result),
+  );
 });

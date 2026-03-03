@@ -2,6 +2,10 @@ import { Effect, Option, Stream } from "effect";
 import { HttpServerRequest, HttpServerResponse } from "@effect/platform";
 import { RequestContext, S3RequestParser } from "../Utils.ts";
 import { S3HeaderService } from "../../Services/S3HeaderService.ts";
+import {
+  ensureClientWritableKey,
+  isReservedInternalKey,
+} from "../../Services/InternalNamespace.ts";
 import { parseDeleteObjectsRequest } from "../../Services/XmlParser.ts";
 import { Backend } from "../../Services/Backend.ts";
 import { S3Xml } from "../../Services/S3Xml.ts";
@@ -42,8 +46,25 @@ export const postObject = Effect.gen(function* () {
     const objects = yield* parseDeleteObjectsRequest(bodyText);
 
     if (objects.length > 0) {
-      const deleteResult = yield* backend.deleteObjects(objects);
-      return s3Xml.formatDeleteObjects(deleteResult);
+      const visibleObjects = objects.filter((obj) =>
+        !isReservedInternalKey(obj.key)
+      );
+      const reservedErrors = objects.filter((obj) =>
+        isReservedInternalKey(obj.key)
+      )
+        .map((obj) => ({
+          key: obj.key,
+          code: "AccessDenied",
+          message: "Access Denied",
+        }));
+
+      const deleteResult = visibleObjects.length > 0
+        ? yield* backend.deleteObjects(visibleObjects)
+        : { deleted: [], errors: [] };
+      return s3Xml.formatDeleteObjects({
+        deleted: deleteResult.deleted,
+        errors: [...deleteResult.errors, ...reservedErrors],
+      });
     }
     // If no keys, still return empty result
     return HttpServerResponse.text(
@@ -53,10 +74,12 @@ export const postObject = Effect.gen(function* () {
   }
 
   if (s3Params.uploads !== undefined) {
+    yield* ensureClientWritableKey(pathKey);
     return yield* initiateMultipartUpload;
   }
 
   if (s3Params.uploadId) {
+    yield* ensureClientWritableKey(pathKey);
     return yield* completeMultipartUpload;
   }
 
@@ -106,6 +129,7 @@ export const postObject = Effect.gen(function* () {
           }),
         );
       }
+      yield* ensureClientWritableKey(objectKey);
       const config = yield* HeraldConfig;
       const materializedOpt = config.lookupBucket(bucket);
       if (Option.isNone(materializedOpt)) {

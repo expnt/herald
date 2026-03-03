@@ -1,8 +1,9 @@
 import { HttpServerRequest, HttpServerResponse } from "@effect/platform";
 import { Effect } from "effect";
 import { Backend, InvalidRequest } from "../../Services/Backend.ts";
+import { ensureClientReadableKey } from "../../Services/InternalNamespace.ts";
 import { S3Xml } from "../../Services/S3Xml.ts";
-import { S3RequestParser } from "../Utils.ts";
+import { RequestContext, S3RequestParser } from "../Utils.ts";
 import { listParts } from "../Multipart/Get.ts";
 
 /**
@@ -13,6 +14,8 @@ export const getObjectAttributes = () =>
     const backend = yield* Backend;
     const request = yield* HttpServerRequest.HttpServerRequest;
     const { key, headers, s3Params } = yield* S3RequestParser;
+    const { bucket } = yield* RequestContext;
+    yield* ensureClientReadableKey(bucket, key);
 
     // Attributes can come from query parameter ?attributes=... or header x-amz-object-attributes
     const attributesFromQuery = s3Params.attributes
@@ -51,7 +54,9 @@ export const getObjectAttributes = () =>
 export const getObject = Effect.gen(function* () {
   const backend = yield* Backend;
   const { key, s3Params, headers } = yield* S3RequestParser;
+  const { bucket } = yield* RequestContext;
   const request = yield* HttpServerRequest.HttpServerRequest;
+  yield* ensureClientReadableKey(bucket, key);
 
   // Route to getObjectAttributes if attributes are specified in query or header
   if (

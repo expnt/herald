@@ -10,10 +10,9 @@ import { BucketAlreadyOwnedByYou } from "../../Services/Backend.ts";
 import {
   formatSwiftTransportError,
   mapError,
-  MP_META_PREFIX,
-  MP_SEGMENTS_PREFIX,
   type SwiftTarget,
 } from "./Utils.ts";
+import { RESERVED_INTERNAL_PREFIXES } from "../../Services/InternalNamespace.ts";
 
 export interface SwiftContainer {
   readonly name: string;
@@ -122,7 +121,7 @@ export const makeBucketOps = (
     deleteBucket: (_name: string) =>
       Effect.gen(function* () {
         // 1. Delete all segments and metadata first
-        for (const prefix of [MP_SEGMENTS_PREFIX, MP_META_PREFIX]) {
+        for (const prefix of RESERVED_INTERNAL_PREFIXES) {
           let marker: string | undefined = undefined;
           while (true) {
             const listResult: ListObjectsResult = yield* objectOps.listObjects({

@@ -21,8 +21,8 @@ export interface SwiftTarget {
   readonly checksumService: Checksum;
 }
 
-export const MP_META_PREFIX = ".mp_meta/";
-export const MP_SEGMENTS_PREFIX = ".mp_segments/";
+export const MP_META_PREFIX = ".hrld/uplds/";
+export const MP_SEGMENTS_PREFIX = ".hrld/sgmnts/";
 
 /**
  * Encodes an object key for use in Swift URL paths. Decodes each segment first

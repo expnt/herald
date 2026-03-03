@@ -6,6 +6,10 @@ import {
   InvalidRequest,
 } from "../../Services/Backend.ts";
 import { BackendResolver } from "../../Services/BackendResolver.ts";
+import {
+  ensureClientReadableKey,
+  ensureClientWritableKey,
+} from "../../Services/InternalNamespace.ts";
 import { S3Xml } from "../../Services/S3Xml.ts";
 import { S3RequestParser } from "../Utils.ts";
 import { S3HeaderService } from "../../Services/S3HeaderService.ts";
@@ -118,6 +122,8 @@ const copyObject = Effect.gen(function* () {
   const { sourceBucket, sourceKey, versionId } = yield* parseCopySource(
     copySourceRaw,
   );
+  yield* ensureClientReadableKey(sourceBucket, sourceKey);
+  yield* ensureClientWritableKey(key);
 
   if (sourceBucket === bucket && sourceKey === key) {
     return yield* Effect.fail(
@@ -223,6 +229,7 @@ export const putObject = Effect.gen(function* () {
   const backend = yield* Backend;
   const request = yield* HttpServerRequest.HttpServerRequest;
   const { key, s3Params } = yield* S3RequestParser;
+  yield* ensureClientWritableKey(key);
   const headerService = yield* S3HeaderService;
 
   if (s3Params.partNumber && s3Params.uploadId) {

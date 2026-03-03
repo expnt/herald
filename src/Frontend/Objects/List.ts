@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 import { Backend } from "../../Services/Backend.ts";
+import { filterVisibleObjectList } from "../../Services/InternalNamespace.ts";
 import { S3Xml } from "../../Services/S3Xml.ts";
 import { S3RequestParser } from "../Utils.ts";
 import { listMultipartUploads } from "../Multipart/List.ts";
@@ -21,7 +22,7 @@ export const listObjects = Effect.gen(function* () {
       maxKeys: s3Params["max-keys"],
       encodingType: s3Params["encoding-type"],
     });
-    return s3Xml.formatListVersions(result);
+    return s3Xml.formatListVersions(filterVisibleObjectList(result));
   }
 
   if (s3Params.uploads !== undefined) {
@@ -39,5 +40,5 @@ export const listObjects = Effect.gen(function* () {
     listType: s3Params["list-type"] === "2" ? 2 : 1,
   });
 
-  return s3Xml.formatListObjects(result);
+  return s3Xml.formatListObjects(filterVisibleObjectList(result));
 });
