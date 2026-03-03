@@ -30,8 +30,10 @@ const testConfig: GlobalConfig = {
 
 const BUCKET = "test-aws-chunked-put-bucket";
 const KEY = "aws-chunked-object.txt";
+const KOPIA_KEY = "kopia.blobcfg";
 const MULTIPART_KEY = "aws-chunked-multipart-object.txt";
 const PLAINTEXT = "hello world";
+const KOPIA_PLAINTEXT = "123456789012345678901234567890";
 const CHUNKED_PAYLOAD =
   "b;chunk-signature=abc\r\nhello world\r\n0;chunk-signature=def\r\n\r\n";
 const EMPTY_SHA256_HEX =
@@ -325,6 +327,96 @@ async function sendAwsChunkedUploadPart(
   });
 }
 
+async function sendKopiaStyleStreamingPut(baseUrl: string): Promise<Response> {
+  const url = new URL(`${baseUrl}/${BUCKET}/${KOPIA_KEY}`);
+  const signer = new SignatureV4({
+    credentials,
+    region: "us-east-1",
+    service: "s3",
+    sha256: Sha256,
+  });
+
+  let body = new TextEncoder().encode(CHUNKED_PAYLOAD);
+  let signed = await signer.sign({
+    method: "PUT",
+    protocol: url.protocol,
+    hostname: url.hostname,
+    port: url.port === "" ? undefined : parseInt(url.port, 10),
+    path: url.pathname,
+    query: {},
+    headers: {
+      "x-amz-content-sha256": "STREAMING-AWS4-HMAC-SHA256-PAYLOAD",
+      "x-amz-decoded-content-length": String(KOPIA_PLAINTEXT.length),
+      "content-type": "application/x-kopia",
+      "content-length": String(body.length),
+    },
+    body,
+  });
+
+  const authorization = signed.headers["authorization"];
+  const amzDate = signed.headers["x-amz-date"];
+  if (!authorization || !amzDate) {
+    throw new Error("Expected Authorization and x-amz-date for SigV4");
+  }
+  const auth = parseAuthorizationHeader(authorization);
+  const payload = buildStreamingSigV4Payload(
+    KOPIA_PLAINTEXT,
+    amzDate,
+    auth.scopeDate,
+    auth.scopeRegion,
+    auth.scopeService,
+    auth.initialSignature,
+  );
+  body = new TextEncoder().encode(payload);
+  signed = await signer.sign({
+    method: "PUT",
+    protocol: url.protocol,
+    hostname: url.hostname,
+    port: url.port === "" ? undefined : parseInt(url.port, 10),
+    path: url.pathname,
+    query: {},
+    headers: {
+      "x-amz-content-sha256": "STREAMING-AWS4-HMAC-SHA256-PAYLOAD",
+      "x-amz-decoded-content-length": String(KOPIA_PLAINTEXT.length),
+      "content-type": "application/x-kopia",
+      "content-length": String(body.length),
+    },
+    body,
+  });
+
+  const authorization2 = signed.headers["authorization"];
+  const amzDate2 = signed.headers["x-amz-date"];
+  if (!authorization2 || !amzDate2) {
+    throw new Error("Expected Authorization and x-amz-date for SigV4");
+  }
+  const auth2 = parseAuthorizationHeader(authorization2);
+  const payload2 = buildStreamingSigV4Payload(
+    KOPIA_PLAINTEXT,
+    amzDate2,
+    auth2.scopeDate,
+    auth2.scopeRegion,
+    auth2.scopeService,
+    auth2.initialSignature,
+  );
+  body = new TextEncoder().encode(payload2);
+
+  const requestHeaders = new Headers();
+  for (const [key, value] of Object.entries(signed.headers)) {
+    if (key.toLowerCase() === "host") {
+      continue;
+    }
+    requestHeaders.set(key, value);
+  }
+
+  return await fetch(url, {
+    method: "PUT",
+    headers: requestHeaders,
+    body,
+    // @ts-ignore duplex is required for non-GET body in Deno fetch with streams/body bytes
+    duplex: "half",
+  });
+}
+
 async function verifyStoredBody(client: S3Client): Promise<void> {
   const out = await client.send(
     new GetObjectCommand({
@@ -341,6 +433,32 @@ async function verifyStoredBody(client: S3Client): Promise<void> {
   if (text !== PLAINTEXT) {
     throw new Error(
       `Decoded payload mismatch; expected "${PLAINTEXT}", got "${
+        text.slice(0, 120)
+      }"`,
+    );
+  }
+}
+
+async function verifyStoredBodyForKey(
+  client: S3Client,
+  key: string,
+  expected: string,
+): Promise<void> {
+  const out = await client.send(
+    new GetObjectCommand({
+      Bucket: BUCKET,
+      Key: key,
+    }),
+  );
+
+  const bytes = await out.Body?.transformToByteArray();
+  if (!bytes) {
+    throw new Error("Expected object body");
+  }
+  const text = new TextDecoder().decode(bytes);
+  if (text !== expected) {
+    throw new Error(
+      `Decoded payload mismatch for ${key}; expected "${expected}", got "${
         text.slice(0, 120)
       }"`,
     );
@@ -417,6 +535,47 @@ const cases: ProxyTestCase[] = [{
   afterAll: async (client) => {
     try {
       await client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: KEY }));
+    } catch {
+      // Ignore cleanup failures.
+    }
+    try {
+      await client.send(new DeleteBucketCommand({ Bucket: BUCKET }));
+    } catch {
+      // Ignore cleanup failures.
+    }
+  },
+  ignoreBaseline: true,
+  skipSnapshot: true,
+}, {
+  name: "objects/put/aws-chunked-decoding/streaming-sha256-kopia-shape",
+  config: testConfig,
+  beforeAll: async (client) => {
+    try {
+      await client.send(new CreateBucketCommand({ Bucket: BUCKET }));
+    } catch {
+      // Ignore already-exists races.
+    }
+  },
+  fn: async (client, context) => {
+    if (!context?.baseUrl) {
+      throw new Error("Missing baseUrl in test context");
+    }
+    const putResponse = await sendKopiaStyleStreamingPut(context.baseUrl);
+    if (putResponse.status !== 200) {
+      const body = await putResponse.text();
+      throw new Error(
+        `aws-chunked PUT (kopia-shape) failed: status=${putResponse.status} body=${
+          body.slice(0, 200)
+        }`,
+      );
+    }
+    await verifyStoredBodyForKey(client, KOPIA_KEY, KOPIA_PLAINTEXT);
+  },
+  afterAll: async (client) => {
+    try {
+      await client.send(
+        new DeleteObjectCommand({ Bucket: BUCKET, Key: KOPIA_KEY }),
+      );
     } catch {
       // Ignore cleanup failures.
     }

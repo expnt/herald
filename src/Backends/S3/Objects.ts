@@ -17,6 +17,7 @@ import { Chunk, Effect, Option, Stream } from "effect";
 import { Readable } from "node-stream";
 import type sweb from "node-stream/web";
 import {
+  AccessDenied,
   type BackendError,
   BadDigest,
   type CommonPrefix,
@@ -410,8 +411,12 @@ export const makeObjectOps = (
         checksums,
       )).pipe(
         Stream.catchAll((e) => {
-          // Preserve BadDigest and InvalidRequest errors from checksum validation
-          if (e instanceof BadDigest || e instanceof InvalidRequest) {
+          // Preserve known S3-compatible errors from checksum/chunk-signature validation.
+          if (
+            e instanceof BadDigest ||
+            e instanceof InvalidRequest ||
+            e instanceof AccessDenied
+          ) {
             return Stream.fail(e as BackendError);
           }
           return Stream.fail(
