@@ -2,7 +2,7 @@ import { Effect, Either, Schema } from "effect";
 import { SignatureV4 } from "@smithy/signature-v4";
 import { Sha256 } from "@aws-crypto/sha256";
 // deno-lint-ignore no-external-import
-import { timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { HttpRequest } from "@smithy/types";
 import type { HttpServerRequest } from "@effect/platform";
 
@@ -96,6 +96,109 @@ function parseSigV4Date(rawDate: string): Date | undefined {
   return isNaN(parsed.getTime()) ? undefined : parsed;
 }
 
+const rfc3986Encode = (value: string): string =>
+  encodeURIComponent(value).replace(
+    /[!'()*]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+
+const normalizeHeaderValue = (value: string): string =>
+  value.trim().replace(/\s+/g, " ");
+
+const canonicalizeQueryWithoutSignature = (
+  queryParams: URLSearchParams,
+): string => {
+  const pairs: Array<readonly [string, string]> = [];
+  queryParams.forEach((value, key) => {
+    if (key === "X-Amz-Signature") {
+      return;
+    }
+    pairs.push([rfc3986Encode(key), rfc3986Encode(value)]);
+  });
+
+  pairs.sort(([aKey, aValue], [bKey, bValue]) => {
+    if (aKey < bKey) return -1;
+    if (aKey > bKey) return 1;
+    if (aValue < bValue) return -1;
+    if (aValue > bValue) return 1;
+    return 0;
+  });
+
+  return pairs.map(([key, value]) => `${key}=${value}`).join("&");
+};
+
+const deriveSigV4SigningKey = (
+  secretAccessKey: string,
+  credentialDate: string,
+  region: string,
+  service: string,
+): Uint8Array => {
+  const kDate = createHmac("sha256", `AWS4${secretAccessKey}`)
+    .update(credentialDate)
+    .digest();
+  const kRegion = createHmac("sha256", kDate).update(region).digest();
+  const kService = createHmac("sha256", kRegion).update(service).digest();
+  return createHmac("sha256", kService).update("aws4_request").digest();
+};
+
+const computeS3PresignedSignature = (options: {
+  readonly method: string;
+  readonly rawPath: string;
+  readonly queryParams: URLSearchParams;
+  readonly signedHeaders: readonly string[];
+  readonly headers: Readonly<Record<string, string>>;
+  readonly amzDate: string;
+  readonly credentialDate: string;
+  readonly region: string;
+  readonly service: string;
+  readonly secretAccessKey: string;
+}): string | undefined => {
+  const sortedSignedHeaders = [...options.signedHeaders]
+    .map((headerName) => headerName.toLowerCase())
+    .sort();
+
+  const canonicalHeaderLines: string[] = [];
+  for (const headerName of sortedSignedHeaders) {
+    const value = options.headers[headerName];
+    if (value === undefined) {
+      return undefined;
+    }
+    canonicalHeaderLines.push(`${headerName}:${normalizeHeaderValue(value)}`);
+  }
+
+  const canonicalHeaders = `${canonicalHeaderLines.join("\n")}\n`;
+  const signedHeadersString = sortedSignedHeaders.join(";");
+  const canonicalQuery = canonicalizeQueryWithoutSignature(options.queryParams);
+  const canonicalPath = options.rawPath === "" ? "/" : options.rawPath;
+  const canonicalRequest = [
+    options.method.toUpperCase(),
+    canonicalPath,
+    canonicalQuery,
+    canonicalHeaders,
+    signedHeadersString,
+    "UNSIGNED-PAYLOAD",
+  ].join("\n");
+
+  const canonicalRequestHash = createHash("sha256")
+    .update(canonicalRequest)
+    .digest("hex");
+  const credentialScope =
+    `${options.credentialDate}/${options.region}/${options.service}/aws4_request`;
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    options.amzDate,
+    credentialScope,
+    canonicalRequestHash,
+  ].join("\n");
+  const signingKey = deriveSigV4SigningKey(
+    options.secretAccessKey,
+    options.credentialDate,
+    options.region,
+    options.service,
+  );
+  return createHmac("sha256", signingKey).update(stringToSign).digest("hex");
+};
+
 /**
  * Verifies a SigV4 signature for an incoming request and returns a failure
  * reason that can be mapped to S3-compatible XML error codes.
@@ -111,9 +214,12 @@ export function verifyIncomingSigV4Detailed(
     }
 
     const headers: Record<string, string> = {};
-    for (const [k, v] of Object.entries(request.headers)) {
+    const rawHeaders = request.headers as Record<string, unknown>;
+    for (const [k, v] of Object.entries(rawHeaders)) {
       if (typeof v === "string") {
         headers[k.toLowerCase()] = v;
+      } else if (Array.isArray(v) && v.length > 0 && typeof v[0] === "string") {
+        headers[k.toLowerCase()] = v[0];
       }
     }
 
@@ -253,8 +359,13 @@ export function verifyIncomingSigV4Detailed(
 
         // Type-check X-Amz-Expires: must be a valid integer
         const expires = parseInt(expiresParam, 10);
-        if (isNaN(expires) || expiresParam !== String(expires) || expires < 0) {
+        if (isNaN(expires) || expiresParam !== String(expires)) {
           return { valid: false, failure: "InvalidExpires" } as const;
+        }
+
+        // AWS treats non-positive presign TTL as expired requests.
+        if (expires <= 0) {
+          return { valid: false, failure: "ExpiredPresign" } as const;
         }
 
         // AWS SigV4 presigned URLs support at most 7 days.
@@ -336,12 +447,61 @@ export function verifyIncomingSigV4Detailed(
         uriEscapePath: false,
       });
 
+      if (hasSigInQuery) {
+        const amzDateFromQuery = queryParams.get("X-Amz-Date");
+        const actualSig = queryParams.get("X-Amz-Signature");
+        if (amzDateFromQuery === null || actualSig === null) {
+          continue;
+        }
+
+        const expectedSig = computeS3PresignedSignature({
+          method: request.method,
+          rawPath,
+          queryParams,
+          signedHeaders: signedHeadersList,
+          headers: filteredHeaders,
+          amzDate: amzDateFromQuery,
+          credentialDate,
+          region: effectiveRegion,
+          service: credentialService,
+          secretAccessKey: cred.secretAccessKey,
+        });
+        if (
+          expectedSig === undefined || actualSig.length !== expectedSig.length
+        ) {
+          continue;
+        }
+
+        const isValid = timingSafeEqual(
+          encoder.encode(actualSig.toLowerCase()),
+          encoder.encode(expectedSig),
+        );
+        if (isValid) {
+          return {
+            valid: true,
+            context: {
+              accessKeyId: cred.accessKeyId,
+              secretAccessKey: cred.secretAccessKey,
+              scopeDate: credentialDate,
+              scopeRegion: effectiveRegion,
+              scopeService: credentialService,
+              amzDate: amzDateFromQuery,
+              initialSignature: actualSig.toLowerCase(),
+              signedHeaders: [...signedHeadersList],
+              isPresigned: true,
+            },
+          } as const;
+        }
+        continue;
+      }
+
       const signedResult = yield* Effect.tryPromise({
-        try: async () =>
-          await signer.sign(signableReq, {
+        try: async () => {
+          return await signer.sign(signableReq, {
             signingDate,
             signableHeaders: new Set(signedHeadersList),
-          }),
+          });
+        },
         catch: (e) => e,
       }).pipe(Effect.either);
 
@@ -385,41 +545,6 @@ export function verifyIncomingSigV4Detailed(
               initialSignature,
               signedHeaders: [...signedHeadersList],
               isPresigned: false,
-            },
-          } as const;
-        }
-      } else {
-        const expectedSig = (signed.query as Record<string, string | string[]>)[
-          "X-Amz-Signature"
-        ];
-        const actualSig = queryParams.get("X-Amz-Signature");
-        if (
-          !actualSig || !expectedSig || typeof expectedSig !== "string" ||
-          actualSig.length !== expectedSig.length
-        ) {
-          continue;
-        }
-        const isValid = timingSafeEqual(
-          encoder.encode(actualSig),
-          encoder.encode(expectedSig),
-        );
-        if (isValid) {
-          const amzDateFromQuery = queryParams.get("X-Amz-Date");
-          if (amzDateFromQuery === null) {
-            continue;
-          }
-          return {
-            valid: true,
-            context: {
-              accessKeyId: cred.accessKeyId,
-              secretAccessKey: cred.secretAccessKey,
-              scopeDate: credentialDate,
-              scopeRegion: effectiveRegion,
-              scopeService: credentialService,
-              amzDate: amzDateFromQuery,
-              initialSignature: actualSig.toLowerCase(),
-              signedHeaders: [...signedHeadersList],
-              isPresigned: true,
             },
           } as const;
         }

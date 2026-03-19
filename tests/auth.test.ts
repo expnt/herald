@@ -3,10 +3,13 @@ import { assertEquals, EffectAssert, testEffect } from "./utils.ts";
 import {
   resolveAuthCredentials,
   verifyIncomingSigV4,
+  verifyIncomingSigV4Detailed,
 } from "../src/Services/Auth.ts";
 import { SignatureV4 } from "@smithy/signature-v4";
 import { Sha256 } from "@aws-crypto/sha256";
 import type { HttpServerRequest } from "@effect/platform";
+// deno-lint-ignore no-external-import
+import { createHash, createHmac } from "node:crypto";
 
 // Helper to format date as YYYYMMDDTHHMMSSZ
 const formatAmzDate = (date: Date): string => {
@@ -17,6 +20,107 @@ const formatAmzDate = (date: Date): string => {
   const min = String(date.getUTCMinutes()).padStart(2, "0");
   const sec = String(date.getUTCSeconds()).padStart(2, "0");
   return `${year}${month}${day}T${hour}${min}${sec}Z`;
+};
+
+const rfc3986Encode = (value: string): string =>
+  encodeURIComponent(value).replace(
+    /[!'()*]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+
+const normalizeHeaderValue = (value: string): string =>
+  value.trim().replace(/\s+/g, " ");
+
+const deriveSigV4SigningKey = (
+  secretAccessKey: string,
+  scopeDate: string,
+  region: string,
+): Uint8Array => {
+  const kDate = createHmac("sha256", `AWS4${secretAccessKey}`)
+    .update(scopeDate)
+    .digest();
+  const kRegion = createHmac("sha256", kDate).update(region).digest();
+  const kService = createHmac("sha256", kRegion).update("s3").digest();
+  return createHmac("sha256", kService).update("aws4_request").digest();
+};
+
+const createS3PresignedUrl = (options: {
+  readonly method: string;
+  readonly host: string;
+  readonly path: string;
+  readonly signedHeaders: Readonly<Record<string, string>>;
+  readonly expiresIn: number;
+  readonly signingDate: Date;
+  readonly credentials: {
+    readonly accessKeyId: string;
+    readonly secretAccessKey: string;
+  };
+  readonly region: string;
+}): string => {
+  const amzDate = formatAmzDate(options.signingDate);
+  const scopeDate = amzDate.substring(0, 8);
+  const credentialScope = `${scopeDate}/${options.region}/s3/aws4_request`;
+  const signedHeaderNames = Object.keys(options.signedHeaders).map((name) =>
+    name.toLowerCase()
+  ).sort();
+  const signedHeadersValue = signedHeaderNames.join(";");
+  const baseQuery: Array<readonly [string, string]> = [
+    ["X-Amz-Algorithm", "AWS4-HMAC-SHA256"],
+    [
+      "X-Amz-Credential",
+      `${options.credentials.accessKeyId}/${credentialScope}`,
+    ],
+    ["X-Amz-Date", amzDate],
+    ["X-Amz-Expires", String(options.expiresIn)],
+    ["X-Amz-SignedHeaders", signedHeadersValue],
+  ];
+  const canonicalQuery = [...baseQuery]
+    .map(([key, value]) => [rfc3986Encode(key), rfc3986Encode(value)] as const)
+    .sort(([aKey, aValue], [bKey, bValue]) => {
+      if (aKey < bKey) return -1;
+      if (aKey > bKey) return 1;
+      if (aValue < bValue) return -1;
+      if (aValue > bValue) return 1;
+      return 0;
+    })
+    .map(([key, value]) => `${key}=${value}`)
+    .join("&");
+  const canonicalHeaders = `${
+    signedHeaderNames.map((name) =>
+      `${name}:${normalizeHeaderValue(options.signedHeaders[name] ?? "")}`
+    ).join("\n")
+  }\n`;
+  const canonicalRequest = [
+    options.method.toUpperCase(),
+    options.path,
+    canonicalQuery,
+    canonicalHeaders,
+    signedHeadersValue,
+    "UNSIGNED-PAYLOAD",
+  ].join("\n");
+  const canonicalRequestHash = createHash("sha256").update(canonicalRequest)
+    .digest("hex");
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amzDate,
+    credentialScope,
+    canonicalRequestHash,
+  ].join("\n");
+  const signingKey = deriveSigV4SigningKey(
+    options.credentials.secretAccessKey,
+    scopeDate,
+    options.region,
+  );
+  const signature = createHmac("sha256", signingKey).update(stringToSign)
+    .digest(
+      "hex",
+    );
+  const query = new URLSearchParams();
+  for (const [key, value] of baseQuery) {
+    query.append(key, value);
+  }
+  query.set("X-Amz-Signature", signature);
+  return `http://${options.host}${options.path}?${query.toString()}`;
 };
 
 testEffect("auth/resolveAuthCredentials", () =>
@@ -97,40 +201,26 @@ testEffect(
       }];
       const region = "us-east-1";
 
-      const signer = new SignatureV4({
+      const signingDate = new Date();
+      const url = createS3PresignedUrl({
+        method: "GET",
+        host: "localhost",
+        path: "/my-bucket/my-key",
+        signedHeaders: {
+          host: "localhost",
+        },
+        expiresIn: 300,
+        signingDate,
         credentials: credentials[0],
         region,
-        service: "s3",
-        sha256: Sha256,
       });
-
-      const signingDate = new Date();
-      const signed = yield* Effect.promise(() =>
-        signer.sign({
-          method: "GET",
-          protocol: "http:",
-          hostname: "localhost",
-          path: "/my-bucket/my-key",
-          headers: {
-            "host": "localhost",
-          },
-        }, {
-          signingDate,
-          // @ts-ignore: signQuery might exist at runtime even if types mismatch
-          signQuery: true,
-        })
-      );
-
-      const queryStr = new URLSearchParams(
-        signed.query as Record<string, string>,
-      )
-        .toString();
-      const url = `http://localhost/my-bucket/my-key?${queryStr}`;
 
       const httpServerRequest = {
         method: "GET",
         url,
-        headers: signed.headers as Record<string, string>,
+        headers: {
+          host: "localhost",
+        },
       } as unknown as HttpServerRequest.HttpServerRequest;
 
       const isValid = yield* verifyIncomingSigV4(
@@ -139,6 +229,149 @@ testEffect(
         region,
       );
       yield* EffectAssert.strictEqual(isValid, true);
+    }),
+);
+
+testEffect(
+  "auth/verifyIncomingSigV4/query_params/put_with_signed_acl",
+  () =>
+    Effect.gen(function* () {
+      const credentials = [{
+        accessKeyId: "test-id",
+        secretAccessKey: "test-secret",
+      }];
+      const region = "us-east-1";
+
+      const signingDate = new Date();
+      const url = createS3PresignedUrl({
+        method: "PUT",
+        host: "localhost",
+        path: "/my-bucket/my-key",
+        signedHeaders: {
+          host: "localhost",
+          "x-amz-acl": "private",
+        },
+        expiresIn: 300,
+        signingDate,
+        credentials: credentials[0],
+        region,
+      });
+
+      const result = yield* verifyIncomingSigV4Detailed(
+        {
+          method: "PUT",
+          url,
+          headers: {
+            host: "localhost",
+            "x-amz-acl": "private",
+          },
+        } as unknown as HttpServerRequest.HttpServerRequest,
+        credentials,
+        region,
+      );
+
+      if (!result.valid) {
+        throw new Error(
+          `Expected valid presigned ACL request, got ${result.failure}`,
+        );
+      }
+      yield* EffectAssert.strictEqual(result.context.isPresigned, true);
+      yield* EffectAssert.strictEqual(result.context.scopeService, "s3");
+      yield* EffectAssert.strictEqual(
+        result.context.signedHeaders.includes("x-amz-acl"),
+        true,
+      );
+    }),
+);
+
+testEffect(
+  "auth/verifyIncomingSigV4/query_params/non_positive_expires_is_expired",
+  () =>
+    Effect.gen(function* () {
+      const credentials = [{
+        accessKeyId: "test-id",
+        secretAccessKey: "test-secret",
+      }];
+      const region = "us-east-1";
+
+      const signingDate = new Date(Date.now() - 60_000);
+      const validUrl = createS3PresignedUrl({
+        method: "PUT",
+        host: "localhost",
+        path: "/my-bucket/my-key",
+        signedHeaders: {
+          host: "localhost",
+        },
+        expiresIn: 300,
+        signingDate,
+        credentials: credentials[0],
+        region,
+      });
+      const query = new URLSearchParams(new URL(validUrl).searchParams);
+      query.set("X-Amz-Expires", "-1");
+      const url = `http://localhost/my-bucket/my-key?${query.toString()}`;
+
+      const result = yield* verifyIncomingSigV4Detailed(
+        {
+          method: "PUT",
+          url,
+          headers: {
+            host: "localhost",
+          },
+        } as unknown as HttpServerRequest.HttpServerRequest,
+        credentials,
+        region,
+      );
+
+      yield* EffectAssert.deepStrictEqual(result, {
+        valid: false,
+        failure: "ExpiredPresign",
+      });
+    }),
+);
+
+testEffect(
+  "auth/verifyIncomingSigV4/query_params/array_header_values",
+  () =>
+    Effect.gen(function* () {
+      const credentials = [{
+        accessKeyId: "test-id",
+        secretAccessKey: "test-secret",
+      }];
+      const region = "us-east-1";
+
+      const signingDate = new Date();
+      const url = createS3PresignedUrl({
+        method: "PUT",
+        host: "localhost",
+        path: "/my-bucket/my-key",
+        signedHeaders: {
+          host: "localhost",
+          "x-amz-acl": "private",
+        },
+        expiresIn: 300,
+        signingDate,
+        credentials: credentials[0],
+        region,
+      });
+
+      const result = yield* verifyIncomingSigV4Detailed(
+        {
+          method: "PUT",
+          url,
+          headers: {
+            host: ["localhost"],
+            "x-amz-acl": ["private"],
+          },
+        } as unknown as HttpServerRequest.HttpServerRequest,
+        credentials,
+        region,
+      );
+
+      if (!result.valid) {
+        throw new Error(`Expected valid request, got ${result.failure}`);
+      }
+      yield* EffectAssert.strictEqual(result.context.isPresigned, true);
     }),
 );
 

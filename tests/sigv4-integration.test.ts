@@ -11,6 +11,8 @@ import { BackendResolver } from "../src/Services/BackendResolver.ts";
 import type { GlobalConfig } from "../src/Domain/Config.ts";
 import { lookupBucket } from "../src/Domain/Config.ts";
 import { EffectAssert, testEffect } from "./utils.ts";
+// deno-lint-ignore no-external-import
+import { createHash, createHmac } from "node:crypto";
 
 const formatAmzDate = (date: Date): string => {
   const year = date.getUTCFullYear();
@@ -26,6 +28,106 @@ const testCredentials = {
   accessKeyId: "minioadmin",
   secretAccessKey: "minioadmin",
 };
+
+const rfc3986Encode = (value: string): string =>
+  encodeURIComponent(value).replace(
+    /[!'()*]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+
+const normalizeHeaderValue = (value: string): string =>
+  value.trim().replace(/\s+/g, " ");
+
+const deriveSigV4SigningKey = (
+  secretAccessKey: string,
+  scopeDate: string,
+  region: string,
+): Uint8Array => {
+  const kDate = createHmac("sha256", `AWS4${secretAccessKey}`)
+    .update(scopeDate)
+    .digest();
+  const kRegion = createHmac("sha256", kDate).update(region).digest();
+  const kService = createHmac("sha256", kRegion).update("s3").digest();
+  return createHmac("sha256", kService).update("aws4_request").digest();
+};
+
+const makePresignedUrl = (
+  method: string,
+  path: string,
+  options?: {
+    readonly expiresIn?: number;
+    readonly headers?: Record<string, string>;
+  },
+) =>
+  Effect.sync(() => {
+    const signingDate = new Date();
+    const amzDate = formatAmzDate(signingDate);
+    const scopeDate = amzDate.substring(0, 8);
+    const signedHeaders: Record<string, string> = {
+      host: "localhost",
+      ...(options?.headers ?? {}),
+    };
+    const signedHeaderNames = Object.keys(signedHeaders).map((name) =>
+      name.toLowerCase()
+    ).sort();
+    const signedHeadersValue = signedHeaderNames.join(";");
+    const credentialScope = `${scopeDate}/us-east-1/s3/aws4_request`;
+    const baseQuery: Array<readonly [string, string]> = [
+      ["X-Amz-Algorithm", "AWS4-HMAC-SHA256"],
+      ["X-Amz-Credential", `${testCredentials.accessKeyId}/${credentialScope}`],
+      ["X-Amz-Date", amzDate],
+      ["X-Amz-Expires", String(options?.expiresIn ?? 300)],
+      ["X-Amz-SignedHeaders", signedHeadersValue],
+    ];
+    const canonicalQuery = [...baseQuery]
+      .map(([key, value]) =>
+        [rfc3986Encode(key), rfc3986Encode(value)] as const
+      )
+      .sort(([aKey, aValue], [bKey, bValue]) => {
+        if (aKey < bKey) return -1;
+        if (aKey > bKey) return 1;
+        if (aValue < bValue) return -1;
+        if (aValue > bValue) return 1;
+        return 0;
+      })
+      .map(([key, value]) => `${key}=${value}`)
+      .join("&");
+    const canonicalHeaders = `${
+      signedHeaderNames.map((name) =>
+        `${name}:${normalizeHeaderValue(signedHeaders[name] ?? "")}`
+      ).join("\n")
+    }\n`;
+    const canonicalRequest = [
+      method.toUpperCase(),
+      path,
+      canonicalQuery,
+      canonicalHeaders,
+      signedHeadersValue,
+      "UNSIGNED-PAYLOAD",
+    ].join("\n");
+    const canonicalHash = createHash("sha256").update(canonicalRequest).digest(
+      "hex",
+    );
+    const stringToSign = [
+      "AWS4-HMAC-SHA256",
+      amzDate,
+      credentialScope,
+      canonicalHash,
+    ].join("\n");
+    const signingKey = deriveSigV4SigningKey(
+      testCredentials.secretAccessKey,
+      scopeDate,
+      "us-east-1",
+    );
+    const signature = createHmac("sha256", signingKey).update(stringToSign)
+      .digest("hex");
+    const query = new URLSearchParams();
+    for (const [key, value] of baseQuery) {
+      query.append(key, value);
+    }
+    query.set("X-Amz-Signature", signature);
+    return `http://localhost${path}?${query.toString()}`;
+  });
 
 const testConfig: GlobalConfig = {
   backends: {
@@ -180,6 +282,67 @@ testEffect(
       yield* EffectAssert.strictEqual(response.status, 403);
       yield* EffectAssert.strictEqual(
         body.includes("<Code>RequestTimeTooSkewed</Code>"),
+        true,
+      );
+    }),
+);
+
+testEffect(
+  "sigv4/integration/presigned_request_not_blocked_by_missing_authorization_header",
+  () =>
+    Effect.gen(function* () {
+      const url = yield* makePresignedUrl("GET", "/test-bucket");
+      const response = yield* runRequest(
+        new Request(url, {
+          method: "GET",
+          headers: {
+            host: "localhost",
+          },
+        }),
+      );
+      const body = yield* Effect.tryPromise({
+        try: () => response.text(),
+        catch: (e) => new Error(String(e)),
+      }).pipe(Effect.orDie);
+
+      // Auth passed if request progressed to backend (NoSuchBucket), not AccessDenied.
+      yield* EffectAssert.strictEqual(response.status, 404);
+      yield* EffectAssert.strictEqual(
+        body.includes("<Code>NoSuchBucket</Code>"),
+        true,
+      );
+    }),
+);
+
+testEffect(
+  "sigv4/integration/presigned_negative_expires_rejected_as_expired",
+  () =>
+    Effect.gen(function* () {
+      const validUrl = yield* makePresignedUrl("PUT", "/test-bucket/test-key");
+      const parsed = new URL(validUrl);
+      parsed.searchParams.set("X-Amz-Expires", "-1");
+
+      const response = yield* runRequest(
+        new Request(parsed.toString(), {
+          method: "PUT",
+          body: "abc",
+          headers: {
+            host: "localhost",
+          },
+        }),
+      );
+      const body = yield* Effect.tryPromise({
+        try: () => response.text(),
+        catch: (e) => new Error(String(e)),
+      }).pipe(Effect.orDie);
+
+      yield* EffectAssert.strictEqual(response.status, 403);
+      yield* EffectAssert.strictEqual(
+        body.includes("<Code>AccessDenied</Code>"),
+        true,
+      );
+      yield* EffectAssert.strictEqual(
+        body.includes("Request has expired"),
         true,
       );
     }),
