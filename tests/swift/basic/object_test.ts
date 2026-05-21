@@ -105,6 +105,16 @@ Deno.test(async function deleteUploaded() {
   assertEquals(204, res.$metadata.httpStatusCode);
 });
 
+Deno.test(async function deleteMissingObject() {
+  const deleteObject = new DeleteObjectCommand({
+    Bucket: containerName,
+    Key: path.basename(tempFile),
+  });
+
+  const res = await s3.send(deleteObject);
+  assertEquals(204, res.$metadata.httpStatusCode);
+});
+
 Deno.test(async function streamUpload() {
   await setupBucket(s3, containerName);
 

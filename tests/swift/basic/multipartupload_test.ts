@@ -5,6 +5,7 @@ import {
   CreateMultipartUploadCommand,
   HeadObjectCommand,
   ListMultipartUploadsCommand,
+  ListObjectsV2Command,
   ListPartsCommand,
   S3Client,
   UploadPartCommand,
@@ -125,6 +126,19 @@ Deno.test("Multipart Upload Flow", async (t) => {
     );
 
     assertEquals(result.Key, objectKey);
+  });
+
+  await t.step("Completed Upload Does Not Expose Raw Parts", async () => {
+    const result = await s3.send(
+      new ListObjectsV2Command({
+        Bucket: containerName,
+        Prefix: objectKey,
+      }),
+    );
+
+    const keys = result.Contents?.map((object) => object.Key) ?? [];
+    assert(keys.includes(objectKey));
+    assert(!keys.some((key) => key?.startsWith(`${objectKey}/`)));
   });
 
   await t.step("Cleanup Bucket", async () => {
@@ -352,6 +366,19 @@ const testMPULargeFile = async (t: Deno.TestContext, containerName: string) => {
     checkHeadObject(res);
     // Verify Content-Length matches the total size
     assertEquals(res.ContentLength, totalSizeBytes);
+  });
+
+  await t.step("Completed Upload Does Not Expose Raw Parts", async () => {
+    const result = await s3.send(
+      new ListObjectsV2Command({
+        Bucket: containerName,
+        Prefix: largeObjectKey,
+      }),
+    );
+
+    const keys = result.Contents?.map((object) => object.Key) ?? [];
+    assert(keys.includes(largeObjectKey));
+    assert(!keys.some((key) => key?.startsWith(`${largeObjectKey}/`)));
   });
 
   await t.step("Wait for sync time", async () => {

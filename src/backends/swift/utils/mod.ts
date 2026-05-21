@@ -1,5 +1,6 @@
 import * as xml2js from "xml2js";
 import { createErr, createOk, Result } from "option-t/plain_result";
+import { HERALD_STATE_PATH } from "../../../constants/s3.ts";
 
 export function formatRFC3339Date(dateString: string): string {
   // Convert the string into a Date object
@@ -98,8 +99,10 @@ export async function toS3XmlContent(
 
   const contents = [];
   for (const item of swiftBody) {
-    // FIXME: skip the hidden folder which holds the herald state
-    if (!item.name) {
+    if (
+      !item.name || item.name === HERALD_STATE_PATH ||
+      item.name.startsWith(`${HERALD_STATE_PATH}/`)
+    ) {
       continue;
     }
     contents.push(getS3Object(item));

@@ -22,6 +22,76 @@ export interface OpenStackEndpoint {
   url: string;
 }
 
+function normalizeLegacySwiftStorageUrl(
+  authUrl: string,
+  storageUrl: string,
+): string {
+  const auth = new URL(authUrl);
+  const storage = new URL(storageUrl);
+  const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
+
+  if (localHosts.has(storage.hostname) && !localHosts.has(auth.hostname)) {
+    storage.protocol = auth.protocol;
+    storage.hostname = auth.hostname;
+    storage.port = auth.port;
+  }
+
+  return storage.toString().replace(/\/$/, "");
+}
+
+async function getLegacySwiftV1AuthMeta(config: SwiftConfig): Promise<{
+  storageUrl: string;
+  token: string;
+}> {
+  const { auth_url, credentials } = config;
+  logger.info(`Fetching Authorization Token (Swift v1) from ${auth_url}`);
+
+  const response = await fetch(auth_url, {
+    method: "GET",
+    headers: {
+      "X-Auth-User": credentials.username,
+      "X-Auth-Key": credentials.password,
+    },
+  });
+
+  if (!response.ok) {
+    const msg = await response.text();
+    throw new HeraldError(response.status, { message: msg });
+  }
+
+  const token = response.headers.get("x-auth-token") ??
+    response.headers.get("x-storage-token");
+  const storageUrl = response.headers.get("x-storage-url");
+
+  if (token == null) {
+    throw new HeraldError(400, {
+      message:
+        "Error Authenticating to Swift Server: auth token header is null",
+    });
+  }
+
+  if (storageUrl == null) {
+    throw new HeraldError(404, {
+      message: "Storage URL not found in Swift auth response",
+    });
+  }
+
+  const normalizedStorageUrl = normalizeLegacySwiftStorageUrl(
+    auth_url,
+    storageUrl,
+  );
+  logger.info(
+    `Authorization Token and Storage URL retrieved Successfully (Swift v1): storageUrl=${normalizedStorageUrl}, tokenPresent=${
+      token.length > 0
+    }`,
+  );
+
+  return {
+    token,
+    storageUrl: normalizedStorageUrl,
+  };
+}
+
 export async function getAuthTokenWithTimeouts(config: SwiftConfig): Promise<
   {
     storageUrl: string;
@@ -81,6 +151,10 @@ export async function getAuthTokenWithTimeouts(config: SwiftConfig): Promise<
 
     if (!response.ok) {
       const msg = await response.text();
+      if (response.status === 404 || response.status === 405) {
+        logger.info("Falling back to legacy Swift v1 auth");
+        return await getLegacySwiftV1AuthMeta(config);
+      }
       const errMessage = `Failed to authenticate with the auth service: ${msg}`;
       logger.warn(errMessage);
       throw new HeraldError(response.status, { message: msg });

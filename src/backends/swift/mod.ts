@@ -557,6 +557,10 @@ export function convertSwiftCopyObjectToS3Response(
 export function convertSwiftDeleteObjectToS3Response(
   swiftResponse: Response,
 ): Result<Response, Error> {
+  if (swiftResponse.status === 404) {
+    return createOk(new Response(null, { status: 204 }));
+  }
+
   if (!swiftResponse.ok) {
     return createErr(
       new HeraldError(swiftResponse.status, {
