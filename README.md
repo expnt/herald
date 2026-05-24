@@ -6,7 +6,7 @@
 	<em>herald: Orchestrating object storage services</em>
 </p>
 <p align="center">
-	<img src="https://img.shields.io/github/license/expnt/herald?style=default&logo=opensourceinitiative&logoColor=white&color=0080ff" alt="license">
+	<!-- <img src="https://img.shields.io/github/license/expnt/herald?style=default&logo=opensourceinitiative&logoColor=white&color=0080ff" alt="license"> -->
 	<img src="https://img.shields.io/github/last-commit/expnt/herald?style=default&logo=git&logoColor=white&color=0080ff" alt="last-commit">
 	<img src="https://img.shields.io/github/languages/top/expnt/herald?style=default&color=0080ff" alt="repo-top-language">
 	<img src="https://img.shields.io/github/languages/count/expnt/herald?style=default&color=0080ff" alt="repo-language-count">
@@ -18,307 +18,270 @@
 </p>
 <br>
 
-## Table of Contents
+Herald is an S3 proxy that supports:
 
-- [ Overview](#Overview)
-- [ Features](#Features)
-- [ Project Structure](#Project-Structure)
-- [ Getting Started](#Getting-Started)
-  - [ Prerequisites](#Prerequisites)
-  - [ Development](#Development)
-  - [ herald.yaml config file](#herald.yaml-config-file)
-  - [ Environment Variables](#Environment-Variables)
-  - [ Usage](#Usage)
-  - [ Testing](#Testing)
-- [ Project Roadmap](#Project-Roadmap)
-- [ Contributing](#Contributing)
-- [ Acknowledgments](#Acknowledgments)
+- Protocol translation (S3 to S3, S3 to Swift).
+- Backend routing based on bucket names.
+- Flexible bucket mapping with glob support.
 
----
+## Quick start
 
-## Overview
+Run Herald in Docker with env-only config (no YAML). Point it at an
+S3-compatible backend (e.g. [MinIO](https://min.io)) and use any S3 client
+against Herald.
 
-Herald is an S3 proxy that allows communication to multiple storage services with different communication protocols using the S3 protocol. For instance, you can use herald to connect to an OpenStack swift storage service as you would to S3 storage services like AWS S3 and MinIO. While OpenStack has its own middleware to accept requests in S3 protocol, herald addresses some issues you will face using that S3 middleware. Currently, herald supports two types of backends(storage providers): S3 and OpenStack Swift. A comprehensive list of herald's features and capabilities are listed below.
-
-## Features
-
-- Multi Backend Compatibility: interacting with multiple storage backends using a single protocol. You can use the S3 protocol to communicate with storage services that don't necessarily support an S3 protocol natively. Herald supports S3 and OpenStack Swift Storage backends as of right now.
-- Kubernetes Native Authentication: herald supports authentication using a service account provisioned by the Kubernetes server. You can register services in your cluster that can access herald and the resources managed by herald to allow a robust authentication pipeline easy to manage.
-- Mirroring: a multi-backend commit is another handy feature in herald that allows you to mirror any operations you make to your storage services through herald. You can have a primary storage configured with replicas. The primary and replicas will be in sync and during times of unavailability, herald will use the replicas to fetch data. For write operations, after the operation has been completed, it will be mirrored to a replica storage. The mirroring is done using transactional tasks, stored in a message/task queue, which ensures the replicas are in sync. For read operations, the operation will be forwarded to replica storages if the primary is unavailable. The mirroring operations are done using web workers to avoid the impact on performance.
-- IaC Support: Herald supports IaC tech stacks that use the S3 protocol to provision resources such as Terraform and OpenTofu.
-
-##  Project Structure
-
-```sh
-└── herald/
-    ├── .github
-    │   ├── dependabot.yml
-    │   ├── pull_request_template.md
-    │   └── workflows
-    ├── Dockerfile
-    ├── LICENSE.md
-    ├── README.md
-    ├── benchmarks
-    │   ├── bench_saver.ts
-    │   ├── result.json
-    │   └── sdk
-    ├── deno.jsonc
-    ├── deno.lock
-    ├── docker-compose.yml
-    ├── examples
-    │   └── simple-bucket-test
-    ├── ghjk.ts
-    ├── herald-compose.yaml
-    ├── herald.yaml
-    ├── import_map.json
-    ├── src
-    │   ├── auth
-    │   ├── backends
-    │   ├── buckets
-    │   ├── config
-    │   ├── constants
-    │   ├── main.ts
-    │   ├── types
-    │   ├── utils
-    │   └── workers
-    ├── tests
-    │   ├── iac
-    │   ├── mirror
-    │   ├── s3
-    │   ├── swift
-    │   └── utils
-    ├── tools
-    │   ├── compose
-    │   ├── deps.ts
-    │   └── s3-comparison
-    └── utils
-        ├── file.ts
-        └── s3.ts
-````
-
----
-
-## Getting Started
-
-### Prerequisites
-
-Before getting started with herald, ensure your runtime environment meets the following requirements:
-
-- **Programming Language:** TypeScript
-- **Container Runtime:** Docker
-
-### Development
-
-Install herald using one of the following methods:
-
-**Build from source:**
-
-1. Clone the herald repository:
-
-```sh
-❯ git clone https://github.com/expnt/herald
+```bash
+# Start Herald (default backend: S3 at host's MinIO). Port 3000.
+docker run -p 3000:3000 \
+  -e HERALD_DEFAULT_PROTOCOL=s3 \
+  -e HERALD_DEFAULT_ENDPOINT=http://host.docker.internal:9000 \
+  -e HERALD_DEFAULT_REGION=us-east-1 \
+  -e HERALD_DEFAULT_ACCESS_KEY_ID=minioadmin \
+  -e HERALD_DEFAULT_SECRET_ACCESS_KEY=minioadmin \
+  ghcr.io/expnt/herald:latest
 ```
 
-2. Navigate to the project directory:
+Use the AWS CLI (or any S3 client) with Herald as the endpoint. The S3 API is
+mounted at `/s3`; use path-style so bucket and key are in the path.
 
-```sh
-❯ cd herald
+```bash
+# List buckets via Herald
+aws s3 ls --endpoint-url http://localhost:3000/s3
+
+# List objects in a bucket
+aws s3 ls --endpoint-url http://localhost:3000/s3 s3://my-bucket/
 ```
 
-3. Install ghjk
+Deployment resources:
 
-[ghjk](https://github.com/metatypedev/ghjk) is a developer environment management tool used to install dependencies required to run herald.
+- **Images:** [ghcr.io/expnt/herald](https://ghcr.io/expnt/herald)
+- **Helm chart:** [chart/](chart/) for Kubernetes.
 
-4. Install dependencies
+## Config
 
-```sh
-❯ ghjk p resolve
-```
-
-5. Run services needed for herald.
-
-We just spin a minio s3 server and a swift object storage container in docker.
-
-```sh
-❯ ghjk dev-compose up all
-```
-
-6. Configure herald.yaml
-
-Configuration for the cloud services that herald connects with are defined here. Other configs such as the port it runs on, temporary dir for tests is also defined here. The object storage for a task store is also defined here. A serialized task store is saved in the specified storage service where durable tasks for mirroring tasks are stored. Service account names are also configured for jwk based authentication. This is a sample configuration file.
+Herald is configured via a YAML file (typically `herald.yaml`). The
+configuration defines backends and how incoming requests are routed to them.
 
 ```yaml
-port: 8000
-temp_dir: "./tmp"
+# Optional: require S3 SigV4 auth for incoming requests (see Auth section)
+auth:
+  accessKeysRefs: [admin, readonly]
+
 backends:
-  minio_s3:
+  # Unique identifier for the backend
+  minio_stg_aa:
+    # Backend protocol: "s3" or "swift"
     protocol: s3
-  openstack_swift:
+    # Default config values for backend
+    endpoint: http://127.0.0.1:9000
+    region: us-east-1
+    credentials:
+      accessKeyId: minioadmin
+      secretAccessKey: minioadmin
+    # Optional: auth to access buckets that route to this backend
+    # (bucket > backend > global)
+    auth:
+      accessKeysRefs: [app1]
+    # Bucket routing rules.
+    # Can be:
+    # 1. "*" to match all buckets not claimed by other backends
+    # 2. A glob pattern like "logs-*"
+    # 3. A map of bucket definitions for granular control
+    buckets:
+      # Simple bucket mapping (inherits backend settings)
+      my-bucket: {}
+      # Mapping with overrides; bucket-level auth overrides backend/global
+      external-data:
+        # Map proxy bucket "external-data" to backend bucket "data-v1"
+        bucket_name: data-v1
+        # Backend overrides for this specific bucket
+        endpoint: http://special-endpoint:9000
+        region: us-west-2
+        auth:
+          accessKeysRefs: [ci]
+      # Glob pattern support within the map
+      "test-*":
+        region: us-east-1
+
+  # Example Swift backend
+  swift_prd_bb:
     protocol: swift
-  exoscale_s3:
+    auth_url: http://keystone.example.com/v3
+    region: RegionOne
+    # Optional: map all buckets in this backend to a specific container
+    container: my-fixed-container
+    credentials:
+      username: my-user
+      password: my-password
+      project_name: my-project
+      user_domain_name: Default
+      project_domain_name: Default
+    # Route all archive buckets to Swift
+    buckets: "archive-*"
+
+cors:
+  # Global CORS defaults
+  allowedOrigins: ["*"]
+  allowedMethods: ["GET", "PUT", "POST", "DELETE", "HEAD", "OPTIONS"]
+  allowedHeaders: ["*"]
+  exposedHeaders: ["*"]
+  maxAge: 3600
+  credentials: false
+```
+
+### Routing Logic
+
+When a request comes in for a bucket (e.g., `GET /my-bucket/file.txt`), Herald
+resolves the backend using the following priority:
+
+1. **Direct match**: Looks for `my-bucket` in all backends' `buckets` maps.
+2. **Glob match (map)**: Looks for glob patterns (like `test-*`) in all
+   backends' `buckets` maps.
+3. **Glob match (string)**: If a backend has `buckets: "string-*"`, it checks if
+   the bucket name matches that pattern.
+
+When several backends could match (e.g. two globs), the **first backend in
+config order** wins.
+
+### Auth (incoming request verification)
+
+Herald can verify incoming S3 requests using AWS Signature Version 4 (SigV4).
+When auth is configured, only requests signed with one of the configured access
+keys are accepted. Credentials are never stored in the config file; you
+reference them by name (_refs_) and supply the actual keys via environment
+variables.
+
+Auth is resolved at three levels with the same precedence as CORS: **Bucket >
+Backend > Global**. The most specific definition wins (e.g. a bucket’s `auth`
+overrides its backend’s `auth`).
+
+At each level you set `auth.accessKeysRefs`: a list of ref names (strings). Each
+ref maps to a pair of env vars:
+
+- `HERALD_AUTH_<REF>_ACCESS_KEY_ID` — access key id
+- `HERALD_AUTH_<REF>_SECRET_KEY` — secret key
+
+`<REF>` is the ref name in UPPERCASE (e.g. ref `app1` →
+`HERALD_AUTH_APP1_ACCESS_KEY_ID`). Only refs that have both env vars set are
+used; missing refs are skipped.
+
+If no `auth` is defined at any level for a request, Herald does not perform
+SigV4 verification and the request is not gated by these credentials.
+
+### CORS Configuration
+
+Herald supports fine-grained CORS control at three levels with the following
+precedence: **Bucket > Backend > Global**.
+
+- **Global**: Defined at the root of the config file under `cors`.
+- **Backend**: Defined within a backend block under `cors`. Overrides global
+  settings.
+- **Bucket**: Defined within a bucket definition under `cors`. Overrides both
+  backend and global settings.
+
+If no CORS configuration is provided at any level, **CORS is disabled** and
+Herald will not add any CORS-related headers to responses. Preflight `OPTIONS`
+requests will be passed through to the backend.
+
+If you enable CORS by providing configuration at any level, the following
+defaults are applied for any omitted fields:
+
+| Field            | Default Value                           | Description                                            |
+| ---------------- | --------------------------------------- | ------------------------------------------------------ |
+| `maxAge`         | `3600`                                  | Max age in seconds for preflight results               |
+| `allowedMethods` | `GET, PUT, POST, DELETE, HEAD, OPTIONS` | Allowed HTTP methods                                   |
+| `allowedHeaders` | (Mirrors request)                       | Defaults to mirroring `Access-Control-Request-Headers` |
+| `credentials`    | `false`                                 | Whether to allow credentials                           |
+| `allowedOrigins` | (None)                                  | Headers only added if `Origin` matches an entry        |
+
+Example with overrides:
+
+```yaml
+cors: # Global defaults
+  allowedOrigins: ["*"]
+  credentials: false
+
+backends:
+  prod:
     protocol: s3
-
-task_store_backend:
-  endpoint: "http://localhost:9000"
-  region: local
-  forcePathStyle: true
-  bucket: task-store
-  credentials:
-    accessKeyId: minio
-    secretAccessKey: password
-
-service_accounts:
-  - name: "system:serviceaccount:dev-s3-herald:default"
+    cors: # Backend-level override
+      allowedOrigins: ["https://app.example.com"]
+      credentials: true
     buckets:
-      - s3-test
-      - s3-mirror-test
-      - swift-mirror-test
-      - iac-s3
-  - name: "system:serviceaccount:stg-datacycle:datacycle-app-backend-sa"
-    buckets:
-      - s3-test
-      - s3-mirror-test
-      - iac-s3
-
-buckets:
-  s3-test:
-    backend: minio_s3
-    config:
-      endpoint: "http://localhost:9000"
-      region: local
-      forcePathStyle: true
-      bucket: s3-test
-      credentials:
-        accessKeyId: minio
-        secretAccessKey: password
-
-replicas:
-  - name: replica-0
-    backend: minio_s3
-    config:
-      endpoint: "http://localhost:9090"
-      region: local
-      forcePathStyle: true
-      bucket: s3-test
-      credentials:
-        accessKeyId: minio
-        secretAccessKey: password
+      assets:
+        cors: # Bucket-level override
+          allowedOrigins: ["https://cdn.example.com"]
 ```
 
+### Environment variable configuration
 
-7. Run herald
+Configuration can be supplied or overridden via environment variables; env is
+merged with YAML at load time (env wins for the same path). All config-related
+vars use the `HERALD_` prefix. Naming: `HERALD_<KEY>` applies to the `default`
+backend or global (for top-level keys like auth/CORS); `HERALD_<BACKEND>_<KEY>`
+applies to that backend. Keys are normalised (e.g. `AUTH_URL` → `auth_url`;
+credential keys go under `credentials`).
 
-```sh
-❯ deno run src/main.ts
-```
+| Var                                                                                                                                                                                                                               | Purpose                                 | Default       |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- | ------------- |
+| `HERALD_CONFIG_PATH`                                                                                                                                                                                                              | Path to YAML config file                | `herald.yaml` |
+| `HERALD_LOG_LEVEL`                                                                                                                                                                                                                | Log level (e.g. `DEBUG`, `INFO`)        | (none; INFO)  |
+| `PORT`                                                                                                                                                                                                                            | HTTP server port                        | `3000`        |
+| `HERALD_AUTH_ACCESS_KEYS_REFS`                                                                                                                                                                                                    | Global auth: comma-separated ref names  | —             |
+| `HERALD_<BACKEND>_AUTH_ACCESS_KEYS_REFS`                                                                                                                                                                                          | Backend auth: comma-separated ref names | —             |
+| `HERALD_AUTH_<REF>_ACCESS_KEY_ID`                                                                                                                                                                                                 | Access key for auth ref (SigV4)         | —             |
+| `HERALD_AUTH_<REF>_SECRET_KEY`                                                                                                                                                                                                    | Secret key for auth ref (SigV4)         | —             |
+| `HERALD_PROTOCOL`, `HERALD_ENDPOINT`, `HERALD_REGION`, `HERALD_BUCKETS`                                                                                                                                                           | Default backend (S3)                    | —             |
+| `HERALD_<BACKEND>_PROTOCOL`, `HERALD_<BACKEND>_ENDPOINT`, `HERALD_<BACKEND>_REGION`, `HERALD_<BACKEND>_BUCKETS`                                                                                                                   | Backend (S3)                            | —             |
+| `HERALD_<BACKEND>_ACCESS_KEY_ID`, `HERALD_<BACKEND>_SECRET_ACCESS_KEY`                                                                                                                                                            | Backend S3 credentials                  | —             |
+| `HERALD_<BACKEND>_AUTH_URL`, `HERALD_<BACKEND>_CONTAINER`, `HERALD_<BACKEND>_USERNAME`, `HERALD_<BACKEND>_PASSWORD`, `HERALD_<BACKEND>_PROJECT_NAME`, `HERALD_<BACKEND>_USER_DOMAIN_NAME`, `HERALD_<BACKEND>_PROJECT_DOMAIN_NAME` | Backend (Swift)                         | —             |
+| `HERALD_CORS_ALLOWED_ORIGINS`, `HERALD_CORS_ALLOWED_METHODS`, `HERALD_CORS_ALLOWED_HEADERS`, `HERALD_CORS_EXPOSED_HEADERS`, `HERALD_CORS_MAX_AGE`, `HERALD_CORS_CREDENTIALS`                                                      | Global CORS (lists comma-separated)     | —             |
+| `HERALD_<BACKEND>_CORS_<KEY>`                                                                                                                                                                                                     | Backend CORS (same keys as above)       | —             |
 
-### herald.yaml config file
+### Health and observability
 
-This configuration YAML file is used to set up and manage the Herald service, which interacts with various storage backends and service accounts. Below is a detailed description of the key sections in the file:
+- **Health:** `GET /health` returns `{ "status": "ok" }`. Use it for
+  liveness/readiness.
+- **Logging:** Set `HERALD_LOG_LEVEL` (e.g. `DEBUG`, `INFO`) to control log
+  verbosity.
+- **Tracing:** Optional OpenTelemetry: set `OTEL_EXPORTER_OTLP_ENDPOINT` (and
+  `OTEL_SERVICE_NAME`, default `herald`) to export traces to an OTLP collector.
 
-- **port**: Specifies the port number (8000) on which herald will run.
-- **temp_dir**: Defines the temporary directory (`./tmp`) used by the service.
-- **backends**: Lists the supported storage backends, including `minio_s3`, `openstack_swift`, and `exoscale_s3`, each with its respective protocol.
-- **task_store_backend**: Configures the backend for storing tasks, including the endpoint, region, path style, bucket name, and credentials (access key ID and secret access key).
-- **service_accounts**: Defines the service accounts with access to specific buckets. Each service account has a name and a list of accessible buckets.
-- **buckets**: Specifies the configuration for individual buckets, including the backend type, endpoint, region, path style, bucket name, and credentials.
-- **replicas**: Configures replicas for redundancy and load balancing. Each replica has a name, backend type, and configuration similar to the buckets section.
+## Deployment
 
-This configuration file allows for flexible and secure management of storage resources and service accounts, ensuring that the Herald service can interact with multiple storage backends and maintain high availability through replicas.
+- **Docker:** Images are published at
+  [ghcr.io/expnt/herald](https://ghcr.io/expnt/herald). Use env vars (see table
+  above) or mount a `herald.yaml` and set `HERALD_CONFIG_PATH`.
+- **Kubernetes:** A Helm chart is in [chart/](chart/).
 
-### Environment Variables
-| **Name**                   | **Default**  | **Description**  |
-|----------------------------|------------------------------|-------------------------------|
-| **debug**                  | —                                                                      | Boolean string that enables or disables debug mode.                                            |
-| **log_level**              | (optional)                                                             | Logging level; possible values: `NOTSET`, `DEBUG`, `INFO`, `WARN`, `ERROR`, `CRITICAL`.        |
-| **env**                    | `DEV`                                                                  | Environment in which the application runs (`DEV` or `PROD`).                                  |
-| **k8s_api**                | `https://kubernetes.default.svc`                                      | URL for the Kubernetes API.                                                                   |
-| **cert_path**              | `/var/run/secrets/kubernetes.io/serviceaccount/ca.crt`                 | File path to the Kubernetes service account CA certificate.                                   |
-| **config_file_path**       | herald.yaml | Path to the Herald configuration file.                                                        |
-| **service_account_token_path** | `/var/run/secrets/kubernetes.io/serviceaccount/token`              | File path to the Kubernetes service account token.                                            |
-| **version**                | `0.1`                                                                  | Application version.                                                                          |
-| **sentry_dsn**             | (optional)                                                             | DSN for Sentry, used for error tracking.                                                      |
-| **sentry_sample_rate**     | `1`                                                                    | Sampling rate for Sentry events (numeric, 0 to 1).                                            |
-| **sentry_traces_sample_rate** | `1`                                                                 | Sampling rate for Sentry traces (numeric, 0 to 1).                                            |
+## Limitations
 
-### Run using docker
+Herald is an S3 proxy focused on routing, protocol translation, and core object
+operations. The following are **not** currently supported (or are partial):
 
-Pull the image first
+- **Bucket subresources:** Bucket policies (`?policy`), lifecycle
+  (`?lifecycle`), versioning config (`?versioning`), tagging (`?tagging`), ACLs
+  (`?acl`), website (`?website`), public access block (`?publicAccessBlock`),
+  replication, logging, inventory, metrics, ownership controls.
+- **Object subresources:** Object ACLs, tagging, legal hold, retention (Object
+  Lock), S3 Select. Multi-Object Delete (`POST ?delete`) is not implemented.
+  Copy Object (`PUT` with `x-amz-copy-source`) is supported.
+- **Object operations:** GetObjectAttributes (`?attributes`) is not implemented.
+  Checksum headers (`x-amz-checksum-*`) and conditional requests (`If-Match`,
+  etc.) are not fully supported.
+- **List enhancements:** `encoding-type=url`, special delimiter handling,
+  ListObjectsV2 `FetchOwner`, unordered listing behavior may not match S3.
+- **Auth & IAM:** No IAM policy evaluation, STS, or web identity federation.
+  Anonymous access for public buckets/objects is not implemented. Invalid or
+  missing SigV4 auth may not return 403/400 as expected.
+- **Validation & protocol:** Bucket naming rules (length, format) are not
+  strictly enforced. HTTP 100 Continue (`Expect: 100-continue`) is not
+  supported. Some error codes and response fields may differ from S3.
 
-```sh
-❯ docker pull ghcr.io/expnt/herald:latest
-```
+For the full list of missing functionality and focus tests (from the s3-tests
+suite), see [TODO.md](TODO.md).
 
-Run herald using the following command:
-**Using `docker`** &nbsp; [<img align="center" src="https://img.shields.io/badge/Docker-2CA5E0.svg?style={badge_style}&logo=docker&logoColor=white" />](https://www.docker.com/)
+## Prior art
 
-```sh
-❯ docker run -it expnt/herald:latest
-```
-
-### Testing
-
-To run full tests,
-
-```sh
-❯ deno test -A tests
-```
-
----
-
-## Project Roadmap
-
-- [x] **`Task 1`**: Mirroring
-- [ ] **`Task 2`**: Event Notification.
-- [ ] **`Task 3`**: Advanced Cache Policy
-
----
-
-## Contributing
-
-- **💬 [Join the Discussions](https://github.com/expnt/herald/discussions)**: Share your insights, provide feedback, or ask questions.
-- **🐛 [Report Issues](https://github.com/expnt/herald/issues)**: Submit bugs found or log feature requests for the `herald` project.
-- **💡 [Submit Pull Requests](https://github.com/expnt/herald/blob/main/CONTRIBUTING.md)**: Review open PRs, and submit your own PRs.
-
-<details closed>
-<summary>Contributing Guidelines</summary>
-
-1. **Fork the Repository**: Start by forking the project repository to your github account.
-2. **Clone Locally**: Clone the forked repository to your local machine using a git client.
-   ```sh
-   git clone https://github.com/expnt/herald
-   ```
-3. **Create a New Branch**: Always work on a new branch, giving it a descriptive name.
-   ```sh
-   git checkout -b new-feature-x
-   ```
-4. **Make Your Changes**: Develop and test your changes locally.
-5. **Commit Your Changes**: Commit with a clear message describing your updates.
-   ```sh
-   git commit -m 'Implemented new feature x.'
-   ```
-6. **Push to github**: Push the changes to your forked repository.
-   ```sh
-   git push origin new-feature-x
-   ```
-7. **Submit a Pull Request**: Create a PR against the original project repository. Clearly describe the changes and their motivations.
-8. **Review**: Once your PR is reviewed and approved, it will be merged into the main branch. Congratulations on your contribution!
-</details>
-
-<details closed>
-<summary>Contributor Graph</summary>
-<br>
-<p align="left">
-   <a href="https://github.com{/expnt/herald/}graphs/contributors">
-      <img src="https://contrib.rocks/image?repo=expnt/herald">
-   </a>
-</p>
-</details>
-
----
-
-## Acknowledgments
-
-- List any resources, contributors, inspiration, etc. here.
-
----
+- https://github.com/gaul/s3proxy
+- https://github.com/ceph/s3-tests
