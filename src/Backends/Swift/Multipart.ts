@@ -6,6 +6,7 @@ import {
   type HeadObjectResult,
   InternalError,
   InvalidPart,
+  InvalidRequest,
   type ListMultipartUploadsResult,
   type ListObjectsResult,
   type ListPartsResult,
@@ -17,8 +18,11 @@ import {
   type UploadPartResult,
 } from "../../Services/Backend.ts";
 import {
+  causeChainHasClientDisconnect,
+  CLIENT_DISCONNECT_MESSAGE,
   encodeObjectKeyForSwift,
   formatSwiftTransportError,
+  isInboundClientDisconnect,
   mapError,
   MP_META_PREFIX,
   MP_SEGMENTS_PREFIX,
@@ -135,34 +139,42 @@ export const makeMultipartOps = (
           ...headerService.toSwiftHeaders(metadata, checksums),
         };
 
-        const validatedStream = yield* checksumService.validate(
+        const validatedStream = (yield* checksumService.validate(
           body,
           checksums,
+        )).pipe(
+          Stream.catchAll((e) => {
+            // Map an inbound client abort to a distinct non-500 error so a
+            // disconnect is not reported as a Herald server fault.
+            if (isInboundClientDisconnect(e)) {
+              return Stream.fail(
+                new InvalidRequest({ message: CLIENT_DISCONNECT_MESSAGE }),
+              );
+            }
+            return Stream.fail(e as BackendError);
+          }),
         );
 
+        // No retry here: once the body stream has begun (or failed) mid-flight,
+        // re-executing the PUT would replay a partially consumed stream, which
+        // can hang or send truncated data that Swift accepts as a complete
+        // segment. Clients retry idempotently at their own layer.
         const request = HttpClientRequest.put(`${url}/${encodedSegmentKey}`)
           .pipe(
             HttpClientRequest.setHeaders(swiftHeaders),
-            HttpClientRequest.bodyStream(validatedStream.pipe(
-              Stream.mapError((e) => {
-                return e;
-              }),
-            )),
+            HttpClientRequest.bodyStream(validatedStream),
           );
 
         const response: HttpClientResponse.HttpClientResponse = yield* client
           .execute(request).pipe(
-            Effect.retry({
-              while: (e) => {
-                const s = String(e);
-                return (s.includes("Transport error") ||
-                  s.includes("ECONNRESET"));
-              },
-              schedule: Schedule.exponential("100 millis").pipe(
-                Schedule.compose(Schedule.recurs(3)),
-              ),
-            }),
             Effect.catchAll((e) => {
+              if (
+                causeChainHasClientDisconnect(e)
+              ) {
+                return Effect.fail(
+                  new InvalidRequest({ message: CLIENT_DISCONNECT_MESSAGE }),
+                );
+              }
               const s = String(e);
               if (
                 s.includes("NoSuchKey") || s.includes("NoSuchBucket") ||
