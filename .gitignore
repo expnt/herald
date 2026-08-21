@@ -88,3 +88,5 @@ token
 *.db-shm
 *.db-wal
 .vscode
+
+play.*
