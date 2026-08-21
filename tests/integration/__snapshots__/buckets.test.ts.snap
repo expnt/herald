@@ -104,8 +104,8 @@ snapshot[`Baseline/buckets/delete/non-existent body 1`] = `
 snapshot[`Proxy/buckets/delete/non-existent metadata 1`] = `
 {
   headers: {
+    "content-length": "132",
     "content-type": "application/xml",
-    vary: "Accept-Encoding",
   },
   status: 404,
 }
@@ -116,8 +116,8 @@ snapshot[`Proxy/buckets/delete/non-existent body 1`] = `'<?xml version="1.0" enc
 snapshot[`Swift/buckets/delete/non-existent metadata 1`] = `
 {
   headers: {
+    "content-length": "167",
     "content-type": "application/xml",
-    vary: "Accept-Encoding",
   },
   status: 404,
 }
@@ -170,14 +170,18 @@ snapshot[`Baseline/buckets/head/non-existent metadata 1`] = `
 
 snapshot[`Proxy/buckets/head/non-existent metadata 1`] = `
 {
-  headers: {},
+  headers: {
+    "content-length": "0",
+  },
   status: 404,
 }
 `;
 
 snapshot[`Swift/buckets/head/non-existent metadata 1`] = `
 {
-  headers: {},
+  headers: {
+    "content-length": "0",
+  },
   status: 404,
 }
 `;
