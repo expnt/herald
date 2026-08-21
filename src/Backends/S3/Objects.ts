@@ -180,56 +180,81 @@ export const makeObjectOps = (
               Prefix: args.prefix,
               Delimiter: args.delimiter,
               KeyMarker: args.keyMarker,
-              VersionIdMarker: args.versionIdMarker,
+              // MinIO skips one extra entry when resuming with
+              // version-id-marker="null" (its id for unversioned objects)
+              // after the marker entry has been deleted; a key-only resume is
+              // exact. Clients need the marker in the response, so drop it here.
+              VersionIdMarker: args.versionIdMarker === "null"
+                ? undefined
+                : args.versionIdMarker,
               MaxKeys: args.maxKeys,
             }),
           ),
         catch: (e) => mapS3Error(e, bucketName),
       });
 
+      const contents: ObjectInfo[] = [
+        ...(result.Versions ?? []).map((v): ObjectInfo => ({
+          key: stripMinioMetadata(v.Key ?? ""),
+          lastModified: v.LastModified ?? new Date(),
+          etag: v.ETag ?? "",
+          size: v.Size ?? 0,
+          storageClass: v.StorageClass,
+          versionId: v.VersionId,
+          isDeleteMarker: false,
+          isLatest: v.IsLatest,
+          owner: v.Owner
+            ? {
+              id: v.Owner.ID ?? "unknown",
+              displayName: v.Owner.DisplayName ?? "unknown",
+            }
+            : undefined,
+        })),
+        ...(result.DeleteMarkers ?? []).map((dm): ObjectInfo => ({
+          key: stripMinioMetadata(dm.Key ?? ""),
+          lastModified: dm.LastModified ?? new Date(),
+          etag: "",
+          size: 0,
+          versionId: dm.VersionId,
+          isDeleteMarker: true,
+          isLatest: dm.IsLatest,
+          owner: dm.Owner
+            ? {
+              id: dm.Owner.ID ?? "unknown",
+              displayName: dm.Owner.DisplayName ?? "unknown",
+            }
+            : undefined,
+        })),
+      ];
+      // S3 requires NextKeyMarker/NextVersionIdMarker on truncated listings.
+      // MinIO omits NextVersionIdMarker for unversioned buckets; the last
+      // entry's version id (the literal "null" there) is a valid page marker.
+      // Clients like botocore fail the request outright when it is missing.
+      //
+      // MinIO's NextKeyMarker carries an internal bracket suffix (e.g.
+      // "0/1126[minio_cache:v2,return:]"). Resuming from such a marker after
+      // the marker object has been deleted skips one extra entry, so derive
+      // the marker from the last entry actually returned instead.
+      const lastContent = contents[contents.length - 1];
+      const isTruncated = result.IsTruncated ?? false;
+      const nextVersionIdMarker = result.NextVersionIdMarker ||
+        (isTruncated ? lastContent?.versionId : undefined);
+
       return {
         name: result.Name ?? bucketName,
         prefix: result.Prefix,
         marker: result.KeyMarker,
-        nextMarker: result.NextKeyMarker,
+        nextMarker: isTruncated && lastContent
+          ? lastContent.key
+          : result.NextKeyMarker,
         maxKeys: result.MaxKeys ?? 1000,
         delimiter: result.Delimiter,
         isTruncated: result.IsTruncated ?? false,
         encodingType: args.encodingType,
         listType: 1,
-        contents: [
-          ...(result.Versions ?? []).map((v): ObjectInfo => ({
-            key: stripMinioMetadata(v.Key ?? ""),
-            lastModified: v.LastModified ?? new Date(),
-            etag: v.ETag ?? "",
-            size: v.Size ?? 0,
-            storageClass: v.StorageClass,
-            versionId: v.VersionId,
-            isDeleteMarker: false,
-            isLatest: v.IsLatest,
-            owner: v.Owner
-              ? {
-                id: v.Owner.ID ?? "unknown",
-                displayName: v.Owner.DisplayName ?? "unknown",
-              }
-              : undefined,
-          })),
-          ...(result.DeleteMarkers ?? []).map((dm): ObjectInfo => ({
-            key: stripMinioMetadata(dm.Key ?? ""),
-            lastModified: dm.LastModified ?? new Date(),
-            etag: "",
-            size: 0,
-            versionId: dm.VersionId,
-            isDeleteMarker: true,
-            isLatest: dm.IsLatest,
-            owner: dm.Owner
-              ? {
-                id: dm.Owner.ID ?? "unknown",
-                displayName: dm.Owner.DisplayName ?? "unknown",
-              }
-              : undefined,
-          })),
-        ],
+        contents,
+        // formatListVersions renders this element as <NextVersionIdMarker>
+        nextContinuationToken: nextVersionIdMarker,
         commonPrefixes: (result.CommonPrefixes ?? []).map((
           cp,
         ): CommonPrefix => ({
