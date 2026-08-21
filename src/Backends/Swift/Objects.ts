@@ -20,9 +20,13 @@ import {
 import { normalizeHeaders } from "../../Services/S3HeaderService.ts";
 import { stripAwsChunkedFromContentEncoding } from "../../Services/AwsChunked.ts";
 import {
+  causeChainHasClientDisconnect,
+  CLIENT_DISCONNECT_MESSAGE,
   encodeObjectKeyForSwift,
   formatSwiftTransportError,
+  isInboundClientDisconnect,
   mapError,
+  resolveOutboundContentLength,
   type SwiftTarget,
 } from "./Utils.ts";
 
@@ -503,9 +507,11 @@ export const makeObjectOps = (
           ...headerService.toSwiftHeaders(metadata, checksums),
         };
 
-        const contentLength = normalized["content-length"]
-          ? parseInt(normalized["content-length"])
-          : undefined;
+        // With AWS streaming framing the inbound Content-Length is the wire
+        // length; declare the decoded payload size instead (see
+        // resolveOutboundContentLength). Undefined means no length is declared
+        // and the outbound request uses chunked transfer.
+        const contentLength = resolveOutboundContentLength(normalized);
         if (contentLength !== undefined) {
           swiftHeaders["Content-Length"] = String(contentLength);
         }
@@ -524,9 +530,11 @@ export const makeObjectOps = (
               return Stream.fail(e as BackendError);
             }
             return Stream.fail(
-              new InternalError({
-                message: `error on checksum stream: ${String(e)}`,
-              }),
+              isInboundClientDisconnect(e)
+                ? new InvalidRequest({ message: CLIENT_DISCONNECT_MESSAGE })
+                : new InternalError({
+                  message: `error on checksum stream: ${String(e)}`,
+                }),
             );
           }),
         );
@@ -601,6 +609,11 @@ export const makeObjectOps = (
                   ) {
                     return Effect.fail(new BadDigest({ message: causeStr }));
                   }
+                }
+                if (causeChainHasClientDisconnect(e)) {
+                  return Effect.fail(
+                    new InvalidRequest({ message: CLIENT_DISCONNECT_MESSAGE }),
+                  );
                 }
                 return Effect.fail(
                   mapError(500, formatSwiftTransportError(e), container),
