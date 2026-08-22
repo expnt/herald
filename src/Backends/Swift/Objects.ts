@@ -1,7 +1,9 @@
 import { HttpClientRequest, type HttpClientResponse } from "@effect/platform";
 import { type Chunk, Effect, Stream } from "effect";
 import type {
+  AccessControlPolicy,
   BackendError,
+  CannedAcl,
   CommonPrefix,
   DeleteObjectsResult,
   HeadObjectResult,
@@ -17,6 +19,13 @@ import {
   InternalError,
   InvalidRequest,
 } from "../../Services/Backend.ts";
+import {
+  decodeCompactPolicy,
+  defaultPolicy,
+  encodeCompactPolicy,
+  resolveAclInput,
+} from "../../Services/Acl.ts";
+import { SWIFT_OWNER } from "./Buckets.ts";
 import { normalizeHeaders } from "../../Services/S3HeaderService.ts";
 import { stripAwsChunkedFromContentEncoding } from "../../Services/AwsChunked.ts";
 import {
@@ -107,17 +116,15 @@ export interface SwiftObject {
   readonly subdir?: string;
 }
 
-export const makeObjectOps = (
-  {
-    container,
-    storageUrl: _,
-    token,
-    url,
-    client,
-    headerService,
-    checksumService,
-  }: SwiftTarget,
-) => {
+export const makeObjectOps = ({
+  container,
+  storageUrl: _,
+  token,
+  url,
+  client,
+  headerService,
+  checksumService,
+}: SwiftTarget) => {
   const listObjects = (args: {
     prefix?: string;
     delimiter?: string;
@@ -135,15 +142,21 @@ export const makeObjectOps = (
       if (args.delimiter) query.set("delimiter", args.delimiter);
       if (args.marker) query.set("marker", args.marker);
       query.set("limit", String(limit + 1));
-      if (args.continuationToken) query.set("marker", args.continuationToken);
-      if (args.startAfter) query.set("marker", args.startAfter);
+      // Per S3, ContinuationToken takes precedence over StartAfter when both
+      // are present; Swift has a single exclusive marker, so map them onto it.
+      if (args.continuationToken) {
+        query.set("marker", args.continuationToken);
+      } else if (args.startAfter) {
+        query.set("marker", args.startAfter);
+      }
 
       const response: HttpClientResponse.HttpClientResponse = yield* client
         .execute(
           HttpClientRequest.get(`${url}?${query.toString()}`).pipe(
             HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
           ),
-        ).pipe(
+        )
+        .pipe(
           Effect.mapError((e) =>
             mapError(500, formatSwiftTransportError(e), container)
           ),
@@ -204,6 +217,9 @@ export const makeObjectOps = (
         commonPrefixes,
         encodingType: args.encodingType,
         listType: args.listType ?? 1,
+        // Echo the request values so clients can verify them (S3 semantics).
+        continuationToken: args.continuationToken,
+        startAfter: args.startAfter,
         nextContinuationToken: args.listType === 2 ? nextMarker : undefined,
         keyCount: contents.length + commonPrefixes.length,
       } satisfies ListObjectsResult;
@@ -222,7 +238,8 @@ export const makeObjectOps = (
           HttpClientRequest.head(`${url}/${encodedKey}`).pipe(
             HttpClientRequest.setHeaders(swiftHeaders),
           ),
-        ).pipe(
+        )
+        .pipe(
           Effect.mapError((e) =>
             mapError(500, formatSwiftTransportError(e), container)
           ),
@@ -233,13 +250,7 @@ export const makeObjectOps = (
           Effect.orElseSucceed(() => "Error"),
         );
         return yield* Effect.fail(
-          mapError(
-            response.status,
-            message || "Error",
-            container,
-            "HEAD",
-            key,
-          ),
+          mapError(response.status, message || "Error", container, "HEAD", key),
         );
       }
 
@@ -375,7 +386,8 @@ export const makeObjectOps = (
             HttpClientRequest.get(`${url}/${encodedKey}`).pipe(
               HttpClientRequest.setHeaders(swiftHeaders),
             ),
-          ).pipe(
+          )
+          .pipe(
             Effect.mapError((e) =>
               mapError(500, formatSwiftTransportError(e), container)
             ),
@@ -507,6 +519,15 @@ export const makeObjectOps = (
           ...headerService.toSwiftHeaders(metadata, checksums),
         };
 
+        // Persist a canned ACL supplied at creation time (x-amz-acl header)
+        // as object metadata so GET ?acl can reconstruct the policy.
+        const cannedAcl = normalized["x-amz-acl"];
+        if (cannedAcl) {
+          swiftHeaders["X-Object-Meta-S3-Acl"] = encodeCompactPolicy(
+            resolveAclInput(cannedAcl as CannedAcl, SWIFT_OWNER),
+          );
+        }
+
         // With AWS streaming framing the inbound Content-Length is the wire
         // length; declare the decoded payload size instead (see
         // resolveOutboundContentLength). Undefined means no length is declared
@@ -541,7 +562,7 @@ export const makeObjectOps = (
 
         // Align with S3: buffer small files (< 1MB) and validate before HTTP request
         const bodyStream =
-          (contentLength !== undefined && contentLength < 1024 * 1024)
+          contentLength !== undefined && contentLength < 1024 * 1024
             ? yield* Effect.gen(function* () {
               // Buffer small files: consume stream to trigger validation BEFORE HTTP request
               const chunks: Chunk.Chunk<Uint8Array> = yield* Stream.runCollect(
@@ -549,7 +570,10 @@ export const makeObjectOps = (
               ).pipe(
                 Effect.mapError((e) => {
                   // Preserve BadDigest and InvalidRequest errors
-                  if (e instanceof BadDigest || e instanceof InvalidRequest) {
+                  if (
+                    e instanceof BadDigest ||
+                    e instanceof InvalidRequest
+                  ) {
                     return e;
                   }
                   return new InternalError({ message: String(e) });
@@ -576,7 +600,8 @@ export const makeObjectOps = (
         }
 
         const response: HttpClientResponse.HttpClientResponse = yield* client
-          .execute(request).pipe(
+          .execute(request)
+          .pipe(
             Effect.catchAll(
               (
                 e,
@@ -670,7 +695,8 @@ export const makeObjectOps = (
                 "multipart-manifest": "delete",
               }),
             ),
-          ).pipe(
+          )
+          .pipe(
             Effect.mapError((e) =>
               mapError(500, formatSwiftTransportError(e), container)
             ),
@@ -686,15 +712,17 @@ export const makeObjectOps = (
         ) {
           // Not an SLO, try regular delete
           const regResponse: HttpClientResponse.HttpClientResponse =
-            yield* client.execute(
-              HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
-                HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-              ),
-            ).pipe(
-              Effect.mapError((e) =>
-                mapError(500, formatSwiftTransportError(e), container)
-              ),
-            );
+            yield* client
+              .execute(
+                HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
+                  HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+                ),
+              )
+              .pipe(
+                Effect.mapError((e) =>
+                  mapError(500, formatSwiftTransportError(e), container)
+                ),
+              );
 
           if (regResponse.status < 200 || regResponse.status >= 300) {
             if (regResponse.status === 404) return;
@@ -721,41 +749,35 @@ export const makeObjectOps = (
           // Reuse the already-read responseBody instead of reading response.text again
           const message = responseBody || "Error";
           return yield* Effect.fail(
-            mapError(
-              response.status,
-              message,
-              container,
-              "DELETE",
-              key,
-            ),
+            mapError(response.status, message, container, "DELETE", key),
           );
         }
       }),
 
-    deleteObjects: (
-      objects: readonly { key: string; versionId?: string }[],
-    ) =>
+    deleteObjects: (objects: readonly { key: string; versionId?: string }[]) =>
       Effect.gen(function* () {
         const results = yield* Effect.all(
           objects.map((obj) =>
             Effect.gen(function* () {
               const encodedKey = encodeObjectKeyForSwift(obj.key);
               let response: HttpClientResponse.HttpClientResponse =
-                yield* client.execute(
-                  HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
-                    HttpClientRequest.setHeaders({
-                      "X-Auth-Token": token,
-                      "X-Static-Large-Object": "true",
-                    }),
-                    HttpClientRequest.setUrlParams({
-                      "multipart-manifest": "delete",
-                    }),
-                  ),
-                ).pipe(
-                  Effect.mapError((e) =>
-                    mapError(500, formatSwiftTransportError(e), container)
-                  ),
-                );
+                yield* client
+                  .execute(
+                    HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
+                      HttpClientRequest.setHeaders({
+                        "X-Auth-Token": token,
+                        "X-Static-Large-Object": "true",
+                      }),
+                      HttpClientRequest.setUrlParams({
+                        "multipart-manifest": "delete",
+                      }),
+                    ),
+                  )
+                  .pipe(
+                    Effect.mapError((e) =>
+                      mapError(500, formatSwiftTransportError(e), container)
+                    ),
+                  );
 
               let responseBody = yield* response.text.pipe(
                 Effect.orElseSucceed(() => ""),
@@ -766,15 +788,17 @@ export const makeObjectOps = (
                 (response.status === 200 && responseBody.includes("Not an SLO"))
               ) {
                 // Not an SLO, try regular delete
-                response = yield* client.execute(
-                  HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
-                    HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
-                  ),
-                ).pipe(
-                  Effect.mapError((e) =>
-                    mapError(500, formatSwiftTransportError(e), container)
-                  ),
-                );
+                response = yield* client
+                  .execute(
+                    HttpClientRequest.del(`${url}/${encodedKey}`).pipe(
+                      HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+                    ),
+                  )
+                  .pipe(
+                    Effect.mapError((e) =>
+                      mapError(500, formatSwiftTransportError(e), container)
+                    ),
+                  );
                 // Refresh responseBody cache for the new response
                 responseBody = yield* response.text.pipe(
                   Effect.orElseSucceed(() => ""),
@@ -783,7 +807,8 @@ export const makeObjectOps = (
 
               if (
                 (response.status >= 200 && response.status < 300) ||
-                response.status === 204 || response.status === 404
+                response.status === 204 ||
+                response.status === 404
               ) {
                 return { key: obj.key, error: null };
               } else {
@@ -822,10 +847,10 @@ export const makeObjectOps = (
       headers: Record<string, string | string[] | undefined>,
     ) =>
       Effect.gen(function* () {
-        const head = yield* headObject(
-          key,
-          { "x-amz-checksum-mode": "ENABLED", ...headers },
-        );
+        const head = yield* headObject(key, {
+          "x-amz-checksum-mode": "ENABLED",
+          ...headers,
+        });
 
         const lowerAttrs = attributes.map((a) => a.toLowerCase());
         const isSLO =
@@ -841,7 +866,7 @@ export const makeObjectOps = (
                 checksumSHA1: head.checksumSHA1,
                 checksumSHA256: head.checksumSHA256,
                 checksumType: head.checksumAlgorithm
-                  ? (isSLO ? "COMPOSITE" : "FULL_OBJECT")
+                  ? isSLO ? "COMPOSITE" : "FULL_OBJECT"
                   : undefined,
               },
             }
@@ -907,7 +932,8 @@ export const makeObjectOps = (
         );
 
         const response: HttpClientResponse.HttpClientResponse = yield* client
-          .execute(request).pipe(
+          .execute(request)
+          .pipe(
             Effect.mapError((e) =>
               mapError(500, formatSwiftTransportError(e), container)
             ),
@@ -936,5 +962,79 @@ export const makeObjectOps = (
         };
       });
     },
+
+    getObjectAcl: (key: string) =>
+      Effect.gen(function* () {
+        const encodedKey = encodeObjectKeyForSwift(key);
+        const response = yield* client
+          .execute(
+            HttpClientRequest.head(`${url}/${encodedKey}`).pipe(
+              HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+            ),
+          )
+          .pipe(
+            Effect.mapError((e) =>
+              mapError(500, formatSwiftTransportError(e), container)
+            ),
+          );
+
+        if (response.status < 200 || response.status >= 300) {
+          const message = yield* response.text.pipe(
+            Effect.orElseSucceed(() => "Error"),
+          );
+          return yield* Effect.fail(
+            mapError(
+              response.status,
+              message || "Error",
+              container,
+              "HEAD",
+              key,
+            ),
+          );
+        }
+
+        const raw = response.headers["x-object-meta-s3-acl"];
+        const value = Array.isArray(raw) ? raw[0] : raw;
+        if (value !== undefined && value !== "") {
+          const stored = decodeCompactPolicy(value);
+          if (stored !== undefined) return stored;
+        }
+        return defaultPolicy(SWIFT_OWNER);
+      }),
+
+    putObjectAcl: (key: string, acl: AccessControlPolicy | CannedAcl) =>
+      Effect.gen(function* () {
+        const encodedKey = encodeObjectKeyForSwift(key);
+        const policy = resolveAclInput(acl, SWIFT_OWNER);
+        const response = yield* client
+          .execute(
+            HttpClientRequest.post(`${url}/${encodedKey}`).pipe(
+              HttpClientRequest.setHeaders({
+                "X-Auth-Token": token,
+                "X-Object-Meta-S3-Acl": encodeCompactPolicy(policy),
+              }),
+            ),
+          )
+          .pipe(
+            Effect.mapError((e) =>
+              mapError(500, formatSwiftTransportError(e), container)
+            ),
+          );
+
+        if (response.status < 200 || response.status >= 300) {
+          const message = yield* response.text.pipe(
+            Effect.orElseSucceed(() => "Error"),
+          );
+          return yield* Effect.fail(
+            mapError(
+              response.status,
+              message || "Error",
+              container,
+              "POST",
+              key,
+            ),
+          );
+        }
+      }),
   };
 };

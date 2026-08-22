@@ -748,6 +748,715 @@ const specs: ObjectTestSpec[] = [
       } catch { /* ignore */ }
     },
   },
+  // ---- Conditional requests (RFC 7232) ----
+  {
+    name: "objects/conditional/get_ifmatch_failed",
+    fn: async (c) => {
+      const key = "cond-get-ifmatch-fail";
+      await c.send(
+        new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: "bar" }),
+      );
+      try {
+        await c.send(
+          new GetObjectCommand({
+            Bucket: BUCKET,
+            Key: key,
+            IfMatch: '"ABCORZ"',
+          }),
+        );
+        throw new Error("Expected 412 PreconditionFailed");
+      } catch (e) {
+        if (
+          !(e instanceof S3ServiceException) || e.name !== "PreconditionFailed"
+        ) {
+          throw new Error(
+            `Expected PreconditionFailed, got ${
+              (e as { name?: string }).name
+            }: ${(e as { message?: string }).message}`,
+          );
+        }
+      }
+    },
+    skipSnapshot: true,
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: "cond-get-ifmatch-fail",
+          }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
+  {
+    name: "objects/conditional/get_ifmatch_good",
+    fn: async (c) => {
+      const key = "cond-get-ifmatch-good";
+      await c.send(
+        new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: "bar" }),
+      );
+      const head = await c.send(
+        new HeadObjectCommand({ Bucket: BUCKET, Key: key }),
+      );
+      const res = await c.send(
+        new GetObjectCommand({ Bucket: BUCKET, Key: key, IfMatch: head.ETag }),
+      );
+      const body = await res.Body?.transformToString();
+      if (body !== "bar") {
+        throw new Error(`Expected body 'bar', got '${body}'`);
+      }
+    },
+    skipSnapshot: true,
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: "cond-get-ifmatch-good",
+          }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
+  {
+    name: "objects/conditional/get_ifnonematch_304",
+    fn: async (c) => {
+      const key = "cond-get-ifnonematch-304";
+      await c.send(
+        new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: "bar" }),
+      );
+      const head = await c.send(
+        new HeadObjectCommand({ Bucket: BUCKET, Key: key }),
+      );
+      try {
+        await c.send(
+          new GetObjectCommand({
+            Bucket: BUCKET,
+            Key: key,
+            IfNoneMatch: head.ETag,
+          }),
+        );
+        throw new Error("Expected 304 Not Modified");
+      } catch (e) {
+        const status = (e as { $metadata?: { httpStatusCode?: number } })
+          .$metadata
+          ?.httpStatusCode;
+        if (status !== 304) {
+          throw new Error(
+            `Expected 304, got ${status}: ${
+              (e as { message?: string }).message
+            }`,
+          );
+        }
+        const etagHeader =
+          (e as { $response?: { headers?: Record<string, string> } })
+            .$response?.headers?.etag;
+        if (etagHeader !== head.ETag) {
+          throw new Error(
+            `Expected ETag header ${head.ETag}, got ${etagHeader}`,
+          );
+        }
+      }
+    },
+    skipSnapshot: true,
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: "cond-get-ifnonematch-304",
+          }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
+  {
+    name: "objects/conditional/get_ifnonematch_good",
+    fn: async (c) => {
+      const key = "cond-get-ifnonematch-good";
+      await c.send(
+        new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: "bar" }),
+      );
+      const res = await c.send(
+        new GetObjectCommand({
+          Bucket: BUCKET,
+          Key: key,
+          IfNoneMatch: '"ABCORZ"',
+        }),
+      );
+      const body = await res.Body?.transformToString();
+      if (body !== "bar") {
+        throw new Error(`Expected body 'bar', got '${body}'`);
+      }
+    },
+    skipSnapshot: true,
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: "cond-get-ifnonematch-good",
+          }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
+  {
+    name: "objects/conditional/get_ifmodifiedsince_304",
+    fn: async (c) => {
+      const key = "cond-get-ifmodifiedsince-304";
+      await c.send(
+        new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: "bar" }),
+      );
+      try {
+        await c.send(
+          new GetObjectCommand({
+            Bucket: BUCKET,
+            Key: key,
+            IfModifiedSince: new Date("2100-01-01T00:00:00Z"),
+          }),
+        );
+        throw new Error("Expected 304 Not Modified");
+      } catch (e) {
+        const status = (e as { $metadata?: { httpStatusCode?: number } })
+          .$metadata
+          ?.httpStatusCode;
+        if (status !== 304) {
+          throw new Error(
+            `Expected 304, got ${status}: ${
+              (e as { message?: string }).message
+            }`,
+          );
+        }
+      }
+    },
+    skipSnapshot: true,
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: "cond-get-ifmodifiedsince-304",
+          }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
+  {
+    name: "objects/conditional/get_ifmodifiedsince_good",
+    fn: async (c) => {
+      const key = "cond-get-ifmodifiedsince-good";
+      await c.send(
+        new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: "bar" }),
+      );
+      const res = await c.send(
+        new GetObjectCommand({
+          Bucket: BUCKET,
+          Key: key,
+          IfModifiedSince: new Date("1994-10-29T19:43:31Z"),
+        }),
+      );
+      const body = await res.Body?.transformToString();
+      if (body !== "bar") {
+        throw new Error(`Expected body 'bar', got '${body}'`);
+      }
+    },
+    skipSnapshot: true,
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: "cond-get-ifmodifiedsince-good",
+          }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
+  {
+    name: "objects/conditional/get_ifunmodifiedsince_412",
+    fn: async (c) => {
+      const key = "cond-get-ifunmodifiedsince-412";
+      await c.send(
+        new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: "bar" }),
+      );
+      try {
+        await c.send(
+          new GetObjectCommand({
+            Bucket: BUCKET,
+            Key: key,
+            IfUnmodifiedSince: new Date("1994-10-29T19:43:31Z"),
+          }),
+        );
+        throw new Error("Expected 412 PreconditionFailed");
+      } catch (e) {
+        if (
+          !(e instanceof S3ServiceException) || e.name !== "PreconditionFailed"
+        ) {
+          throw new Error(
+            `Expected PreconditionFailed, got ${
+              (e as { name?: string }).name
+            }: ${(e as { message?: string }).message}`,
+          );
+        }
+      }
+    },
+    skipSnapshot: true,
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: "cond-get-ifunmodifiedsince-412",
+          }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
+  {
+    name: "objects/conditional/get_ifunmodifiedsince_good",
+    fn: async (c) => {
+      const key = "cond-get-ifunmodifiedsince-good";
+      await c.send(
+        new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: "bar" }),
+      );
+      const res = await c.send(
+        new GetObjectCommand({
+          Bucket: BUCKET,
+          Key: key,
+          IfUnmodifiedSince: new Date("2100-01-01T00:00:00Z"),
+        }),
+      );
+      const body = await res.Body?.transformToString();
+      if (body !== "bar") {
+        throw new Error(`Expected body 'bar', got '${body}'`);
+      }
+    },
+    skipSnapshot: true,
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: "cond-get-ifunmodifiedsince-good",
+          }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
+  {
+    name: "objects/conditional/put_ifmatch_failed",
+    fn: async (c) => {
+      const key = "cond-put-ifmatch-fail";
+      await c.send(
+        new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: "bar" }),
+      );
+      try {
+        await c.send(
+          new PutObjectCommand({
+            Bucket: BUCKET,
+            Key: key,
+            Body: "zar",
+            IfMatch: '"ABCORZ"',
+          }),
+        );
+        throw new Error("Expected 412 PreconditionFailed");
+      } catch (e) {
+        if (
+          !(e instanceof S3ServiceException) || e.name !== "PreconditionFailed"
+        ) {
+          throw new Error(
+            `Expected PreconditionFailed, got ${
+              (e as { name?: string }).name
+            }: ${(e as { message?: string }).message}`,
+          );
+        }
+      }
+      // Original content must be untouched.
+      const res = await c.send(
+        new GetObjectCommand({ Bucket: BUCKET, Key: key }),
+      );
+      const body = await res.Body?.transformToString();
+      if (body !== "bar") {
+        throw new Error(`Expected body 'bar' after failed PUT, got '${body}'`);
+      }
+    },
+    skipSnapshot: true,
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: "cond-put-ifmatch-fail",
+          }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
+  {
+    name: "objects/conditional/put_ifmatch_good",
+    fn: async (c) => {
+      const key = "cond-put-ifmatch-good";
+      await c.send(
+        new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: "bar" }),
+      );
+      const head = await c.send(
+        new HeadObjectCommand({ Bucket: BUCKET, Key: key }),
+      );
+      await c.send(
+        new PutObjectCommand({
+          Bucket: BUCKET,
+          Key: key,
+          Body: "zar",
+          IfMatch: head.ETag,
+        }),
+      );
+      const res = await c.send(
+        new GetObjectCommand({ Bucket: BUCKET, Key: key }),
+      );
+      const body = await res.Body?.transformToString();
+      if (body !== "zar") {
+        throw new Error(
+          `Expected body 'zar' after matching PUT, got '${body}'`,
+        );
+      }
+    },
+    skipSnapshot: true,
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: "cond-put-ifmatch-good",
+          }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
+  {
+    name: "objects/conditional/put_ifmatch_nonexistent",
+    fn: async (c) => {
+      const key = "cond-put-ifmatch-nonexistent";
+      try {
+        await c.send(
+          new PutObjectCommand({
+            Bucket: BUCKET,
+            Key: key,
+            Body: "bar",
+            IfMatch: "*",
+          }),
+        );
+        throw new Error("Expected 404 NoSuchKey");
+      } catch (e) {
+        if (!(e instanceof S3ServiceException) || e.name !== "NoSuchKey") {
+          throw new Error(
+            `Expected NoSuchKey, got ${(e as { name?: string }).name}: ${
+              (e as { message?: string }).message
+            }`,
+          );
+        }
+      }
+    },
+    skipSnapshot: true,
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: "cond-put-ifmatch-nonexistent",
+          }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
+  {
+    name: "objects/conditional/put_ifnonematch_failed",
+    fn: async (c) => {
+      const key = "cond-put-ifnonematch-fail";
+      await c.send(
+        new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: "bar" }),
+      );
+      const head = await c.send(
+        new HeadObjectCommand({ Bucket: BUCKET, Key: key }),
+      );
+      try {
+        await c.send(
+          new PutObjectCommand({
+            Bucket: BUCKET,
+            Key: key,
+            Body: "zar",
+            IfNoneMatch: head.ETag,
+          }),
+        );
+        throw new Error("Expected 412 PreconditionFailed");
+      } catch (e) {
+        if (
+          !(e instanceof S3ServiceException) || e.name !== "PreconditionFailed"
+        ) {
+          throw new Error(
+            `Expected PreconditionFailed, got ${
+              (e as { name?: string }).name
+            }: ${(e as { message?: string }).message}`,
+          );
+        }
+      }
+    },
+    skipSnapshot: true,
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: "cond-put-ifnonematch-fail",
+          }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
+  {
+    name: "objects/conditional/put_ifnonematch_good",
+    fn: async (c) => {
+      const key = "cond-put-ifnonematch-good";
+      await c.send(
+        new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: "bar" }),
+      );
+      await c.send(
+        new PutObjectCommand({
+          Bucket: BUCKET,
+          Key: key,
+          Body: "zar",
+          IfNoneMatch: '"ABCORZ"',
+        }),
+      );
+      const res = await c.send(
+        new GetObjectCommand({ Bucket: BUCKET, Key: key }),
+      );
+      const body = await res.Body?.transformToString();
+      if (body !== "zar") {
+        throw new Error(
+          `Expected body 'zar' after non-matching PUT, got '${body}'`,
+        );
+      }
+    },
+    skipSnapshot: true,
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: "cond-put-ifnonematch-good",
+          }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
+  {
+    name: "objects/conditional/put_ifnonematch_nonexistent_good",
+    fn: async (c) => {
+      const key = "cond-put-ifnonematch-nonexistent";
+      await c.send(
+        new PutObjectCommand({
+          Bucket: BUCKET,
+          Key: key,
+          Body: "bar",
+          IfNoneMatch: "*",
+        }),
+      );
+      const res = await c.send(
+        new GetObjectCommand({ Bucket: BUCKET, Key: key }),
+      );
+      const body = await res.Body?.transformToString();
+      if (body !== "bar") {
+        throw new Error(`Expected body 'bar', got '${body}'`);
+      }
+    },
+    skipSnapshot: true,
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: "cond-put-ifnonematch-nonexistent",
+          }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
+  {
+    name: "objects/conditional/delete_ifmatch_failed",
+    fn: async (c) => {
+      const key = "cond-delete-ifmatch-fail";
+      await c.send(
+        new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: "bar" }),
+      );
+      try {
+        await c.send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: key,
+            IfMatch: '"badetag"',
+          }),
+        );
+        throw new Error("Expected 412 PreconditionFailed");
+      } catch (e) {
+        if (
+          !(e instanceof S3ServiceException) || e.name !== "PreconditionFailed"
+        ) {
+          throw new Error(
+            `Expected PreconditionFailed, got ${
+              (e as { name?: string }).name
+            }: ${(e as { message?: string }).message}`,
+          );
+        }
+      }
+      // Object must still exist.
+      await c.send(new HeadObjectCommand({ Bucket: BUCKET, Key: key }));
+    },
+    skipSnapshot: true,
+    ignoreBaseline: true, // MinIO does not enforce If-Match on DeleteObject
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: "cond-delete-ifmatch-fail",
+          }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
+  {
+    name: "objects/conditional/delete_ifmatch_good",
+    fn: async (c) => {
+      const key = "cond-delete-ifmatch-good";
+      const etag = (await c.send(
+        new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: "bar" }),
+      )).ETag;
+      await c.send(
+        new DeleteObjectCommand({ Bucket: BUCKET, Key: key, IfMatch: etag }),
+      );
+      try {
+        await c.send(new HeadObjectCommand({ Bucket: BUCKET, Key: key }));
+        throw new Error("Expected object to be deleted");
+      } catch (e) {
+        if (!(e instanceof S3ServiceException) || e.name !== "NotFound") {
+          throw new Error(
+            `Expected NotFound after delete, got ${
+              (e as { name?: string }).name
+            }: ${(e as { message?: string }).message}`,
+          );
+        }
+      }
+    },
+    skipSnapshot: true,
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: "cond-delete-ifmatch-good",
+          }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
+  {
+    name: "objects/conditional/delete_ifmatch_nonexistent",
+    fn: async (c) => {
+      const key = "cond-delete-ifmatch-nonexistent";
+      // Deleting a non-existent object with If-Match is an idempotent 204.
+      await c.send(
+        new DeleteObjectCommand({ Bucket: BUCKET, Key: key, IfMatch: "*" }),
+      );
+      await c.send(
+        new DeleteObjectCommand({
+          Bucket: BUCKET,
+          Key: key,
+          IfMatch: '"badetag"',
+        }),
+      );
+    },
+    skipSnapshot: true,
+    ignoreBaseline: true, // MinIO does not enforce If-Match on DeleteObject
+  },
+  {
+    name: "objects/conditional/precedence_ifmatch_over_ifunmodified",
+    fn: async (c) => {
+      const key = "cond-precedence-1";
+      await c.send(
+        new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: "bar" }),
+      );
+      const head = await c.send(
+        new HeadObjectCommand({ Bucket: BUCKET, Key: key }),
+      );
+      const before = new Date((head.LastModified?.getTime() ?? 0) - 1000);
+      // If-Match true overrides a failing If-Unmodified-Since (RFC 7232 §6).
+      const res = await c.send(
+        new GetObjectCommand({
+          Bucket: BUCKET,
+          Key: key,
+          IfMatch: head.ETag,
+          IfUnmodifiedSince: before,
+        }),
+      );
+      const body = await res.Body?.transformToString();
+      if (body !== "bar") {
+        throw new Error(`Expected body 'bar', got '${body}'`);
+      }
+    },
+    skipSnapshot: true,
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({ Bucket: BUCKET, Key: "cond-precedence-1" }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
+  {
+    name: "objects/conditional/precedence_ifnonematch_over_ifmodified",
+    fn: async (c) => {
+      const key = "cond-precedence-2";
+      await c.send(
+        new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: "bar" }),
+      );
+      const head = await c.send(
+        new HeadObjectCommand({ Bucket: BUCKET, Key: key }),
+      );
+      // If-None-Match match wins over a failing If-Modified-Since (RFC 7232 §6).
+      try {
+        await c.send(
+          new GetObjectCommand({
+            Bucket: BUCKET,
+            Key: key,
+            IfNoneMatch: head.ETag,
+            IfModifiedSince: new Date("1994-10-29T19:43:31Z"),
+          }),
+        );
+        throw new Error("Expected 304 Not Modified");
+      } catch (e) {
+        const status = (e as { $metadata?: { httpStatusCode?: number } })
+          .$metadata
+          ?.httpStatusCode;
+        if (status !== 304) {
+          throw new Error(
+            `Expected 304, got ${status}: ${
+              (e as { message?: string }).message
+            }`,
+          );
+        }
+      }
+    },
+    skipSnapshot: true,
+    teardown: async (c) => {
+      try {
+        await c.send(
+          new DeleteObjectCommand({ Bucket: BUCKET, Key: "cond-precedence-2" }),
+        );
+      } catch { /* ignore */ }
+    },
+  },
 ];
 
 async function runObjectTest(tc: ObjectTestSpec, client: S3Client) {

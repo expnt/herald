@@ -554,3 +554,172 @@ export function verifyIncomingSigV4Detailed(
     return { valid: false, failure: "InvalidSignature" } as const;
   });
 }
+
+export type SigV2ValidationFailure =
+  | "MalformedAuthorization"
+  | "UnknownAccessKey"
+  | "MissingDate"
+  | "InvalidDate"
+  | "RequestTimeTooSkewed"
+  | "InvalidSignature";
+
+export type SigV2ValidationResult =
+  | { readonly valid: true }
+  | { readonly valid: false; readonly failure: SigV2ValidationFailure };
+
+/**
+ * Query-string arguments that participate in the AWS Signature V2
+ * canonical resource (mirrors botocore's HmacV1Auth.QSAOfInterest).
+ */
+const V2_QSA_OF_INTEREST = new Set([
+  "accelerate",
+  "acl",
+  "cors",
+  "defaultObjectAcl",
+  "location",
+  "logging",
+  "partNumber",
+  "policy",
+  "requestPayment",
+  "torrent",
+  "versioning",
+  "versionId",
+  "versions",
+  "website",
+  "uploads",
+  "uploadId",
+  "response-content-type",
+  "response-content-language",
+  "response-expires",
+  "response-cache-control",
+  "response-content-disposition",
+  "response-content-encoding",
+  "delete",
+  "lifecycle",
+  "tagging",
+  "restore",
+  "storageClass",
+  "notification",
+  "replication",
+  "analytics",
+  "metrics",
+  "inventory",
+  "select",
+  "select-type",
+  "object-lock",
+]);
+
+const buildV2CanonicalResource = (url: URL): string => {
+  let buf = url.pathname;
+  if (url.search) {
+    const qsa = url.search.slice(1).split("&")
+      .map((pair) => {
+        const eq = pair.indexOf("=");
+        const key = eq === -1 ? pair : pair.slice(0, eq);
+        const value = eq === -1 ? "" : pair.slice(eq + 1);
+        return {
+          key: decodeURIComponent(key),
+          value: decodeURIComponent(value),
+        };
+      })
+      .filter(({ key }) => V2_QSA_OF_INTEREST.has(key))
+      .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+      .map(({ key, value }) => `${key}=${value}`);
+    if (qsa.length > 0) {
+      buf += `?${qsa.join("&")}`;
+    }
+  }
+  return buf;
+};
+
+/**
+ * Builds the AWS Signature V2 (HmacV1) StringToSign exactly as botocore's
+ * HmacV1Auth does: METHOD, Content-MD5, Content-Type, Date, canonicalized
+ * x-amz-* headers, then the canonical resource.
+ */
+const buildV2StringToSign = (
+  method: string,
+  url: URL,
+  headers: Record<string, string>,
+): string => {
+  const contentMd5 = headers["content-md5"]?.trim() ?? "";
+  const contentType = headers["content-type"]?.trim() ?? "";
+  const date = headers["date"]?.trim() ?? "";
+  let cs = `${method.toUpperCase()}\n${contentMd5}\n${contentType}\n${date}\n`;
+  const customHeaders: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.startsWith("x-amz-")) {
+      customHeaders[key] = value.trim();
+    }
+  }
+  const sortedKeys = Object.keys(customHeaders).sort();
+  if (sortedKeys.length > 0) {
+    cs += sortedKeys.map((k) => `${k}:${customHeaders[k]}`).join("\n") + "\n";
+  }
+  cs += buildV2CanonicalResource(url);
+  return cs;
+};
+
+/**
+ * Verifies an AWS Signature V2 (HmacV1) request. Date is validated before the
+ * signature so that a bad x-amz-date surfaces as a date error rather than a
+ * signature mismatch (matching S3 behavior).
+ */
+export function verifyIncomingSigV2(
+  request: HttpServerRequest.HttpServerRequest,
+  credentials: AuthCredentials[],
+): SigV2ValidationResult {
+  const headers: Record<string, string> = {};
+  const rawHeaders = request.headers as Record<string, unknown>;
+  for (const [k, v] of Object.entries(rawHeaders)) {
+    if (typeof v === "string") {
+      headers[k.toLowerCase()] = v;
+    } else if (Array.isArray(v) && v.length > 0 && typeof v[0] === "string") {
+      headers[k.toLowerCase()] = v[0];
+    }
+  }
+
+  const rawAuthorization = headers["authorization"];
+  if (rawAuthorization === undefined) {
+    return { valid: false, failure: "MalformedAuthorization" } as const;
+  }
+  const match = rawAuthorization.match(/^AWS\s+([^:]+):(.+)$/);
+  if (!match) {
+    return { valid: false, failure: "MalformedAuthorization" } as const;
+  }
+  const accessKeyId = match[1];
+  const signature = match[2];
+
+  const cred = credentials.find((c) => c.accessKeyId === accessKeyId);
+  if (!cred) {
+    return { valid: false, failure: "UnknownAccessKey" } as const;
+  }
+
+  // Date validation: prefer x-amz-date, fall back to Date.
+  const dateRaw = headers["x-amz-date"] ?? headers["date"];
+  if (dateRaw === undefined || dateRaw.trim() === "") {
+    return { valid: false, failure: "MissingDate" } as const;
+  }
+  const signingDate = new Date(dateRaw);
+  if (isNaN(signingDate.getTime()) || signingDate.getTime() < 0) {
+    return { valid: false, failure: "InvalidDate" } as const;
+  }
+  const now = new Date();
+  const timeDiffMinutes = Math.abs(now.getTime() - signingDate.getTime()) /
+    (1000 * 60);
+  if (timeDiffMinutes > 15) {
+    return { valid: false, failure: "RequestTimeTooSkewed" } as const;
+  }
+
+  const host = headers["host"] || "localhost";
+  const protocol = request.url.startsWith("https") ? "https:" : "http:";
+  const url = new URL(request.url, `${protocol}//${host}`);
+  const stringToSign = buildV2StringToSign(request.method, url, headers);
+  const expected = createHmac("sha1", cred.secretAccessKey)
+    .update(stringToSign)
+    .digest("base64");
+  if (expected !== signature) {
+    return { valid: false, failure: "InvalidSignature" } as const;
+  }
+  return { valid: true } as const;
+}
