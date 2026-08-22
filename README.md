@@ -27,11 +27,11 @@ Herald is an S3 proxy that supports:
 ## Quick start
 
 Run Herald in Docker with env-only config (no YAML). Point it at an
-S3-compatible backend (e.g. [MinIO](https://min.io)) and use any S3 client
+S3-compatible backend (e.g. [RustFS](https://rustfs.com)) and use any S3 client
 against Herald.
 
 ```bash
-# Start Herald (default backend: S3 at host's MinIO). Port 3000.
+# Start Herald (default backend: S3 at the host's RustFS). Port 3000.
 docker run -p 3000:3000 \
   -e HERALD_DEFAULT_PROTOCOL=s3 \
   -e HERALD_DEFAULT_ENDPOINT=http://host.docker.internal:9000 \
@@ -69,7 +69,7 @@ auth:
 
 backends:
   # Unique identifier for the backend
-  minio_stg_aa:
+  rustfs_stg_aa:
     # Backend protocol: "s3" or "swift"
     protocol: s3
     # Default config values for backend

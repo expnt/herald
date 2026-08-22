@@ -1,13 +1,14 @@
 import {
   CreateBucketCommand,
   DeleteBucketCommand,
-  DeleteObjectCommand,
+  DeleteObjectsCommand,
   GetBucketVersioningCommand,
   HeadBucketCommand,
   ListBucketsCommand,
-  ListObjectsV2Command,
+  ListObjectVersionsCommand,
   PutBucketVersioningCommand,
 } from "@aws-sdk/client-s3";
+import { RESERVED_INTERNAL_PREFIXES } from "../../Services/InternalNamespace.ts";
 import { Effect } from "effect";
 import type {
   AccessControlPolicy,
@@ -82,37 +83,58 @@ export const makeBucketOps = ({
 
     deleteBucket: (name: string) =>
       Effect.gen(function* () {
-        // Remove persisted ACL state (hidden .hrld/acl/ objects) so the
-        // bucket can be deleted; MinIO rejects DeleteBucket on non-empty
-        // buckets.
-        let continuationToken: string | undefined;
-        while (true) {
-          const listResult = yield* Effect.tryPromise({
-            try: () =>
-              client.send(
-                new ListObjectsV2Command({
-                  Bucket: name,
-                  Prefix: ".hrld/acl/",
-                  ContinuationToken: continuationToken,
-                }),
-              ),
-            catch: (e) => mapS3Error(e, name),
-          });
-          for (const obj of listResult.Contents ?? []) {
-            if (obj.Key) {
+        // Purge Herald's internal state (reserved .hrld/** prefixes and
+        // legacy ones) before deleting the bucket. Backends reject
+        // DeleteBucket on non-empty buckets, and these hidden objects are
+        // filtered from client-facing listings, so clients can never clean
+        // them up themselves. ListObjectVersions is required: plain
+        // ListObjectsV2 cannot see versions or delete markers of internal
+        // keys (e.g. an ACL entry written under a delete-marked object),
+        // which would otherwise strand the bucket forever.
+        for (const prefix of RESERVED_INTERNAL_PREFIXES) {
+          let keyMarker: string | undefined = undefined;
+          let versionIdMarker: string | undefined = undefined;
+          while (true) {
+            const listResult = yield* Effect.tryPromise({
+              try: () =>
+                client.send(
+                  new ListObjectVersionsCommand({
+                    Bucket: name,
+                    Prefix: prefix,
+                    KeyMarker: keyMarker,
+                    VersionIdMarker: versionIdMarker,
+                  }),
+                ),
+              catch: (e) => mapS3Error(e, name),
+            });
+            const entries = [
+              ...(listResult.Versions ?? []).map((v) => ({
+                Key: v.Key!,
+                VersionId: v.VersionId,
+              })),
+              ...(listResult.DeleteMarkers ?? []).map((m) => ({
+                Key: m.Key!,
+                VersionId: m.VersionId,
+              })),
+            ];
+            if (entries.length > 0) {
               yield* Effect.tryPromise({
                 try: () =>
                   client.send(
-                    new DeleteObjectCommand({ Bucket: name, Key: obj.Key }),
+                    new DeleteObjectsCommand({
+                      Bucket: name,
+                      Delete: { Objects: entries, Quiet: true },
+                    }),
                   ),
                 catch: (e) => mapS3Error(e, name),
               }).pipe(Effect.ignore);
             }
+            if (!listResult.IsTruncated || !listResult.NextKeyMarker) {
+              break;
+            }
+            keyMarker = listResult.NextKeyMarker;
+            versionIdMarker = listResult.NextVersionIdMarker;
           }
-          if (!listResult.IsTruncated || !listResult.NextContinuationToken) {
-            break;
-          }
-          continuationToken = listResult.NextContinuationToken;
         }
 
         yield* Effect.tryPromise({

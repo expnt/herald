@@ -159,7 +159,7 @@ export const makeTestHarness = (
     );
 
     const proxyUrl = `http://localhost:${server.addr.port}`;
-    const minioUrl = "http://localhost:9000";
+    const backendUrl = "http://localhost:9000";
 
     const credentials = {
       accessKeyId: "minioadmin",
@@ -290,7 +290,7 @@ export const makeTestHarness = (
     });
 
     const client = new S3Client({
-      endpoint: minioUrl,
+      endpoint: backendUrl,
       region: "us-east-1",
       credentials,
       forcePathStyle: true,
@@ -311,7 +311,7 @@ export const makeTestHarness = (
 
     return {
       proxyUrl,
-      minioUrl,
+      backendUrl,
       client,
       proxyClient,
       getLastResponse: () => lastResponse,
@@ -385,7 +385,7 @@ function baselineRunner(tc: ProxyTestCase, t: Deno.TestContext) {
     }
 
     const resultEffect = Effect.gen(function* () {
-      const result = tc.fn(h.client, { baseUrl: h.minioUrl });
+      const result = tc.fn(h.client, { baseUrl: h.backendUrl });
       if (Effect.isEffect(result)) {
         yield* result;
       } else {

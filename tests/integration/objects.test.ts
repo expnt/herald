@@ -21,7 +21,7 @@ import type { GlobalConfig } from "../../src/Domain/Config.ts";
 
 const testConfig: GlobalConfig = {
   backends: {
-    minio: {
+    rustfs: {
       protocol: "s3",
       endpoint: "http://localhost:9000",
       region: "us-east-1",
