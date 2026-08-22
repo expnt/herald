@@ -13,11 +13,12 @@ export class NoSuchKey extends Data.TaggedError("NoSuchKey")<{
   readonly message: string;
 }> {}
 
-export class BucketAlreadyExists
-  extends Data.TaggedError("BucketAlreadyExists")<{
-    readonly bucket: string;
-    readonly message: string;
-  }> {}
+export class BucketAlreadyExists extends Data.TaggedError(
+  "BucketAlreadyExists",
+)<{
+  readonly bucket: string;
+  readonly message: string;
+}> {}
 
 export class BucketAlreadyOwnedByYou extends Data.TaggedError(
   "BucketAlreadyOwnedByYou",
@@ -72,6 +73,16 @@ export class BadDigest extends Data.TaggedError("BadDigest")<{
   readonly message: string;
 }> {}
 
+export class InvalidDigest extends Data.TaggedError("InvalidDigest")<{
+  readonly message: string;
+}> {}
+
+export class MissingContentLength extends Data.TaggedError(
+  "MissingContentLength",
+)<{
+  readonly message: string;
+}> {}
+
 export class InvalidBucketName extends Data.TaggedError("InvalidBucketName")<{
   readonly message: string;
 }> {}
@@ -80,16 +91,25 @@ export class InvalidArgument extends Data.TaggedError("InvalidArgument")<{
   readonly message: string;
 }> {}
 
-export class RequestTimeTooSkewed
-  extends Data.TaggedError("RequestTimeTooSkewed")<{
-    readonly message: string;
-  }> {}
+export class RequestTimeTooSkewed extends Data.TaggedError(
+  "RequestTimeTooSkewed",
+)<{
+  readonly message: string;
+}> {}
 
 export class MalformedXML extends Data.TaggedError("MalformedXML")<{
   readonly message: string;
 }> {}
 
 export class MethodNotAllowed extends Data.TaggedError("MethodNotAllowed")<{
+  readonly message: string;
+}> {}
+
+export class NotImplemented extends Data.TaggedError("NotImplemented")<{
+  readonly message: string;
+}> {}
+
+export class PreconditionFailed extends Data.TaggedError("PreconditionFailed")<{
   readonly message: string;
 }> {}
 
@@ -117,11 +137,15 @@ export type BackendError =
   | EntityTooSmall
   | InvalidRequest
   | BadDigest
+  | InvalidDigest
+  | MissingContentLength
   | InvalidBucketName
   | InvalidArgument
   | RequestTimeTooSkewed
   | MalformedXML
   | MethodNotAllowed
+  | NotImplemented
+  | PreconditionFailed
   | HttpClientError.HttpClientError
   | DeleteObjectsError;
 
@@ -133,6 +157,37 @@ export interface BucketInfo {
 export interface OwnerInfo {
   readonly id: string;
   readonly displayName: string;
+}
+
+export type CannedAcl =
+  | "private"
+  | "public-read"
+  | "public-read-write"
+  | "authenticated-read"
+  | "bucket-owner-read"
+  | "bucket-owner-full-control";
+
+export interface AclGrantee {
+  readonly type: "CanonicalUser" | "Group" | "AmazonCustomerByEmail";
+  readonly id?: string;
+  readonly displayName?: string;
+  readonly uri?: string;
+  readonly emailAddress?: string;
+}
+
+export interface AclGrant {
+  readonly grantee: AclGrantee;
+  readonly permission:
+    | "FULL_CONTROL"
+    | "WRITE"
+    | "WRITE_ACP"
+    | "READ"
+    | "READ_ACP";
+}
+
+export interface AccessControlPolicy {
+  readonly owner: OwnerInfo;
+  readonly grants: readonly AclGrant[];
 }
 
 export interface ListBucketsResult {
@@ -312,6 +367,29 @@ export class Backend extends Context.Tag("Backend")<
     ) => Effect.Effect<void, BackendError>;
     deleteBucket: (name: string) => Effect.Effect<void, BackendError>;
     headBucket: (name: string) => Effect.Effect<void, BackendError>;
+
+    putBucketVersioning: (
+      name: string,
+      status: "Enabled" | "Suspended",
+    ) => Effect.Effect<void, BackendError>;
+    getBucketVersioning: (
+      name: string,
+    ) => Effect.Effect<{ status?: "Enabled" | "Suspended" }, BackendError>;
+
+    getBucketAcl: (
+      name: string,
+    ) => Effect.Effect<AccessControlPolicy, BackendError>;
+    putBucketAcl: (
+      name: string,
+      acl: AccessControlPolicy | CannedAcl,
+    ) => Effect.Effect<void, BackendError>;
+    getObjectAcl: (
+      key: string,
+    ) => Effect.Effect<AccessControlPolicy, BackendError>;
+    putObjectAcl: (
+      key: string,
+      acl: AccessControlPolicy | CannedAcl,
+    ) => Effect.Effect<void, BackendError>;
 
     listObjects: (args: {
       prefix?: string;

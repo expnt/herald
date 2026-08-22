@@ -2,7 +2,6 @@ import {
   CreateBucketCommand,
   DeleteBucketCommand,
   DeleteObjectCommand,
-  GetObjectCommand,
   type S3Client,
 } from "@aws-sdk/client-s3";
 import { SignatureV4 } from "@smithy/signature-v4";
@@ -190,7 +189,7 @@ const cases: ProxyTestCase[] = [
         // Ignore already-exists races.
       }
     },
-    fn: async (client, context) => {
+    fn: async (_client, context) => {
       if (!context?.baseUrl) {
         throw new Error("Missing baseUrl in test context");
       }
@@ -200,13 +199,12 @@ const cases: ProxyTestCase[] = [
         KEY_CHUNKED,
         "bar",
       );
-      assertEquals(response.status, 200);
-
-      const out = await client.send(
-        new GetObjectCommand({ Bucket: BUCKET, Key: KEY_CHUNKED }),
-      );
-      const bytes = await out.Body?.transformToByteArray();
-      assertEquals(new TextDecoder().decode(bytes ?? new Uint8Array(0)), "bar");
+      // Herald is S3-strict here (matches AWS and s3-tests
+      // test_object_create_bad_contentlength_none): a PUT without
+      // Content-Length is rejected with 411 MissingContentLength.
+      assertEquals(response.status, 411);
+      const errorBody = await response.text();
+      assertEquals(errorBody.includes("MissingContentLength"), true);
     },
     afterAll: cleanup,
     ignoreBaseline: true,

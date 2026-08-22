@@ -1,10 +1,22 @@
 import { HttpServerRequest, HttpServerResponse } from "@effect/platform";
 import { Effect } from "effect";
-import { Backend, InvalidRequest } from "../../Services/Backend.ts";
+import {
+  Backend,
+  InvalidRequest,
+  NoSuchBucket,
+  NoSuchKey,
+  PreconditionFailed,
+} from "../../Services/Backend.ts";
 import { ensureClientReadableKey } from "../../Services/InternalNamespace.ts";
 import { S3Xml } from "../../Services/S3Xml.ts";
 import { RequestContext, S3RequestParser } from "../Utils.ts";
 import { listParts } from "../Multipart/Get.ts";
+import {
+  evaluatePreconditions,
+  hasConditionalHeaders,
+  parseConditionalHeaders,
+  stripConditionalHeaders,
+} from "./Conditional.ts";
 
 /**
  * Handler for GetObjectAttributes (GET /:bucket/*?attributes)
@@ -70,7 +82,50 @@ export const getObject = Effect.gen(function* () {
     return yield* listParts;
   }
 
-  const result = yield* backend.getObject(key, request.headers);
+  // RFC 7232 conditional requests: evaluate against the current
+  // representation before streaming the body. headObject is cheap (no body)
+  // and both backends expose ETag/Last-Modified through it.
+  const conditions = parseConditionalHeaders(request.headers);
+  if (hasConditionalHeaders(conditions)) {
+    const head = yield* backend.headObject(key, request.headers).pipe(
+      Effect.catchIf(
+        (e) => e instanceof NoSuchKey || e instanceof NoSuchBucket,
+        () => Effect.succeed(undefined),
+      ),
+    );
+    if (head !== undefined) {
+      const outcome = evaluatePreconditions({
+        conditions,
+        etag: head.etag,
+        lastModified: head.lastModified,
+        method: "GET",
+      });
+      if (outcome.kind === "notModified") {
+        const headers: Record<string, string> = {};
+        if (head.etag) headers["ETag"] = head.etag;
+        if (head.lastModified) {
+          headers["Last-Modified"] = head.lastModified.toUTCString();
+        }
+        return HttpServerResponse.empty({ status: 304, headers });
+      }
+      if (outcome.kind === "preconditionFailed") {
+        const s3Xml = yield* S3Xml;
+        return s3Xml.formatError(
+          new PreconditionFailed({
+            message:
+              "At least one of the pre-conditions you specified did not hold",
+          }),
+        );
+      }
+    }
+    // Object missing: fall through to getObject so it produces the normal
+    // 404 NoSuchKey response.
+  }
+
+  const result = yield* backend.getObject(
+    key,
+    stripConditionalHeaders(request.headers),
+  );
   const status = (request.headers["range"] || request.headers["Range"])
     ? 206
     : 200;

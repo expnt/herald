@@ -25,11 +25,21 @@ import { headObject } from "./Objects/Head.ts";
 import { createBucket } from "./Buckets/Create.ts";
 import { deleteBucket } from "./Buckets/Delete.ts";
 import { headBucket } from "./Buckets/Head.ts";
+import {
+  getBucketVersioning,
+  putBucketVersioning,
+} from "./Buckets/Versioning.ts";
+import { getBucketAcl, putBucketAcl } from "./Buckets/Acl.ts";
+import { getObjectAcl, putObjectAcl } from "./Objects/Acl.ts";
+import { notImplementedSubresource } from "./Buckets/Subresources.ts";
 import { HttpHeraldApi } from "../Api.ts";
 import { BadGateway } from "./Api.ts";
 import * as HttpServerRequest from "@effect/platform/HttpServerRequest";
 import { HeraldConfig } from "../Config/Layer.ts";
-import { verifyIncomingSigV4Detailed } from "../Services/Auth.ts";
+import {
+  verifyIncomingSigV2,
+  verifyIncomingSigV4Detailed,
+} from "../Services/Auth.ts";
 import type { SigV4VerifiedContext } from "../Services/Auth.ts";
 
 /**
@@ -82,24 +92,25 @@ function isPostObjectMultipartRequest(
   const contentTypeValue = Array.isArray(contentType)
     ? contentType[0]
     : contentType;
-  return typeof contentTypeValue === "string" &&
-    contentTypeValue.toLowerCase().startsWith("multipart/form-data");
+  return (
+    typeof contentTypeValue === "string" &&
+    contentTypeValue.toLowerCase().startsWith("multipart/form-data")
+  );
 }
 
 function isLegacyAwsAuthorizationRequest(
   request: HttpServerRequest.HttpServerRequest,
 ): boolean {
   const authorization = request.headers["authorization"];
-  return typeof authorization === "string" &&
-    authorization.startsWith("AWS ");
+  return typeof authorization === "string" && authorization.startsWith("AWS ");
 }
 
 function getHeaderValue(
   headers: Record<string, string | string[] | undefined>,
   name: string,
 ): string | undefined {
-  const entry = Object.entries(headers).find(([key]) =>
-    key.toLowerCase() === name.toLowerCase()
+  const entry = Object.entries(headers).find(
+    ([key]) => key.toLowerCase() === name.toLowerCase(),
   );
   if (!entry) {
     return undefined;
@@ -116,12 +127,13 @@ function logRequestFailureAndReturn(
   method: string,
 ): Effect.Effect<HttpServerResponse.HttpServerResponse, never> {
   const status = response.status ?? 500;
-  const errorType =
-    err != null && typeof err === "object" && "constructor" in err &&
+  const errorType = err != null &&
+      typeof err === "object" &&
+      "constructor" in err &&
       typeof (err as { constructor: { name?: string } }).constructor?.name ===
         "string"
-      ? (err as { constructor: { name: string } }).constructor.name
-      : "Unknown";
+    ? (err as { constructor: { name: string } }).constructor.name
+    : "Unknown";
   const message = err instanceof Error ? err.message : String(err);
   const annotations: Record<string, string | number> = {
     status,
@@ -131,13 +143,17 @@ function logRequestFailureAndReturn(
     method,
   };
   if (
-    err != null && typeof err === "object" && "key" in err &&
+    err != null &&
+    typeof err === "object" &&
+    "key" in err &&
     typeof (err as { key: unknown }).key === "string"
   ) {
     annotations.key = (err as { key: string }).key;
   }
   if (
-    err != null && typeof err === "object" && "uploadId" in err &&
+    err != null &&
+    typeof err === "object" &&
+    "uploadId" in err &&
     typeof (err as { uploadId: unknown }).uploadId === "string"
   ) {
     annotations.uploadId = (err as { uploadId: string }).uploadId;
@@ -228,8 +244,7 @@ export const makeS3Router = (prefix = "") =>
             contentLength: getHeaderValue(request.headers, "content-length"),
             contentType: getHeaderValue(request.headers, "content-type"),
             hasAuthorization:
-              getHeaderValue(request.headers, "authorization") !==
-                undefined,
+              getHeaderValue(request.headers, "authorization") !== undefined,
           });
 
           if (bucket !== "") {
@@ -237,80 +252,97 @@ export const makeS3Router = (prefix = "") =>
             const skipSigV4Auth = isPostObjectMultipartRequest(request);
             if (Option.isSome(authCredentials) && !skipSigV4Auth) {
               if (isLegacyAwsAuthorizationRequest(request)) {
-                return yield* Effect.fail(
-                  new InvalidArgument({
-                    message:
-                      "The authorization mechanism you have provided is not supported. Please use AWS4-HMAC-SHA256.",
-                  }),
+                const v2Result = verifyIncomingSigV2(
+                  request,
+                  authCredentials.value,
                 );
-              }
-              if (!hasSigV4Credentials(request)) {
-                return yield* Effect.fail(
-                  new AccessDenied({ message: "Access Denied" }),
-                );
-              }
+                if (!v2Result.valid) {
+                  if (v2Result.failure === "MalformedAuthorization") {
+                    return yield* Effect.fail(
+                      new InvalidArgument({
+                        message: "Authorization header is malformed",
+                      }),
+                    );
+                  }
+                  if (v2Result.failure === "RequestTimeTooSkewed") {
+                    return yield* Effect.fail(
+                      new RequestTimeTooSkewed({
+                        message:
+                          "The difference between the request time and the current time is too large.",
+                      }),
+                    );
+                  }
+                  return yield* Effect.fail(
+                    new AccessDenied({ message: "Access Denied" }),
+                  );
+                }
+              } else {
+                if (!hasSigV4Credentials(request)) {
+                  return yield* Effect.fail(
+                    new AccessDenied({ message: "Access Denied" }),
+                  );
+                }
 
-              const resolvedBucket = config.lookupBucket(bucket);
-              if (Option.isNone(resolvedBucket)) {
-                return yield* Effect.fail(
-                  new AccessDenied({ message: "Access Denied" }),
-                );
-              }
-              const bucketRegion = resolvedBucket.value.region;
-              if (
-                bucketRegion === undefined || bucketRegion.trim() === ""
-              ) {
-                return yield* Effect.fail(
-                  new AccessDenied({ message: "Access Denied" }),
-                );
-              }
+                const resolvedBucket = config.lookupBucket(bucket);
+                if (Option.isNone(resolvedBucket)) {
+                  return yield* Effect.fail(
+                    new AccessDenied({ message: "Access Denied" }),
+                  );
+                }
+                const bucketRegion = resolvedBucket.value.region;
+                if (bucketRegion === undefined || bucketRegion.trim() === "") {
+                  return yield* Effect.fail(
+                    new AccessDenied({ message: "Access Denied" }),
+                  );
+                }
 
-              const validation = yield* verifyIncomingSigV4Detailed(
-                request,
-                authCredentials.value,
-                bucketRegion,
-              );
-              if (!validation.valid) {
-                if (
-                  validation.failure === "MalformedAuthorization" ||
-                  validation.failure === "InvalidExpires"
-                ) {
-                  return yield* Effect.fail(
-                    new InvalidArgument({
-                      message: "Authorization header is malformed",
-                    }),
-                  );
-                }
-                if (validation.failure === "RequestTimeTooSkewed") {
-                  return yield* Effect.fail(
-                    new RequestTimeTooSkewed({
-                      message:
-                        "The difference between the request time and the current time is too large.",
-                    }),
-                  );
-                }
-                if (
-                  validation.failure === "ExpiredPresign" ||
-                  validation.failure === "PresignNotYetValid" ||
-                  validation.failure === "PresignExpiresTooLong"
-                ) {
-                  return yield* Effect.fail(
-                    new AccessDenied({ message: "Request has expired" }),
-                  );
-                }
-                if (validation.failure === "UnknownAccessKey") {
-                  return yield* Effect.fail(
-                    new InvalidAccessKeyId({
-                      message:
-                        "The AWS Access Key Id you provided does not exist in our records.",
-                    }),
-                  );
-                }
-                return yield* Effect.fail(
-                  new AccessDenied({ message: "Access Denied" }),
+                const validation = yield* verifyIncomingSigV4Detailed(
+                  request,
+                  authCredentials.value,
+                  bucketRegion,
                 );
+                if (!validation.valid) {
+                  if (
+                    validation.failure === "MalformedAuthorization" ||
+                    validation.failure === "InvalidExpires"
+                  ) {
+                    return yield* Effect.fail(
+                      new InvalidArgument({
+                        message: "Authorization header is malformed",
+                      }),
+                    );
+                  }
+                  if (validation.failure === "RequestTimeTooSkewed") {
+                    return yield* Effect.fail(
+                      new RequestTimeTooSkewed({
+                        message:
+                          "The difference between the request time and the current time is too large.",
+                      }),
+                    );
+                  }
+                  if (
+                    validation.failure === "ExpiredPresign" ||
+                    validation.failure === "PresignNotYetValid" ||
+                    validation.failure === "PresignExpiresTooLong"
+                  ) {
+                    return yield* Effect.fail(
+                      new AccessDenied({ message: "Request has expired" }),
+                    );
+                  }
+                  if (validation.failure === "UnknownAccessKey") {
+                    return yield* Effect.fail(
+                      new InvalidAccessKeyId({
+                        message:
+                          "The AWS Access Key Id you provided does not exist in our records.",
+                      }),
+                    );
+                  }
+                  return yield* Effect.fail(
+                    new AccessDenied({ message: "Access Denied" }),
+                  );
+                }
+                sigV4Context = validation.context;
               }
-              sigV4Context = validation.context;
             }
           }
 
@@ -332,89 +364,148 @@ export const makeS3Router = (prefix = "") =>
         );
       });
 
-    const router = HttpRouter.empty
-      .pipe(
-        HttpRouter.get(
-          "/health",
-          HttpServerResponse.json({ status: "ok" }),
+    const router = HttpRouter.empty.pipe(
+      HttpRouter.get("/health", HttpServerResponse.json({ status: "ok" })),
+      // List Buckets (GET /)
+      HttpRouter.get(
+        "/",
+        Effect.gen(function* () {
+          const backendInstance = yield* resolver.getLayerForBucket("");
+          const backendLayer = Layer.succeed(Backend, backendInstance);
+          const result = yield* Effect.gen(function* () {
+            const backend = yield* Backend;
+            return yield* backend.listBuckets();
+          }).pipe(Effect.provide(backendLayer));
+          return s3Xml.formatListBuckets(result.buckets, result.owner);
+        }).pipe(
+          Effect.catchAll((err: unknown) => {
+            const response = s3Xml.formatError(err);
+            return logRequestFailureAndReturn(err, response, "", "GET");
+          }),
         ),
-        // List Buckets (GET /)
-        HttpRouter.get(
-          "/",
-          Effect.gen(function* () {
-            const backendInstance = yield* resolver.getLayerForBucket("");
-            const backendLayer = Layer.succeed(Backend, backendInstance);
-            const result = yield* Effect.gen(function* () {
-              const backend = yield* Backend;
-              return yield* backend.listBuckets();
-            }).pipe(Effect.provide(backendLayer));
-            return s3Xml.formatListBuckets(result.buckets, result.owner);
-          }).pipe(
-            Effect.catchAll((err: unknown) => {
-              const response = s3Xml.formatError(err);
-              return logRequestFailureAndReturn(err, response, "", "GET");
+      ),
+      // Bucket/Object operations
+      HttpRouter.all(
+        "/:bucket",
+        Effect.gen(function* () {
+          const request = yield* HttpServerRequest.HttpServerRequest;
+          const method = request.method ?? "UNKNOWN";
+          // Bucket subresource dispatch: S3 routes subresource operations by
+          // query parameter (e.g. ?versioning, ?acl, ?tagging). Without this,
+          // every subresource request fell through to createBucket/deleteBucket
+          // and produced spurious BucketAlreadyOwnedByYou errors.
+          const url = request.url.startsWith("http")
+            ? new URL(request.url)
+            : new URL(request.url, "http://localhost");
+          const subresource = url.searchParams.keys().next().value;
+          if (subresource !== undefined) {
+            switch (subresource) {
+              case "versioning":
+                if (method === "GET") {
+                  return yield* frontHandler(getBucketVersioning);
+                }
+                if (method === "PUT") {
+                  return yield* frontHandler(putBucketVersioning);
+                }
+                break;
+              case "acl":
+                if (method === "PUT") {
+                  return yield* frontHandler(putBucketAcl);
+                }
+                if (method === "GET") {
+                  return yield* frontHandler(getBucketAcl);
+                }
+                break;
+              case "tagging":
+              case "policy":
+              case "cors":
+              case "lifecycle":
+              case "website":
+              case "logging":
+              case "replication":
+              case "notification":
+              case "inventory":
+              case "metrics":
+              case "intelligent-tiering":
+              case "ownershipControls":
+              case "publicAccessBlock":
+              case "object-lock":
+                return yield* frontHandler(
+                  notImplementedSubresource(subresource),
+                );
+              default:
+                break;
+            }
+          }
+          if (method === "GET") {
+            return yield* frontHandler(listObjects);
+          }
+          if (method === "PUT") {
+            return yield* frontHandler(createBucket);
+          }
+          if (method === "DELETE") {
+            return yield* frontHandler(deleteBucket);
+          }
+          if (method === "HEAD") {
+            return yield* frontHandler(headBucket);
+          }
+          if (method === "POST") {
+            return yield* frontHandler(postObject);
+          }
+          return yield* Effect.fail(
+            new MethodNotAllowed({
+              message: `Method ${method} not implemented for bucket operations`,
             }),
-          ),
-        ),
-        // Bucket/Object operations
-        HttpRouter.all(
-          "/:bucket",
-          Effect.gen(function* () {
-            const request = yield* HttpServerRequest.HttpServerRequest;
-            if (request.method === "GET") {
-              return yield* frontHandler(listObjects);
-            }
+          );
+        }),
+      ),
+      HttpRouter.all(
+        "/:bucket/*",
+        Effect.gen(function* () {
+          const request = yield* HttpServerRequest.HttpServerRequest;
+          // Object subresource dispatch: S3 routes object subresource
+          // operations by query parameter (e.g. ?acl).
+          const url = request.url.startsWith("http")
+            ? new URL(request.url)
+            : new URL(request.url, "http://localhost");
+          const subresource = url.searchParams.keys().next().value;
+          if (subresource === "acl") {
             if (request.method === "PUT") {
-              return yield* frontHandler(createBucket);
+              return yield* frontHandler(putObjectAcl);
             }
-            if (request.method === "DELETE") {
-              return yield* frontHandler(deleteBucket);
+            if (request.method === "GET") {
+              return yield* frontHandler(getObjectAcl);
             }
-            if (request.method === "HEAD") {
-              return yield* frontHandler(headBucket);
-            }
-            if (request.method === "POST") {
-              return yield* frontHandler(postObject);
-            }
-            return yield* Effect.fail(
-              new MethodNotAllowed({
-                message:
-                  `Method ${request.method} not implemented for bucket operations`,
-              }),
-            );
-          }),
-        ),
-        HttpRouter.all(
-          "/:bucket/*",
-          Effect.gen(function* () {
-            const request = yield* HttpServerRequest.HttpServerRequest;
-            if (request.method === "GET") return yield* frontHandler(getObject);
-            if (request.method === "PUT") return yield* frontHandler(putObject);
-            if (request.method === "POST") {
-              return yield* frontHandler(postObject);
-            }
-            if (request.method === "DELETE") {
-              return yield* frontHandler(deleteObject);
-            }
-            if (request.method === "HEAD") {
-              return yield* frontHandler(headObject);
-            }
-            return yield* Effect.fail(
-              new MethodNotAllowed({
-                message: `Method ${request.method} not implemented`,
-              }),
-            );
-          }),
-        ),
-      );
+          }
+          if (request.method === "GET") return yield* frontHandler(getObject);
+          if (request.method === "PUT") return yield* frontHandler(putObject);
+          if (request.method === "POST") {
+            return yield* frontHandler(postObject);
+          }
+          if (request.method === "DELETE") {
+            return yield* frontHandler(deleteObject);
+          }
+          if (request.method === "HEAD") {
+            return yield* frontHandler(headObject);
+          }
+          return yield* Effect.fail(
+            new MethodNotAllowed({
+              message: `Method ${request.method} not implemented`,
+            }),
+          );
+        }),
+      ),
+    );
 
     return prefix
-      ? HttpRouter.empty.pipe(HttpRouter.mount(
-        prefix.startsWith("/")
-          ? prefix as `/${string}`
-          : `/${prefix}` as `/${string}`,
-        router,
-      ))
+      ? HttpRouter.empty.pipe(
+        HttpRouter.mount(
+          prefix.startsWith("/")
+            ? (prefix as `/${string}`)
+            : (`/${prefix}` as `/${string}`),
+          router,
+        ),
+      )
       : router;
   });
 
@@ -422,9 +513,9 @@ export const HttpS3Live = Layer.unwrapEffect(
   Effect.gen(function* () {
     const router = yield* makeS3Router();
     return HttpApiBuilder.group(HttpHeraldApi, "s3", (handlers) => {
-      const handler = (
-        req: { readonly request: HttpServerRequest.HttpServerRequest },
-      ) =>
+      const handler = (req: {
+        readonly request: HttpServerRequest.HttpServerRequest;
+      }) =>
         router.pipe(
           Effect.provideService(
             HttpServerRequest.HttpServerRequest,
@@ -436,12 +527,13 @@ export const HttpS3Live = Layer.unwrapEffect(
             const url = request.url.startsWith("http")
               ? new URL(request.url).pathname
               : request.url.split("?")[0];
-            const errorType =
-              err != null && typeof err === "object" && "constructor" in err &&
-                typeof (err as { constructor: { name?: string } })
-                    .constructor?.name === "string"
-                ? (err as { constructor: { name: string } }).constructor.name
-                : "Unknown";
+            const errorType = err != null &&
+                typeof err === "object" &&
+                "constructor" in err &&
+                typeof (err as { constructor: { name?: string } }).constructor
+                    ?.name === "string"
+              ? (err as { constructor: { name: string } }).constructor.name
+              : "Unknown";
             const message = err instanceof Error ? err.message : String(err);
             return Effect.gen(function* () {
               yield* Effect.logError("Request failed", {
@@ -461,7 +553,8 @@ export const HttpS3Live = Layer.unwrapEffect(
           BadGateway,
           never
         >;
-      return handlers.handleRaw("postRoot", handler)
+      return handlers
+        .handleRaw("postRoot", handler)
         .handleRaw("listBuckets", handler)
         .handleRaw("listObjects", handler)
         .handleRaw("createBucket", handler)

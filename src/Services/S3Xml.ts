@@ -1,5 +1,6 @@
 import { HttpServerResponse } from "@effect/platform";
 import { Context, Effect, Layer } from "effect";
+import type { AccessControlPolicy, AclGrant, AclGrantee } from "./Backend.ts";
 import {
   AccessDenied,
   BadDigest,
@@ -16,6 +17,7 @@ import {
   InvalidAccessKeyId,
   InvalidArgument,
   InvalidBucketName,
+  InvalidDigest,
   InvalidPart,
   InvalidPartOrder,
   InvalidRequest,
@@ -24,12 +26,15 @@ import {
   type ListPartsResult,
   MalformedXML,
   MethodNotAllowed,
+  MissingContentLength,
   type MultipartUploadResult,
   NoSuchBucket,
   NoSuchKey,
   NoSuchUpload,
+  NotImplemented,
   type ObjectAttributes,
   type OwnerInfo,
+  PreconditionFailed,
   RequestTimeTooSkewed,
 } from "./Backend.ts";
 
@@ -80,16 +85,112 @@ export class S3Xml extends Context.Tag("S3Xml")<
       etag: string;
       lastModified: Date;
     }) => HttpServerResponse.HttpServerResponse;
+    formatVersioning: (args: {
+      status?: "Enabled" | "Suspended";
+    }) => HttpServerResponse.HttpServerResponse;
+    formatAccessControlPolicy: (
+      policy: AccessControlPolicy,
+    ) => HttpServerResponse.HttpServerResponse;
+    parseAccessControlPolicy: (
+      body: string,
+    ) => Effect.Effect<AccessControlPolicy, MalformedXML>;
   }
 >() {}
 
 export const makeS3Xml = Effect.sync(() => {
   const encode = (s: string) =>
-    s.replace(/&/g, "&amp;")
+    s
+      .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&apos;");
+
+  const decodeEntities = (s: string) =>
+    s.replace(
+      /&(?:#x([0-9a-fA-F]+)|#([0-9]+)|(amp|lt|gt|quot|apos));/g,
+      (
+        _m,
+        hex: string | undefined,
+        dec: string | undefined,
+        named: string | undefined,
+      ) => {
+        if (hex !== undefined) return String.fromCodePoint(parseInt(hex, 16));
+        if (dec !== undefined) return String.fromCodePoint(parseInt(dec, 10));
+        switch (named) {
+          case "amp":
+            return "&";
+          case "lt":
+            return "<";
+          case "gt":
+            return ">";
+          case "quot":
+            return '"';
+          case "apos":
+            return "'";
+          default:
+            return _m;
+        }
+      },
+    );
+
+  const extractText = (xml: string, tagName: string): string | undefined => {
+    const regex = new RegExp(`<${tagName}>(.*?)<\/${tagName}>`, "s");
+    const match = xml.match(regex);
+    return match ? decodeEntities(match[1]) : undefined;
+  };
+
+  const extractElements = (xml: string, tagName: string): string[] => {
+    const regex = new RegExp(`<${tagName}>(.*?)<\/${tagName}>`, "gs");
+    return Array.from(xml.matchAll(regex)).map((m) => m[1]);
+  };
+
+  const parseGranteeType = (granteeXml: string): AclGrantee["type"] => {
+    const typeMatch = granteeXml.match(/xsi:type="([^"]+)"/);
+    const type = typeMatch ? typeMatch[1] : undefined;
+    if (type === "Group") return "Group";
+    if (type === "AmazonCustomerByEmail") return "AmazonCustomerByEmail";
+    return "CanonicalUser";
+  };
+
+  const parseGrant = (grantXml: string): AclGrant => {
+    const granteeXml = extractElements(grantXml, "Grantee")[0] ?? "";
+    const permission = extractText(grantXml, "Permission") ?? "READ";
+    const grantee: AclGrantee = {
+      type: parseGranteeType(granteeXml),
+      id: extractText(granteeXml, "ID"),
+      displayName: extractText(granteeXml, "DisplayName"),
+      uri: extractText(granteeXml, "URI"),
+      emailAddress: extractText(granteeXml, "EmailAddress"),
+    };
+    return { grantee, permission: permission as AclGrant["permission"] };
+  };
+
+  const parseAccessControlPolicyBody = (
+    body: string,
+  ): Effect.Effect<AccessControlPolicy, MalformedXML> =>
+    Effect.gen(function* () {
+      const ownerXml = extractElements(body, "Owner")[0] ?? "";
+      const ownerId = extractText(ownerXml, "ID");
+      const ownerDisplayName = extractText(ownerXml, "DisplayName");
+      if (ownerId === undefined) {
+        return yield* Effect.fail(
+          new MalformedXML({
+            message:
+              "The XML you provided was not well-formed or did not validate against our published schema.",
+          }),
+        );
+      }
+      const aclXml = extractElements(body, "AccessControlList")[0] ?? "";
+      const grants = extractElements(aclXml, "Grant").map(parseGrant);
+      return {
+        owner: {
+          id: ownerId,
+          displayName: ownerDisplayName ?? ownerId,
+        },
+        grants,
+      } satisfies AccessControlPolicy;
+    });
 
   return S3Xml.of({
     formatError: (err: unknown, isHead = false) => {
@@ -158,6 +259,14 @@ export const makeS3Xml = Effect.sync(() => {
         code = "BadDigest";
         message = err.message;
         status = 400;
+      } else if (err instanceof InvalidDigest) {
+        code = "InvalidDigest";
+        message = err.message;
+        status = 400;
+      } else if (err instanceof MissingContentLength) {
+        code = "MissingContentLength";
+        message = err.message;
+        status = 411;
       } else if (err instanceof InvalidBucketName) {
         code = "InvalidBucketName";
         message = err.message;
@@ -178,6 +287,14 @@ export const makeS3Xml = Effect.sync(() => {
         code = "MethodNotAllowed";
         message = err.message;
         status = 405;
+      } else if (err instanceof NotImplemented) {
+        code = "NotImplemented";
+        message = err.message;
+        status = 501;
+      } else if (err instanceof PreconditionFailed) {
+        code = "PreconditionFailed";
+        message = err.message;
+        status = 412;
       } else if (err instanceof DeleteObjectsError) {
         // Multi-object delete errors are returned in the body, but the response status is 200
         // Wait, S3 documentation says 200 OK even if some deletes fail.
@@ -202,9 +319,12 @@ export const makeS3Xml = Effect.sync(() => {
     },
 
     formatListBuckets: (buckets: readonly BucketInfo[], owner: OwnerInfo) => {
-      const bucketsXml = buckets.map((b) =>
-        `<Bucket><Name>${b.name}</Name><CreationDate>${b.creationDate.toISOString()}</CreationDate></Bucket>`
-      ).join("");
+      const bucketsXml = buckets
+        .map(
+          (b) =>
+            `<Bucket><Name>${b.name}</Name><CreationDate>${b.creationDate.toISOString()}</CreationDate></Bucket>`,
+        )
+        .join("");
 
       const xml =
         `<?xml version="1.0" encoding="UTF-8"?><ListAllMyBucketsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Owner><ID>${owner.id}</ID><DisplayName>${owner.displayName}</DisplayName></Owner><Buckets>${bucketsXml}</Buckets></ListAllMyBucketsResult>`;
@@ -218,50 +338,78 @@ export const makeS3Xml = Effect.sync(() => {
     },
 
     formatListObjects: (result: ListObjectsResult) => {
-      const contentsXml = result.contents.map((c) =>
-        `<Contents><Key>${
-          encode(c.key)
-        }</Key><LastModified>${c.lastModified.toISOString()}</LastModified><ETag>${c.etag}</ETag><Size>${c.size}</Size><StorageClass>${
-          c.storageClass || "STANDARD"
-        }</StorageClass>${
-          c.owner
-            ? `<Owner><ID>${c.owner.id}</ID><DisplayName>${c.owner.displayName}</DisplayName></Owner>`
-            : ""
-        }</Contents>`
-      ).join("");
+      const contentsXml = result.contents
+        .map(
+          (c) =>
+            `<Contents><Key>${
+              encode(
+                c.key,
+              )
+            }</Key><LastModified>${c.lastModified.toISOString()}</LastModified><ETag>${c.etag}</ETag><Size>${c.size}</Size><StorageClass>${
+              c.storageClass || "STANDARD"
+            }</StorageClass>${
+              c.owner
+                ? `<Owner><ID>${c.owner.id}</ID><DisplayName>${c.owner.displayName}</DisplayName></Owner>`
+                : ""
+            }</Contents>`,
+        )
+        .join("");
 
-      const commonPrefixesXml = result.commonPrefixes.map((cp) =>
-        `<CommonPrefixes><Prefix>${encode(cp.prefix)}</Prefix></CommonPrefixes>`
-      ).join("");
+      const commonPrefixesXml = result.commonPrefixes
+        .map(
+          (cp) =>
+            `<CommonPrefixes><Prefix>${
+              encode(cp.prefix)
+            }</Prefix></CommonPrefixes>`,
+        )
+        .join("");
 
       const isV2 = result.listType === 2;
 
       const xml = isV2
         ? `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>${result.name}</Name><Prefix>${
-          encode(result.prefix ?? "")
-        }</Prefix><KeyCount>${
+          encode(
+            result.prefix ?? "",
+          )
+        }</Prefix>${
+          result.delimiter !== undefined
+            ? `<Delimiter>${encode(result.delimiter)}</Delimiter>`
+            : ""
+        }<KeyCount>${
           result.keyCount ?? 0
         }</KeyCount><MaxKeys>${result.maxKeys}</MaxKeys><IsTruncated>${result.isTruncated}</IsTruncated>${
-          result.continuationToken
+          result.continuationToken !== undefined
             ? `<ContinuationToken>${
-              encode(result.continuationToken)
+              encode(
+                result.continuationToken,
+              )
             }</ContinuationToken>`
             : ""
         }${
           result.nextContinuationToken
             ? `<NextContinuationToken>${
-              encode(result.nextContinuationToken)
+              encode(
+                result.nextContinuationToken,
+              )
             }</NextContinuationToken>`
             : ""
         }${
-          result.startAfter
+          result.startAfter !== undefined
             ? `<StartAfter>${encode(result.startAfter)}</StartAfter>`
             : ""
         }${contentsXml}${commonPrefixesXml}</ListBucketResult>`
         : `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>${result.name}</Name><Prefix>${
-          encode(result.prefix ?? "")
-        }</Prefix><Marker>${
-          encode(result.marker ?? "")
+          encode(
+            result.prefix ?? "",
+          )
+        }</Prefix>${
+          result.delimiter !== undefined
+            ? `<Delimiter>${encode(result.delimiter)}</Delimiter>`
+            : ""
+        }<Marker>${
+          encode(
+            result.marker ?? "",
+          )
         }</Marker><MaxKeys>${result.maxKeys}</MaxKeys><IsTruncated>${result.isTruncated}</IsTruncated>${
           result.nextMarker
             ? `<NextMarker>${encode(result.nextMarker)}</NextMarker>`
@@ -277,32 +425,49 @@ export const makeS3Xml = Effect.sync(() => {
     },
 
     formatListVersions: (result: ListObjectsResult) => {
-      const versionsXml = result.contents.map((c) => {
-        const tag = c.isDeleteMarker ? "DeleteMarker" : "Version";
-        return `<${tag}><Key>${encode(c.key)}</Key><VersionId>${
-          c.versionId || "null"
-        }</VersionId><IsLatest>${
-          c.isLatest || false
-        }</IsLatest><LastModified>${c.lastModified.toISOString()}</LastModified><ETag>${c.etag}</ETag><Size>${c.size}</Size><StorageClass>${
-          c.storageClass || "STANDARD"
-        }</StorageClass>${
-          c.owner
-            ? `<Owner><ID>${c.owner.id}</ID><DisplayName>${c.owner.displayName}</DisplayName></Owner>`
-            : ""
-        }</${tag}>`;
-      }).join("");
+      const versionsXml = result.contents
+        .map((c) => {
+          const tag = c.isDeleteMarker ? "DeleteMarker" : "Version";
+          return `<${tag}><Key>${encode(c.key)}</Key><VersionId>${
+            c.versionId || "null"
+          }</VersionId><IsLatest>${
+            c.isLatest || false
+          }</IsLatest><LastModified>${c.lastModified.toISOString()}</LastModified><ETag>${c.etag}</ETag><Size>${c.size}</Size><StorageClass>${
+            c.storageClass || "STANDARD"
+          }</StorageClass>${
+            c.owner
+              ? `<Owner><ID>${c.owner.id}</ID><DisplayName>${c.owner.displayName}</DisplayName></Owner>`
+              : ""
+          }</${tag}>`;
+        })
+        .join("");
 
-      const commonPrefixesXml = result.commonPrefixes.map((cp) =>
-        `<CommonPrefixes><Prefix>${encode(cp.prefix)}</Prefix></CommonPrefixes>`
-      ).join("");
+      const commonPrefixesXml = result.commonPrefixes
+        .map(
+          (cp) =>
+            `<CommonPrefixes><Prefix>${
+              encode(cp.prefix)
+            }</Prefix></CommonPrefixes>`,
+        )
+        .join("");
 
       const xml =
         `<?xml version="1.0" encoding="UTF-8"?><ListVersionsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>${result.name}</Name><Prefix>${
-          encode(result.prefix ?? "")
-        }</Prefix><KeyMarker>${
-          encode(result.marker ?? "")
+          encode(
+            result.prefix ?? "",
+          )
+        }</Prefix>${
+          result.delimiter !== undefined
+            ? `<Delimiter>${encode(result.delimiter)}</Delimiter>`
+            : ""
+        }<KeyMarker>${
+          encode(
+            result.marker ?? "",
+          )
         }</KeyMarker><VersionIdMarker>${
-          encode(result.continuationToken ?? "")
+          encode(
+            result.continuationToken ?? "",
+          )
         }</VersionIdMarker><MaxKeys>${result.maxKeys}</MaxKeys><IsTruncated>${result.isTruncated}</IsTruncated>${
           result.nextMarker
             ? `<NextKeyMarker>${encode(result.nextMarker)}</NextKeyMarker>`
@@ -310,7 +475,9 @@ export const makeS3Xml = Effect.sync(() => {
         }${
           result.nextContinuationToken
             ? `<NextVersionIdMarker>${
-              encode(result.nextContinuationToken)
+              encode(
+                result.nextContinuationToken,
+              )
             }</NextVersionIdMarker>`
             : ""
         }${versionsXml}${commonPrefixesXml}</ListVersionsResult>`;
@@ -324,17 +491,22 @@ export const makeS3Xml = Effect.sync(() => {
     },
 
     formatListParts: (result: ListPartsResult) => {
-      const partsXml = result.parts.map((p) =>
-        `<Part><PartNumber>${p.partNumber}</PartNumber>${
-          p.lastModified !== undefined
-            ? `<LastModified>${p.lastModified.toISOString()}</LastModified>`
-            : ""
-        }<ETag>${p.etag}</ETag><Size>${p.size}</Size></Part>`
-      ).join("");
+      const partsXml = result.parts
+        .map(
+          (p) =>
+            `<Part><PartNumber>${p.partNumber}</PartNumber>${
+              p.lastModified !== undefined
+                ? `<LastModified>${p.lastModified.toISOString()}</LastModified>`
+                : ""
+            }<ETag>${p.etag}</ETag><Size>${p.size}</Size></Part>`,
+        )
+        .join("");
 
       const xml =
         `<?xml version="1.0" encoding="UTF-8"?><ListPartsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Bucket>${result.bucket}</Bucket><Key>${
-          encode(result.key)
+          encode(
+            result.key,
+          )
         }</Key><UploadId>${result.uploadId}</UploadId><Initiator><ID>${result.initiator.id}</ID><DisplayName>${result.initiator.displayName}</DisplayName></Initiator><Owner><ID>${result.owner.id}</ID><DisplayName>${result.owner.displayName}</DisplayName></Owner><StorageClass>${result.storageClass}</StorageClass><PartNumberMarker>${result.partNumberMarker}</PartNumberMarker><NextPartNumberMarker>${result.nextPartNumberMarker}</NextPartNumberMarker><MaxParts>${result.maxParts}</MaxParts><IsTruncated>${result.isTruncated}</IsTruncated>${partsXml}</ListPartsResult>`;
 
       return HttpServerResponse.text(xml, {
@@ -345,28 +517,44 @@ export const makeS3Xml = Effect.sync(() => {
       });
     },
 
-    formatListMultipartUploads: (
-      result: ListMultipartUploadsResult,
-    ) => {
-      const uploadsXml = result.uploads.map((u) =>
-        `<Upload><Key>${
-          encode(u.key)
-        }</Key><UploadId>${u.uploadId}</UploadId><Initiator><ID>${u.initiator.id}</ID><DisplayName>${u.initiator.displayName}</DisplayName></Initiator><Owner><ID>${u.owner.id}</ID><DisplayName>${u.owner.displayName}</DisplayName></Owner><StorageClass>${u.storageClass}</StorageClass><Initiated>${u.initiated.toISOString()}</Initiated></Upload>`
-      ).join("");
+    formatListMultipartUploads: (result: ListMultipartUploadsResult) => {
+      const uploadsXml = result.uploads
+        .map(
+          (u) =>
+            `<Upload><Key>${
+              encode(
+                u.key,
+              )
+            }</Key><UploadId>${u.uploadId}</UploadId><Initiator><ID>${u.initiator.id}</ID><DisplayName>${u.initiator.displayName}</DisplayName></Initiator><Owner><ID>${u.owner.id}</ID><DisplayName>${u.owner.displayName}</DisplayName></Owner><StorageClass>${u.storageClass}</StorageClass><Initiated>${u.initiated.toISOString()}</Initiated></Upload>`,
+        )
+        .join("");
 
-      const commonPrefixesXml = result.commonPrefixes.map((cp) =>
-        `<CommonPrefixes><Prefix>${encode(cp.prefix)}</Prefix></CommonPrefixes>`
-      ).join("");
+      const commonPrefixesXml = result.commonPrefixes
+        .map(
+          (cp) =>
+            `<CommonPrefixes><Prefix>${
+              encode(cp.prefix)
+            }</Prefix></CommonPrefixes>`,
+        )
+        .join("");
 
       const xml =
         `<?xml version="1.0" encoding="UTF-8"?><ListMultipartUploadsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Bucket>${result.bucket}</Bucket><KeyMarker>${
-          encode(result.keyMarker ?? "")
+          encode(
+            result.keyMarker ?? "",
+          )
         }</KeyMarker><UploadIdMarker>${
-          encode(result.uploadIdMarker ?? "")
+          encode(
+            result.uploadIdMarker ?? "",
+          )
         }</UploadIdMarker><NextKeyMarker>${
-          encode(result.nextKeyMarker ?? "")
+          encode(
+            result.nextKeyMarker ?? "",
+          )
         }</NextKeyMarker><NextUploadIdMarker>${
-          encode(result.nextUploadIdMarker ?? "")
+          encode(
+            result.nextUploadIdMarker ?? "",
+          )
         }</NextUploadIdMarker><MaxUploads>${result.maxUploads}</MaxUploads><IsTruncated>${result.isTruncated}</IsTruncated>${uploadsXml}${commonPrefixesXml}</ListMultipartUploadsResult>`;
 
       return HttpServerResponse.text(xml, {
@@ -389,7 +577,9 @@ export const makeS3Xml = Effect.sync(() => {
         : "";
       const xml =
         `<?xml version="1.0" encoding="UTF-8"?><InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Bucket>${bucket}</Bucket><Key>${
-          encode(key)
+          encode(
+            key,
+          )
         }</Key><UploadId>${result.uploadId}</UploadId>${checksumAlgorithmXml}${checksumTypeXml}</InitiateMultipartUploadResult>`;
 
       return HttpServerResponse.text(xml, {
@@ -408,9 +598,7 @@ export const makeS3Xml = Effect.sync(() => {
         },
       });
     },
-    formatCompleteMultipartUpload: (
-      result: CompleteMultipartUploadResult,
-    ) => {
+    formatCompleteMultipartUpload: (result: CompleteMultipartUploadResult) => {
       const checksumAlgorithmXml = result.checksumAlgorithm
         ? `<ChecksumAlgorithm>${result.checksumAlgorithm.toUpperCase()}</ChecksumAlgorithm>`
         : "";
@@ -435,7 +623,9 @@ export const makeS3Xml = Effect.sync(() => {
 
       const xml =
         `<?xml version="1.0" encoding="UTF-8"?><CompleteMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Location>${result.location}</Location><Bucket>${result.bucket}</Bucket><Key>${
-          encode(result.key)
+          encode(
+            result.key,
+          )
         }</Key><ETag>${result.etag}</ETag>${checksumAlgorithmXml}${checksumTypeXml}${checksumCRC32Xml}${checksumCRC32CXml}${checksumCRC64NVMEXml}${checksumSHA1Xml}${checksumSHA256Xml}</CompleteMultipartUploadResult>`;
 
       return HttpServerResponse.text(xml, {
@@ -446,14 +636,19 @@ export const makeS3Xml = Effect.sync(() => {
       });
     },
     formatDeleteObjects: (result: DeleteObjectsResult) => {
-      const deletedXml = result.deleted.map((k) =>
-        `<Deleted><Key>${encode(k)}</Key></Deleted>`
-      ).join("");
-      const errorsXml = result.errors.map((e) =>
-        `<Error><Key>${encode(e.key)}</Key><Code>${e.code}</Code><Message>${
-          encode(e.message)
-        }</Message></Error>`
-      ).join("");
+      const deletedXml = result.deleted
+        .map((k) => `<Deleted><Key>${encode(k)}</Key></Deleted>`)
+        .join("");
+      const errorsXml = result.errors
+        .map(
+          (e) =>
+            `<Error><Key>${encode(e.key)}</Key><Code>${e.code}</Code><Message>${
+              encode(
+                e.message,
+              )
+            }</Message></Error>`,
+        )
+        .join("");
 
       const xml =
         `<?xml version="1.0" encoding="UTF-8"?><DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">${deletedXml}${errorsXml}</DeleteResult>`;
@@ -468,9 +663,13 @@ export const makeS3Xml = Effect.sync(() => {
     formatPostResponse: (args) => {
       const xml =
         `<?xml version="1.0" encoding="UTF-8"?><PostResponse xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Location>${
-          encode(args.location)
+          encode(
+            args.location,
+          )
         }</Location><Bucket>${encode(args.bucket)}</Bucket><Key>${
-          encode(args.key)
+          encode(
+            args.key,
+          )
         }</Key><ETag>${encode(args.etag)}</ETag></PostResponse>`;
       return HttpServerResponse.text(xml, {
         status: 201,
@@ -484,7 +683,9 @@ export const makeS3Xml = Effect.sync(() => {
     formatCopyObjectResult: (args) => {
       const xml =
         `<?xml version="1.0" encoding="UTF-8"?><CopyObjectResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><ETag>${
-          encode(args.etag)
+          encode(
+            args.etag,
+          )
         }</ETag><LastModified>${args.lastModified.toISOString()}</LastModified></CopyObjectResult>`;
       return HttpServerResponse.text(xml, {
         status: 200,
@@ -494,6 +695,65 @@ export const makeS3Xml = Effect.sync(() => {
         },
       });
     },
+
+    formatVersioning: (args) => {
+      const statusXml = args.status ? `<Status>${args.status}</Status>` : "";
+      const xml =
+        `<?xml version="1.0" encoding="UTF-8"?><VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">${statusXml}</VersioningConfiguration>`;
+      return HttpServerResponse.text(xml, {
+        headers: {
+          "Content-Type": "application/xml",
+          "Content-Length": String(new TextEncoder().encode(xml).length),
+        },
+      });
+    },
+
+    formatAccessControlPolicy: (policy) => {
+      const ownerXml = `<Owner><ID>${
+        encode(policy.owner.id)
+      }</ID><DisplayName>${
+        encode(policy.owner.displayName)
+      }</DisplayName></Owner>`;
+      const grantsXml = policy.grants
+        .map((grant) => {
+          const g = grant.grantee;
+          let granteeXml: string;
+          if (g.type === "Group") {
+            granteeXml =
+              `<Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="Group">${
+                g.uri ? `<URI>${encode(g.uri)}</URI>` : ""
+              }</Grantee>`;
+          } else if (g.type === "AmazonCustomerByEmail") {
+            granteeXml =
+              `<Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="AmazonCustomerByEmail">${
+                g.emailAddress
+                  ? `<EmailAddress>${encode(g.emailAddress)}</EmailAddress>`
+                  : ""
+              }</Grantee>`;
+          } else {
+            granteeXml =
+              `<Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="CanonicalUser">${
+                g.id ? `<ID>${encode(g.id)}</ID>` : ""
+              }${
+                g.displayName
+                  ? `<DisplayName>${encode(g.displayName)}</DisplayName>`
+                  : ""
+              }</Grantee>`;
+          }
+          return `<Grant>${granteeXml}<Permission>${grant.permission}</Permission></Grant>`;
+        })
+        .join("");
+      const xml =
+        `<?xml version="1.0" encoding="UTF-8"?><AccessControlPolicy xmlns="http://s3.amazonaws.com/doc/2006-03-01/">${ownerXml}<AccessControlList>${grantsXml}</AccessControlList></AccessControlPolicy>`;
+      return HttpServerResponse.text(xml, {
+        headers: {
+          "Content-Type": "application/xml",
+          "Content-Length": String(new TextEncoder().encode(xml).length),
+        },
+      });
+    },
+
+    parseAccessControlPolicy: (body) => parseAccessControlPolicyBody(body),
 
     formatObjectAttributes: (result: ObjectAttributes) => {
       const checksumXml = result.checksum
@@ -546,29 +806,32 @@ export const makeS3Xml = Effect.sync(() => {
             ? `<IsTruncated>${result.objectParts.isTruncated}</IsTruncated>`
             : ""
         }${
-          (result.objectParts.parts ?? []).map((p) =>
-            `<Part><PartNumber>${p.partNumber}</PartNumber><Size>${p.size}</Size>${
-              p.checksumCRC32 !== undefined
-                ? `<ChecksumCRC32>${p.checksumCRC32}</ChecksumCRC32>`
-                : ""
-            }${
-              p.checksumCRC32C !== undefined
-                ? `<ChecksumCRC32C>${p.checksumCRC32C}</ChecksumCRC32C>`
-                : ""
-            }${
-              p.checksumSHA1 !== undefined
-                ? `<ChecksumSHA1>${p.checksumSHA1}</ChecksumSHA1>`
-                : ""
-            }${
-              p.checksumSHA256 !== undefined
-                ? `<ChecksumSHA256>${p.checksumSHA256}</ChecksumSHA256>`
-                : ""
-            }${
-              p.checksumCRC64NVME !== undefined
-                ? `<ChecksumCRC64NVME>${p.checksumCRC64NVME}</ChecksumCRC64NVME>`
-                : ""
-            }</Part>`
-          ).join("")
+          (result.objectParts.parts ?? [])
+            .map(
+              (p) =>
+                `<Part><PartNumber>${p.partNumber}</PartNumber><Size>${p.size}</Size>${
+                  p.checksumCRC32 !== undefined
+                    ? `<ChecksumCRC32>${p.checksumCRC32}</ChecksumCRC32>`
+                    : ""
+                }${
+                  p.checksumCRC32C !== undefined
+                    ? `<ChecksumCRC32C>${p.checksumCRC32C}</ChecksumCRC32C>`
+                    : ""
+                }${
+                  p.checksumSHA1 !== undefined
+                    ? `<ChecksumSHA1>${p.checksumSHA1}</ChecksumSHA1>`
+                    : ""
+                }${
+                  p.checksumSHA256 !== undefined
+                    ? `<ChecksumSHA256>${p.checksumSHA256}</ChecksumSHA256>`
+                    : ""
+                }${
+                  p.checksumCRC64NVME !== undefined
+                    ? `<ChecksumCRC64NVME>${p.checksumCRC64NVME}</ChecksumCRC64NVME>`
+                    : ""
+                }</Part>`,
+            )
+            .join("")
         }</ObjectParts>`
         : "";
 
