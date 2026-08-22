@@ -4,13 +4,13 @@
  *
  * This script runs the Ceph S3 compatibility test suite (s3-tests) against
  * a local Herald proxy instance. It handles:
- *  - Starting the Herald proxy with a specified backend (minio or swift)
+ *  - Starting the Herald proxy with a specified backend (rustfs or swift)
  *  - Configuring s3-tests to point to the proxy
  *  - Running pytest with real-time output streaming
  *  - Parsing JUnit XML for a final summary
  *
  * Usage:
- *   ./x/s3-tests.ts [pytest-args] [--backend <minio|swift>] [--no-abort]
+ *   ./x/s3-tests.ts [pytest-args] [--backend <rustfs|swift>] [--no-abort]
  *
  * Environment Variables:
  *   S3TEST_TAGS: Custom pytest marks (default: not buckets and ...)
@@ -20,7 +20,7 @@
  *
  * Files:
  *   s3-tests/s3tests.conf: Generated s3-tests configuration
- *   s3-tests/herald-proxy.log: Herald proxy logs (minio backend)
+ *   s3-tests/herald-proxy.log: Herald proxy logs (rustfs backend)
  *   s3-tests/herald-proxy-swift.log: Herald proxy logs (swift backend)
  *   s3-tests/s3-tests.log: Full pytest output
  */
@@ -46,10 +46,10 @@ const DEFAULT_TAGS =
 
 // To run only copy tests: S3TEST_TAGS=copy ./x/s3-tests.ts  or  ./x/s3-tests.ts -- -m copy
 
-function getMinioConfig(): GlobalConfig {
+function getRustfsConfig(): GlobalConfig {
   return {
     backends: {
-      minio: {
+      rustfs: {
         protocol: "s3",
         endpoint: "http://localhost:9000",
         region: "us-east-1",
@@ -133,7 +133,7 @@ const program = Effect.gen(function* () {
   const noAbort = rawArgs.includes("--no-abort") ||
     Deno.env.get("S3TEST_NO_ABORT") === "true";
 
-  let backend = "minio";
+  let backend = "rustfs";
   const backendIdx = rawArgs.indexOf("--backend");
   if (backendIdx !== -1) {
     backend = rawArgs[backendIdx + 1];
@@ -166,7 +166,7 @@ const program = Effect.gen(function* () {
     s3AccessKey = "minioadmin";
     s3SecretKey = "minioadmin";
   } else {
-    activeConfig = getMinioConfig();
+    activeConfig = getRustfsConfig();
   }
 
   console.log("Creating file logger for proxy...");
@@ -367,12 +367,12 @@ email = iam_alt_root@example.com
       "--tb=short",
     ];
 
-    // Backend-specific junit file so parallel minio/swift runs (as in CI)
+    // Backend-specific junit file so parallel rustfs/swift runs (as in CI)
     // do not overwrite each other's results, mirroring the per-backend
     // s3-tests.log / herald-proxy.log naming.
     const junitXmlName = backend === "swift"
       ? "junit-swift.xml"
-      : "junit-minio.xml";
+      : "junit-rustfs.xml";
     const junitXmlPath = path.join(s3TestsDir, junitXmlName);
     cmdArgs.push(`--junit-xml=${junitXmlName}`);
 

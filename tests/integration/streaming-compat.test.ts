@@ -2,6 +2,7 @@ import {
   CreateBucketCommand,
   DeleteBucketCommand,
   DeleteObjectCommand,
+  GetObjectCommand,
   type S3Client,
 } from "@aws-sdk/client-s3";
 import { SignatureV4 } from "@smithy/signature-v4";
@@ -12,7 +13,7 @@ import { createHash } from "node-crypto";
 
 const testConfig: GlobalConfig = {
   backends: {
-    minio: {
+    rustfs: {
       protocol: "s3",
       endpoint: "http://localhost:9000",
       region: "us-east-1",
@@ -97,7 +98,7 @@ const signedStreamPutWithoutContentLength = async (
     method: "PUT",
     headers: requestHeaders,
     body: stream,
-    // @ts-ignore required by fetch implementations for streaming request body
+    // @ts-expect-error required by fetch implementations for streaming request body
     duplex: "half",
   });
 };
@@ -144,7 +145,7 @@ const signedPutWithHeaders = async (
     method: "PUT",
     headers: requestHeaders,
     body: bodyBytes,
-    // @ts-ignore duplex is required for non-GET body in Deno fetch with streams/body bytes
+    // @ts-expect-error duplex is required for non-GET body in Deno fetch with streams/body bytes
     duplex: "half",
   });
 };
@@ -199,12 +200,19 @@ const cases: ProxyTestCase[] = [
         KEY_CHUNKED,
         "bar",
       );
-      // Herald is S3-strict here (matches AWS and s3-tests
-      // test_object_create_bad_contentlength_none): a PUT without
-      // Content-Length is rejected with 411 MissingContentLength.
-      assertEquals(response.status, 411);
-      const errorBody = await response.text();
-      assertEquals(errorBody.includes("MissingContentLength"), true);
+      // Streamed body without Content-Length: undici sends
+      // Transfer-Encoding: chunked, which Herald accepts (matching real S3
+      // legacy behavior and s3-tests
+      // test_object_write_with_chunked_transfer_encoding). A PUT with NO
+      // Content-Length and NO chunked TE is rejected 411 MissingContentLength
+      // (s3-tests test_object_create_bad_contentlength_none).
+      assertEquals(response.status, 200);
+
+      const out = await _client.send(
+        new GetObjectCommand({ Bucket: BUCKET, Key: KEY_CHUNKED }),
+      );
+      const bytes = await out.Body?.transformToByteArray();
+      assertEquals(new TextDecoder().decode(bytes ?? new Uint8Array(0)), "bar");
     },
     afterAll: cleanup,
     ignoreBaseline: true,

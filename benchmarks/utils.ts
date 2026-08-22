@@ -93,7 +93,7 @@ export const getSwiftConfig = () =>
 
 export interface BenchHarness {
   proxyUrl: string;
-  minioUrl: string;
+  backendUrl: string;
   directClient: S3Client;
   proxyClient: S3Client;
   // Raw swift target for direct comparisons
@@ -155,14 +155,14 @@ export const makeBenchHarness = (
     );
 
     const proxyUrl = `http://localhost:${server.addr.port}`;
-    const minioUrl = "http://localhost:9000";
+    const backendUrl = "http://localhost:9000";
     const credentials = {
       accessKeyId: "minioadmin",
       secretAccessKey: "minioadmin",
     };
 
     const directClient = new S3Client({
-      endpoint: minioUrl,
+      endpoint: backendUrl,
       region: "us-east-1",
       credentials,
       forcePathStyle: true,
@@ -201,7 +201,7 @@ export const makeBenchHarness = (
 
     return {
       proxyUrl,
-      minioUrl,
+      backendUrl,
       directClient,
       proxyClient,
       swiftTarget,
@@ -234,7 +234,7 @@ export const makeBenchHarness = (
   );
 
 // Global state for harnesses to avoid iterative restarts
-let minioHarness: BenchHarness | null = null;
+let backendHarness: BenchHarness | null = null;
 let swiftHarness: BenchHarness | null = null;
 let globalScope: Scope.Scope | null = null;
 
@@ -246,7 +246,7 @@ async function ensureHarnesses(bc: BenchmarkCase) {
 
   globalScope = Effect.runSync(Scope.make());
 
-  minioHarness = await Effect.runPromise(
+  backendHarness = await Effect.runPromise(
     makeBenchHarness(bc.config).pipe(
       Effect.provideService(Scope.Scope, globalScope),
     ),
@@ -267,15 +267,15 @@ export function benchmarkHarness(cases: BenchmarkCase[]) {
     const s3Group = `${operationName} (S3)`;
     const swiftGroup = `${operationName} (Swift)`;
 
-    // 1. Baseline (Direct Minio)
+    // 1. Baseline (Direct RustFS)
     Deno.bench({
-      name: `Minio-Direct`,
+      name: `RustFS-Direct`,
       group: s3Group,
       ignore: bc.ignore,
       only: bc.only,
       fn: async (b) => {
         await ensureHarnesses(bc);
-        const client = minioHarness!.directClient;
+        const client = backendHarness!.directClient;
 
         try {
           if (bc.setup) await bc.setup(client);
@@ -291,7 +291,7 @@ export function benchmarkHarness(cases: BenchmarkCase[]) {
       },
     });
 
-    // 2. Proxy (Herald + Minio)
+    // 2. Proxy (Herald + RustFS)
     Deno.bench({
       name: `Herald-Proxy`,
       baseline: true,
@@ -300,7 +300,7 @@ export function benchmarkHarness(cases: BenchmarkCase[]) {
       only: bc.only,
       fn: async (b) => {
         await ensureHarnesses(bc);
-        const client = minioHarness!.proxyClient;
+        const client = backendHarness!.proxyClient;
 
         try {
           if (bc.setup) await bc.setup(client);

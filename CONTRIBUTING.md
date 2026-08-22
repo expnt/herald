@@ -21,7 +21,7 @@ local development, copy `.env.example` to `.env` and set variables (e.g.
 You can start the containers used for development using the provided scripts:
 
 ```bash
-# Start MinIO and SAIO
+# Start RustFS and SAIO
 deno run -A x/compose-up.ts s3 swift
 ```
 
@@ -76,7 +76,7 @@ deno bench --allow-all benchmarks/
 
 - `tests/`: Test suite.
   - `tests/integration/`: End-to-end tests comparing Herald proxy behavior
-    against a MinIO baseline using snapshots.
+    against a direct-backend (RustFS) baseline using snapshots.
   - `tests/config.test.ts`: Unit tests for configuration and backend resolution.
   - `tests/utils.ts`: Shared test harness and snapshot normalization logic.
 

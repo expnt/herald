@@ -1,7 +1,7 @@
 /**
  * S3 PostObject (POST multipart/form-data with policy + signature) integration
- * tests. Uses the same TDD harness as buckets/objects: Baseline (direct MinIO),
- * Proxy (Herald in front of MinIO), and Swift (Herald in front of Swift).
+ * tests. Uses the same TDD harness as buckets/objects: Baseline (direct RustFS),
+ * Proxy (Herald in front of RustFS), and Swift (Herald in front of Swift).
  *
  * Run: deno test tests/integration/postobject.test.ts --allow-env --allow-net --allow-sys
  */
@@ -30,7 +30,7 @@ const BUCKET = "test-postobject-bucket";
 
 const testConfig: GlobalConfig = {
   backends: {
-    minio: {
+    rustfs: {
       protocol: "s3",
       endpoint: "http://localhost:9000",
       region: "us-east-1",

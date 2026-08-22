@@ -11,7 +11,7 @@ import { HttpClientRequest } from "@effect/platform";
 
 const benchConfig: GlobalConfig = {
   backends: {
-    minio: {
+    rustfs: {
       protocol: "s3",
       endpoint: "http://localhost:9000",
       region: "us-east-1",

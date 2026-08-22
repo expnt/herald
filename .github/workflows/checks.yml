@@ -53,14 +53,14 @@ jobs:
 
       - name: wait for services
         run: |
-          echo "Waiting for MinIO..."
+          echo "Waiting for RustFS..."
           for i in {1..30}; do
-            if curl -sf http://localhost:9000/minio/health/live; then
-              echo "MinIO is ready"
+            if curl -sf http://localhost:9000/health; then
+              echo "RustFS is ready"
               break
             fi
             sleep 2
-          done || (echo "MinIO failed to start" && exit 1)
+          done || (echo "RustFS failed to start" && exit 1)
 
           echo "Waiting for SAIO..."
           for i in {1..60}; do
@@ -80,16 +80,15 @@ jobs:
         run: nix develop --command deno bench --allow-all benchmarks/
 
       - name: s3-tests
-        if: false
         run: |
           set +e
 
-          run_minio() {
-            echo "=== Running s3-tests (MinIO) ==="
-            nix develop --command deno run --allow-all x/s3-tests.ts --backend minio --no-abort
-            echo "--- s3-tests/s3-tests.log (MinIO) ---"
+          run_rustfs() {
+            echo "=== Running s3-tests (RustFS) ==="
+            nix develop --command deno run --allow-all x/s3-tests.ts --backend rustfs --no-abort
+            echo "--- s3-tests/s3-tests.log (RustFS) ---"
             cat s3-tests/s3-tests.log || true
-            echo "--- s3-tests/herald-proxy.log (MinIO) ---"
+            echo "--- s3-tests/herald-proxy.log (RustFS) ---"
             cat s3-tests/herald-proxy.log || true
           }
 
@@ -102,20 +101,20 @@ jobs:
             cat s3-tests/herald-proxy-swift.log || true
           }
 
-          run_minio &
-          pid_minio=$!
+          run_rustfs &
+          pid_rustfs=$!
 
           run_swift &
           pid_swift=$!
 
-          wait $pid_minio
-          status_minio=$?
+          wait $pid_rustfs
+          status_rustfs=$?
 
           wait $pid_swift
           status_swift=$?
 
           # Fail the step if either failed
-          if [ $status_minio -ne 0 ] || [ $status_swift -ne 0 ]; then
+          if [ $status_rustfs -ne 0 ] || [ $status_swift -ne 0 ]; then
             # exit 1
           fi
 

@@ -263,15 +263,21 @@ export const putObject = Effect.gen(function* () {
 
   // S3 requires Content-Length on PUT object unless the body uses AWS
   // streaming framing (aws-chunked / STREAMING-* payloads carry the decoded
-  // size in x-amz-decoded-content-length instead).
+  // size in x-amz-decoded-content-length instead) or HTTP chunked transfer
+  // encoding, which s3-tests exercises and real S3 accepts as a legacy
+  // behavior (the backend infers the exact size from the stream).
   const contentLengthHeader = getHeader(request.headers, "content-length");
   const decodedLengthHeader = getHeader(
     request.headers,
     "x-amz-decoded-content-length",
   );
+  const hasChunkedTransferEncoding = getHeader(
+    request.headers,
+    "transfer-encoding",
+  )?.toLowerCase().includes("chunked");
   if (
-    !hasAwsChunked && contentLengthHeader === undefined &&
-    decodedLengthHeader === undefined
+    !hasAwsChunked && !hasChunkedTransferEncoding &&
+    contentLengthHeader === undefined && decodedLengthHeader === undefined
   ) {
     return yield* Effect.fail(
       new MissingContentLength({
