@@ -35,7 +35,7 @@ export const getSwiftConfig = () =>
   Effect.gen(function* () {
     const authUrl = yield* Config.string("HERALD_SWIFTTEST_AUTH_URL").pipe(
       Config.orElse(() => Config.string("OS_AUTH_URL")),
-      Config.withDefault("http://localhost:8080/auth/v1.0"),
+      Config.withDefault("http://localhost:8081/auth/v1.0"),
       Config.option,
     );
 
@@ -155,7 +155,7 @@ export const makeBenchHarness = (
     );
 
     const proxyUrl = `http://localhost:${server.addr.port}`;
-    const backendUrl = "http://localhost:9000";
+    const backendUrl = "http://localhost:9100";
     const credentials = {
       accessKeyId: "minioadmin",
       secretAccessKey: "minioadmin",

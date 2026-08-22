@@ -51,7 +51,7 @@ function getRustfsConfig(): GlobalConfig {
     backends: {
       rustfs: {
         protocol: "s3",
-        endpoint: "http://localhost:9000",
+        endpoint: "http://localhost:9100",
         region: "us-east-1",
         credentials: {
           accessKeyId: "minioadmin",
@@ -67,7 +67,7 @@ const getSwiftConfig = () =>
   Effect.gen(function* () {
     const authUrl = yield* Config.string("HERALD_SWIFTTEST_AUTH_URL").pipe(
       Config.orElse(() => Config.string("OS_AUTH_URL")),
-      Config.withDefault("http://localhost:8080/auth/v1.0"),
+      Config.withDefault("http://localhost:8081/auth/v1.0"),
       Config.option,
     );
 

@@ -400,6 +400,7 @@ export class Backend extends Context.Tag("Backend")<
       continuationToken?: string;
       startAfter?: string;
       listType?: 1 | 2;
+      fetchOwner?: boolean;
     }) => Effect.Effect<ListObjectsResult, BackendError>;
 
     listVersions: (args: {

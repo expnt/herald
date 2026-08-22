@@ -15,7 +15,7 @@
  *   S3TEST_TAGS: Custom pytest marks (default: not buckets and ...)
  *   S3TEST_PYTEST_ARGS: Additional pytest arguments
  *   S3TEST_NO_ABORT: Set to "true" to disable abort-on-error
- *   MINIO_ENDPOINT: MinIO endpoint (default: http://localhost:9000)
+ *   MINIO_ENDPOINT: MinIO endpoint (default: http://localhost:9100)
  *   MINIO_ACCESS_KEY: MinIO access key (default: minioadmin)
  *   MINIO_SECRET_KEY: MinIO secret key (default: minioadmin)
  */
@@ -41,7 +41,7 @@ const program = Effect.gen(function* () {
 
   // MinIO configuration
   const minioEndpoint = Deno.env.get("MINIO_ENDPOINT") ||
-    "http://localhost:9000";
+    "http://localhost:9100";
   const minioAccessKey = Deno.env.get("MINIO_ACCESS_KEY") || "minioadmin";
   const minioSecretKey = Deno.env.get("MINIO_SECRET_KEY") || "minioadmin";
 

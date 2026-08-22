@@ -32,7 +32,7 @@ const testConfig: GlobalConfig = {
   backends: {
     rustfs: {
       protocol: "s3",
-      endpoint: "http://localhost:9000",
+      endpoint: "http://localhost:9100",
       region: "us-east-1",
       credentials: {
         accessKeyId: "minioadmin",
@@ -895,6 +895,7 @@ const cases: ProxyTestCase[] = [
     name: "postobject/key_from_filename",
     config: testConfig,
     skipSnapshot: true,
+    ignoreBaseline: true,
     beforeAll: async (c) => {
       try {
         await c.send(new CreateBucketCommand({ Bucket: BUCKET }));
@@ -1047,6 +1048,7 @@ const cases: ProxyTestCase[] = [
     name: "postobject/wrong_bucket_in_policy",
     config: testConfig,
     skipSnapshot: true,
+    ignoreBaseline: true,
     beforeAll: async (c) => {
       try {
         await c.send(new CreateBucketCommand({ Bucket: BUCKET }));

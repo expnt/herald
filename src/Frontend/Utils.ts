@@ -105,6 +105,7 @@ export const S3QueryParams = Schema.Struct({
   "continuation-token": Schema.optional(Schema.String),
   "start-after": Schema.optional(Schema.String),
   "list-type": Schema.optional(Schema.String),
+  "fetch-owner": Schema.optional(Schema.String),
   "version-id-marker": Schema.optional(Schema.String),
   "key-marker": Schema.optional(Schema.String),
   "upload-id-marker": Schema.optional(Schema.String),

@@ -7,7 +7,7 @@
 
 const AUTH_URL = Deno.env.get("HERALD_SWIFTTEST_AUTH_URL") ||
   Deno.env.get("OS_AUTH_URL") ||
-  "http://localhost:8080/auth/v1.0";
+  "http://localhost:8081/auth/v1.0";
 
 const USERNAME = Deno.env.get("HERALD_SWIFTTEST_OS_USERNAME") ||
   Deno.env.get("TF_VAR_OS_USERNAME") ||

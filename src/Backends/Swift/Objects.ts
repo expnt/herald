@@ -134,6 +134,7 @@ export const makeObjectOps = ({
     continuationToken?: string;
     startAfter?: string;
     listType?: 1 | 2;
+    fetchOwner?: boolean;
   }): Effect.Effect<ListObjectsResult, BackendError> =>
     Effect.gen(function* () {
       const limit = args.maxKeys ?? 1000;
@@ -195,7 +196,11 @@ export const makeObjectOps = ({
             etag: obj.hash ? `"${obj.hash}"` : "",
             size: obj.bytes ?? 0,
             storageClass: "STANDARD",
-            owner: { id: "swift", displayName: "Swift User" },
+            // S3 only includes Owner in list responses when the client asks
+            // for it via fetch-owner=true (ListObjectsV2).
+            owner: args.fetchOwner
+              ? { id: "swift", displayName: "Swift User" }
+              : undefined,
           });
         }
       }

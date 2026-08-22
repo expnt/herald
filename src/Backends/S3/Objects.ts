@@ -83,6 +83,7 @@ export const makeObjectOps = ({
       continuationToken?: string;
       startAfter?: string;
       listType?: 1 | 2;
+      fetchOwner?: boolean;
     }) =>
       Effect.gen(function* () {
         if (args.listType === 2) {
@@ -98,6 +99,7 @@ export const makeObjectOps = ({
                   // it, so only forward a non-empty token.
                   ContinuationToken: args.continuationToken || undefined,
                   StartAfter: args.startAfter,
+                  FetchOwner: args.fetchOwner,
                 }),
               ) as Promise<ListObjectsV2CommandOutput>,
             catch: (e) => mapS3Error(e, bucketName),
@@ -126,11 +128,12 @@ export const makeObjectOps = ({
 
           return {
             name: result.Name ?? bucketName,
-            // Echo the request prefix: MinIO drops control characters (e.g. a
-            // newline prefix) from its response, while S3 always echoes it.
+            // Echo the request prefix and delimiter: MinIO/RustFS drop control
+            // characters (e.g. a newline) from their echoes, while S3 always
+            // echoes the request values verbatim.
             prefix: args.prefix ?? result.Prefix,
+            delimiter: args.delimiter || result.Delimiter,
             maxKeys: result.MaxKeys ?? 1000,
-            delimiter: result.Delimiter,
             isTruncated: result.IsTruncated ?? false,
             encodingType: args.encodingType,
             // Echo the request token (even when empty) so clients can verify it.
@@ -138,7 +141,7 @@ export const makeObjectOps = ({
               result.ContinuationToken,
             nextContinuationToken: result.NextContinuationToken,
             keyCount: result.KeyCount,
-            startAfter: result.StartAfter ?? args.startAfter,
+            startAfter: args.startAfter ?? result.StartAfter,
             listType: 2,
             contents,
             commonPrefixes,
@@ -202,7 +205,7 @@ export const makeObjectOps = ({
             marker: args.marker ?? result.Marker,
             nextMarker,
             maxKeys: result.MaxKeys ?? 1000,
-            delimiter: result.Delimiter,
+            delimiter: args.delimiter || result.Delimiter,
             isTruncated: result.IsTruncated ?? false,
             encodingType: args.encodingType,
             listType: 1,

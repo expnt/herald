@@ -13,7 +13,7 @@ const benchConfig: GlobalConfig = {
   backends: {
     rustfs: {
       protocol: "s3",
-      endpoint: "http://localhost:9000",
+      endpoint: "http://localhost:9100",
       region: "us-east-1",
       credentials: {
         accessKeyId: "minioadmin",
