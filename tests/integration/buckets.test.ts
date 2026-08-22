@@ -1,3 +1,4 @@
+import { assertEquals } from "@std/assert";
 import {
   CreateBucketCommand,
   DeleteBucketCommand,
@@ -13,7 +14,7 @@ const testConfig: GlobalConfig = {
   backends: {
     rustfs: {
       protocol: "s3",
-      endpoint: "http://localhost:9000",
+      endpoint: "http://localhost:9100",
       region: "us-east-1",
       credentials: {
         accessKeyId: "minioadmin",
@@ -40,20 +41,34 @@ const specs: BucketTestSpec[] = [
     teardown: async (c) => {
       try {
         await c.send(new DeleteBucketCommand({ Bucket: "test-create-1" }));
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     },
   },
   {
     name: "buckets/create/existing",
-    fn: (c) => c.send(new CreateBucketCommand({ Bucket: "test-dup" })),
+    // Backend-tolerant: real AWS (us-east-1) and RustFS return 200 when the
+    // bucket owner re-creates an existing bucket, while MinIO/Ceph return
+    // 409 BucketAlreadyOwnedByYou. Herald must simply relay whichever the
+    // backend does, so accept either outcome here.
+    fn: async (c) => {
+      try {
+        await c.send(new CreateBucketCommand({ Bucket: "test-dup" }));
+      } catch (e) {
+        const err = e as { name?: string };
+        assertEquals(err.name, "BucketAlreadyOwnedByYou");
+      }
+    },
     setup: async (c) => {
       await c.send(new CreateBucketCommand({ Bucket: "test-dup" }));
     },
-    expectedErrorCode: "BucketAlreadyOwnedByYou",
     teardown: async (c) => {
       try {
         await c.send(new DeleteBucketCommand({ Bucket: "test-dup" }));
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     },
   },
   {
@@ -78,7 +93,9 @@ const specs: BucketTestSpec[] = [
     teardown: async (c) => {
       try {
         await c.send(new DeleteBucketCommand({ Bucket: "test-head" }));
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     },
   },
   {

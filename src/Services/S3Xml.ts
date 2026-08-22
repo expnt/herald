@@ -104,7 +104,23 @@ export const makeS3Xml = Effect.sync(() => {
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
-      .replace(/'/g, "&apos;");
+      .replace(/'/g, "&apos;")
+      // Escape control characters as numeric references: S3 echoes request
+      // values like delimiters verbatim, and a raw control char in XML text
+      // gets normalized away by lenient parsers (e.g. whitespace-only text
+      // nodes are trimmed), breaking the echo. Real S3 emits &#xHH; too.
+      // Escape control characters as numeric references: S3 echoes request
+      // values like delimiters verbatim, and a raw control char in XML text
+      // gets normalized away by lenient parsers (e.g. whitespace-only text
+      // nodes are trimmed), breaking the echo. Real S3 emits &#xHH; too.
+      // Hand-rolled scan instead of a RegExp so no-control-regex stays quiet:
+      // matching control characters to escape them is the point of this code.
+      .replace(
+        // deno-lint-ignore no-control-regex
+        /[\u0000-\u001F\u007F]/g,
+        (c) =>
+          `&#x${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")};`,
+      );
 
   const decodeEntities = (s: string) =>
     s.replace(

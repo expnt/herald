@@ -8,7 +8,7 @@ import {
   PutObjectCommand,
   type S3Client,
 } from "@aws-sdk/client-s3";
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertStringIncludes } from "@std/assert";
 import { harness, type ProxyTestCase } from "./utils.ts";
 import type { GlobalConfig } from "../src/Domain/Config.ts";
 
@@ -16,7 +16,7 @@ const testConfig: GlobalConfig = {
   backends: {
     rustfs: {
       protocol: "s3",
-      endpoint: "http://localhost:9000",
+      endpoint: "http://localhost:9100",
       region: "us-east-1",
       credentials: {
         accessKeyId: "minioadmin",
@@ -344,6 +344,74 @@ const cases: ProxyTestCase[] = [
       assertEquals(r.Delimiter, "/");
       assertEquals(getKeys(r), ["boo/bar"]);
       assertEquals(getPrefixes(r), ["boo/baz/"]);
+    },
+  },
+  {
+    name: "listing/fetch-owner-v2",
+    config: testConfig,
+    skipSnapshot: true,
+    beforeAll: (c) => putKeys(c, ["asdf"]),
+    afterAll: (c) => deleteKeys(c, ["asdf"]),
+    fn: async (client) => {
+      // Regression: s3-tests test_bucket_listv2_fetchowner_notempty requires
+      // an <Owner> element in each Contents entry when FetchOwner=true.
+      const withOwner = await client.send(
+        new ListObjectsV2Command({ Bucket: BUCKET, FetchOwner: true }),
+      );
+      const owner = withOwner.Contents?.[0]?.Owner;
+      assertEquals(
+        owner !== undefined,
+        true,
+        "Owner missing with FetchOwner=true",
+      );
+      assertEquals(typeof owner?.ID, "string");
+      assertEquals(typeof owner?.DisplayName, "string");
+
+      // Default must stay owner-less (test_bucket_listv2_fetchowner_defaultempty).
+      const withoutOwner = await client.send(
+        new ListObjectsV2Command({ Bucket: BUCKET }),
+      );
+      assertEquals(withoutOwner.Contents?.[0]?.Owner, undefined);
+    },
+  },
+  {
+    name: "listing/delimiter-unreadable",
+    config: testConfig,
+    skipSnapshot: true,
+    // Regression: s3-tests *_delimiter_unreadable uses a control character
+    // (newline) as delimiter; S3 always echoes the request value back.
+    ignoreBaseline: true,
+    beforeAll: (c) => putKeys(c, ["foo/bar", "foo/bar/xyzzy", "asdf"]),
+    afterAll: (c) => deleteKeys(c, ["foo/bar", "foo/bar/xyzzy", "asdf"]),
+    fn: async (client, context) => {
+      // The AWS JS SDK's XML parser normalizes whitespace-only text nodes,
+      // so a control-char delimiter can only be asserted on the raw XML body.
+      if (!context) throw new Error("context required");
+      await client.send(
+        new ListObjectsCommand({ Bucket: BUCKET, Delimiter: "\n" }),
+      );
+      assertStringIncludes(
+        context.lastRawBody() ?? "",
+        "<Delimiter>&#x0A;</Delimiter>",
+      );
+      await client.send(
+        new ListObjectsV2Command({ Bucket: BUCKET, Delimiter: "\n" }),
+      );
+      assertStringIncludes(
+        context.lastRawBody() ?? "",
+        "<Delimiter>&#x0A;</Delimiter>",
+      );
+      // start-after shares the same echo path (startafter_unreadable).
+      await client.send(
+        new ListObjectsV2Command({
+          Bucket: BUCKET,
+          StartAfter: "a\nb",
+        }),
+      );
+      assertStringIncludes(
+        context.lastRawBody() ?? "",
+        "<StartAfter>a&#x0A;b</StartAfter>",
+      );
     },
   },
 ];

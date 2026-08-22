@@ -1,191 +1,135 @@
-# Missing Functionality in Herald3
+# Herald3 — s3-tests Compliance TODO
 
-This list represents the S3 functionality that is currently missing in Herald3,
-based on a comparison with the `s3-tests` suite and a review of the existing
-implementation.
+Measured against the Ceph `s3-tests` suite via
+`deno run --allow-all
+x/s3-tests.ts --backend <rustfs|swift>` (default tags;
+junit per backend in `s3-tests/junit-{rustfs,swift}.xml`).
 
-## 1. Bucket Operations
+## Current Scorecard (2026-08-22 full run)
 
-- [ ] **Bucket Policies**: Implementation of `GET/PUT/DELETE /?policy`. _(Focus
-      tests: `test_get_bucket_policy_status`,
-      `test_post_object_missing_policy_condition`)_
-- [ ] **CORS (Cross-Origin Resource Sharing)**: Implementation of
-      `GET/PUT/DELETE /?cors` and handling of `OPTIONS` preflight requests.
-      _(Focus tests: `test_set_cors`, `test_cors_origin_response`,
-      `test_cors_header_option`)_
-- [ ] **Lifecycle Management**: Implementation of `GET/PUT/DELETE /?lifecycle`.
-      _(Focus tests: `test_lifecycle_expiration`, `test_lifecycle_transition`)_
-- [ ] **Tagging**: Implementation of `GET/PUT/DELETE /?tagging` for buckets.
-      _(Focus tests: `test_bucket_tagging_create`, `test_bucket_tagging_get`)_
-- [ ] **Versioning Configuration**: Implementation of `GET/PUT /?versioning`.
-      (Basic `listVersions` is partially implemented). _(Focus tests:
-      `test_bucket_list_return_data_versioning`,
-      `test_versioning_concurrent_multi_object_delete`)_
-- [ ] **ACLs (Access Control Lists)**: Implementation of `GET/PUT /?acl` for
-      buckets. _(Focus tests: `test_bucket_acl_default`,
-      `test_put_bucket_acl_grant_group_read`, `test_bucket_header_acl_grants`)_
-- [ ] **Website Configuration**: Implementation of `GET/PUT/DELETE /?website`.
-      _(Focus tests: `test_website_configuration`,
-      `test_website_error_document`)_
-- [ ] **Public Access Block**: Implementation of
-      `GET/PUT/DELETE /?publicAccessBlock`. _(Focus tests:
-      `test_bucket_public_access_block`)_
-- [ ] **Bucket Listing Enhancements**: - [ ] **Encoding Type**: Support for
-      `?encoding-type=url` in `ListObjects` and `ListObjectsV2`. _(Focus tests:
-      `test_bucket_list_encoding_basic`, `test_bucket_listv2_encoding_basic`)_ -
-      [ ] **Special Characters in Delimiters**: Fix handling of percentage,
-      whitespace, and other special characters as delimiters. _(Focus tests:
-      `test_bucket_list_delimiter_percentage`,
-      `test_bucket_list_delimiter_whitespace`)_ - [ ] **V2 Fetch Owner**:
-      Support for `FetchOwner` parameter in `ListObjectsV2`. _(Focus tests:
-      `test_bucket_listv2_fetchowner_empty`)_ - [ ] **Unordered Listings**:
-      Ensure consistent behavior when listing objects in buckets with
-      non-standard ordering. _(Focus tests: `test_bucket_list_unordered`)_
-- [ ] **Replication Configuration**: Implementation of
-      `GET/PUT/DELETE /?replication`.
-- [ ] **Notification Configuration (SNS)**: Implementation of
-      `GET/PUT /?notification`.
-- [ ] **Logging Configuration**: Implementation of `GET/PUT /?logging`. _(Focus
-      tests: `test_bucket_logging_config`)_
-- [ ] **Inventory Configuration**: Implementation of
-      `GET/PUT/DELETE /?inventory`.
-- [ ] **Metrics Configuration**: Implementation of `GET/PUT/DELETE /?metrics`.
-- [ ] **Intelligent-Tiering Configuration**: Implementation of
-      `GET/PUT/DELETE /?intelligent-tiering`.
-- [ ] **Ownership Controls**: Implementation of
-      `GET/PUT/DELETE /?ownershipControls`.
+| Backend | Passed | Failed | Notes                                    |
+| ------- | -----: | -----: | ---------------------------------------- |
+| rustfs  |    254 |    283 | First clean run — zero environment noise |
+| swift   |    222 |    315 | SAIO backend                             |
 
-## 2. Object Operations
+Progression: 146 → 185 (special-keys fix era, MinIO-poisoned numbers) → **254**
+on RustFS with the current fix set. The MinIO test backend was removed: its
+key-shadowing bug (`foo/bar` hides `foo/bar/xyzzy` from all listings while
+blocking DeleteBucket) made clean measurement impossible. RustFS
+(`docker.io/rustfs/rustfs:latest`) replaced it — same port/creds, correct
+nested-key semantics. See `tools/compose.yml` and
+`.github/workflows/checks.yml`.
 
-- [ ] **Multi-Object Delete**: Implementation of `POST /?delete`. _(Focus tests:
-      `test_multi_object_delete`, `test_multi_object_delete_key_limit`)_
-- [x] **Multipart Upload**: Support for `InitiateMultipartUpload`, `UploadPart`,
-      `CompleteMultipartUpload`, `AbortMultipartUpload`, and `ListParts`.
-      _(Focus tests: `test_multipart_upload`, `test_multipart_upload_empty`,
-      `test_abort_multipart_upload`)_
-  - [x] **Swift Multipart Upload**: Implement S3 multipart mapping to Swift SLO.
-- [ ] **GetObject Attributes**: Implementation of `GET /bucket/key?attributes`.
-      _(Focus tests: `test_get_object_attributes`)_
-- [ ] **HeadObject Consistency**: Fix `404 Not Found` errors on existing objects
-      during certain test sequences. _(Focus tests:
-      `test_object_head_zero_bytes`)_
-- [ ] **Unicode Metadata**: Fix support for non-ASCII characters in object
-      metadata. Currently failing across all backends. _(Focus tests:
-      `test_object_set_get_unicode_metadata`)_
-- [x] **Copy Object**: Support for `PUT` with `x-amz-copy-source` header.
-      _(Focus tests: `test_object_copy`)_
-- [ ] **Tagging**: Implementation of `GET/PUT/DELETE /?tagging` for objects.
-      _(Focus tests: `test_object_tagging`)_
-- [ ] **ACLs (Access Control Lists)**: Implementation of `GET/PUT /?acl` for
-      objects. Currently failing due to missing XML parsing/formatting for
-      object-level ACLs. _(Focus tests: `test_object_acl_default`,
-      `test_object_acl_read`, `test_object_put_acl_mtime`)_
-- [ ] **Legal Hold & Retention**: Implementation of `GET/PUT /?legal-hold` and
-      `GET/PUT /?retention` (Object Lock).
-- [ ] **Object Lock Configuration**: Implementation of `GET/PUT /?object-lock`
-      on objects.
-- [ ] **S3 Select**: Implementation of `POST /?select&select-type=2`.
-- [ ] **Checksums**: Support for `x-amz-checksum-sha1`, `x-amz-checksum-sha256`,
-      `x-amz-checksum-crc32`, and `x-amz-checksum-crc32c`. Currently failing
-      validation tests. _(Focus tests: `test_object_checksum_sha256`)_
-  - [x] **Fix S3 Buffering**: Refactor S3 `putObject` and `uploadPart` to stream
-        directly to the AWS SDK instead of collecting chunks into a
-        `Uint8Array`.
-  - [ ] **Fix Swift Validation Timing**: Move Swift checksum validation before
-        the final commit to avoid "zombie" objects (data persisted despite
-        failure).
-  - [ ] **Implement CRC64NVME**: Add the missing logic for CRC64NVME in the
-        `Checksum` service.
-  - [ ] **Validation on GET**: Implement "Check-on-Read" validation for `GET`
-        requests, supporting abrupt termination or trailers on mismatch.
-  - [ ] **Swift Header Cleanup**: Fix duplicate checksum headers in Swift
-        responses (remove `x-amz-meta-` versions of internal checksums).
-- [ ] **Server-Side Encryption (SSE)**: Handling of
-      `x-amz-server-side-encryption`,
-      `x-amz-server-side-encryption-customer-algorithm`, etc.
-- [ ] **Restore Object**: Support for `POST /?restore`.
+### Recently landed
 
-## 3. Authentication & IAM
+- [x] XML entity decoding in special-key handling (`&`, `<`, `>`)
+- [x] Zero-copy aws-chunked parser (prod O(n²) `appendBytes` stall), decoded
+      Content-Length forwarding, client-disconnect mapping
+- [x] Subresource dispatch: versioning, ACLs, tagging stubs, CORS, lifecycle…
+      (`src/Frontend/Buckets/Subresources.ts`)
+- [x] Delimiter / CommonPrefixes / pagination basics
+- [x] Bucket + object ACL storage (`.hrld/acl/*` internal namespace)
+- [x] Header validation codes (411 MissingContentLength incl. chunked-TE case)
+- [x] Conditional requests (If-Match / If-None-Match / If-(Un)Modified-Since)
+- [x] Internal-state purge on DeleteBucket (all `RESERVED_INTERNAL_PREFIXES`,
+      versions + delete markers)
+- [x] ListObjectsV2 `fetch-owner=true` emits `<Owner>` (S3 backend forwards
+      `FetchOwner`; Swift backend gates its hardcoded owner on the flag)
+- [x] Control-char delimiters/start-after echoed verbatim (`&#xHH;` escaping in
+      S3Xml + request-echo in S3 backend; harness query re-encoding fixed)
 
-- [ ] **IAM Integration**: Full implementation of IAM policy evaluation for all
-      requests.
-- [ ] **User Policies**: Support for user-specific IAM policies.
-- [ ] **Security Token Service (STS)**: Implementation of `GetSessionToken`,
-      `AssumeRole`, etc.
-- [ ] **Web Identity Federation**: Implementation of
-      `AssumeRoleWithWebIdentity`.
-- [ ] **Anonymous Access**: Correctly handle anonymous requests for public
-      buckets/objects. _(Focus tests: `test_bucket_list_objects_anonymous`,
-      `test_post_object_anonymous_request`)_
+---
 
-## 4. Validation, Errors & Protocol
+## Next Major Slices
 
-- [ ] **HTTP 100 Continue**: Support for `Expect: 100-continue` (return 100
-      before reading body). _(Focus tests: `test_100_continue`,
-      `test_100_continue_error_retry`)_
-- [ ] **SigV4 Request Validation**: Reject invalid or missing Authorization and
-      `x-amz-date` with 403/400. Many tests expect 403 for bad/missing auth.
-      _(Focus tests: `test_*_bad_authorization_*`, `test_*_bad_date_*_aws2`)_
-- [ ] **Content-Length Handling**: Require or correctly handle Content-Length
-      for PUT/POST; reject or accept requests with missing/invalid
-      Content-Length as per S3 behavior. _(Focus tests:
-      `test_object_create_bad_contentlength_none`,
-      `test_bucket_create_bad_contentlength_none`)_
-- [ ] **Special Key Names / Prefix**: Bucket create and list with special
-      characters in key names and prefix. _(Focus tests:
-      `test_bucket_create_special_key_names`,
-      `test_bucket_list_special_prefix`)_
-- [ ] **Bucket Naming Validation**: Implement strict S3 naming rules (no IP
-      addresses, no double dots, length 3-63, etc.). Currently many naming tests
-      fail. _(Focus tests: `test_bucket_create_naming_bad_ip`,
-      `test_bucket_create_naming_dns_dot_dot`,
-      `test_bucket_create_naming_bad_starts_nonalpha`)_
-- [ ] **Correct Error Codes**: Ensure accurate HTTP status codes for S3 errors.
-      - [ ] **409 Conflict**: Ensure `BucketAlreadyExists` and
-      `BucketAlreadyOwnedByYou` return 409. (Partially fixed for Swift create).
-      - [ ] **404 Not Found**: Ensure `NoSuchKey` and `NoSuchBucket` return 404
-      with correct XML body. - [ ] **403 Forbidden**: Ensure `AccessDenied`
-      returns 403.
-- [~] **Method POST Support (PostObject)**: S3 PostObject (POST at bucket root
-  with multipart/form-data, policy + signature) is implemented. Authenticated
-  form uploads return 204/200/201; invalid policy/signature return 403. (e.g.
-  `test_post_object_authenticated_request`). Fix harness logging and debug
-  first. _(Focus tests: `test_post_object_authenticated_request`; unit tests in
-  `tests/postobject.test.ts`)_
-- [ ] **Multipart Reliability**: Address `502 Bad Gateway` errors occurring
-      during `CreateMultipartUpload` and other multipart operations. _(Focus
-      tests: `test_multipart_upload`)_
-- [ ] **Conditional Requests**: Fix `If-Match`, `If-None-Match`,
-      `If-Modified-Since`, and `If-Unmodified-Since` behavior. Currently failing
-      to return `412 Precondition Failed` or `304 Not Modified` correctly.
-      _(Focus tests: `test_get_object_ifmatch_failed`,
-      `test_get_object_ifnonematch_good`,
-      `test_get_object_ifmodifiedsince_failed`)_
-- [ ] **Response Field Completeness**: Ensure expected XML/JSON fields like
-      `ChecksumSHA256`, `Rules`, `Errors`, and `x-amz-delete-marker` are present
-      in responses.
-- [ ] **Metadata Handling**: Fix incorrect `BucketAlreadyOwnedByYou` errors
-      being returned on non-create operations (e.g., during `PutBucketPolicy`).
-      _(Focus tests: `test_bucket_list_return_data`)_
+Ordered roughly by value/effort. Counts are rustfs-run failures in each cluster
+(many overlap across backends).
 
-## 5. General Compatibility & Compliance
+### Slice A — ACL grant semantics (~25 fails)
 
-- [ ] **Strict RFC 2616 Compliance**: Address tests tagged with
-      `fails_strict_rfc2616`.
-- [ ] **S3Proxy Compatibility**: Address tests tagged with `fails_on_s3proxy` to
-      ensure broader compatibility.
-- [ ] **Advanced Header Support**: Comprehensive support for headers like
-      `Cache-Control`, `Content-Disposition`, `Content-Encoding`,
-      `Content-Language`, and `Expires`.
+Bucket ACL 13 + object ACL 12. Storage exists; grant parsing/round-trip and
+permission evaluation are incomplete. _(Focus:
+`test_bucket_acl_canned_during_create`, `test_object_acl_read`,
+`test_object_put_acl_mtime`, `test_bucket_header_acl_grants`)_
 
-## 5. Non-Standard / Protocol Specific
+### Slice B — Anonymous / public access (~12 fails)
 
-- [ ] **Append Object**: Implementation of `appendobject` (often found in
-      Ceph/RGW).
+Anonymous requests against public-read buckets/objects must be authorized by ACL
+instead of denied by default auth policy. Interacts with Slice A. _(Focus:
+`test_access_bucket_publicly_accessible`, anonymous list/get/post)_
 
-## 6. Architectural & DevEx
+### Slice C — Bucket naming validation + error codes (~15 fails)
 
-- [ ] **Configuration Hot-Reloading**: Implement a watcher for `herald.yaml` to
-      invalidate the `BackendResolver` cache on configuration changes.
-- [ ] **Header Marshalling Abstraction**: Centralize S3 header parsing and
-      generation to reduce boilerplate in the Frontend handlers.
+Strict S3 naming rules (IP-like names, length 3–63, leading chars, `..`), plus
+accurate status codes/XML bodies for 409/404/403 paths. Swift backend accepts
+bad names (SAIO-level gap) — frontend validation makes both consistent. _(Focus:
+`test_bucket_create_naming_bad_ip`, `test_bucket_create_naming_bad_*`,
+`test_bucket_list_return_data_versioning`)_
+
+### Slice D — PostObject hardening (~13 fails)
+
+Policy condition evaluation (`content-length-range`, key prefix conditions,
+success_action_status interplay). Core authenticated flow works (204/200/201).
+_(Focus: `test_post_object_set_success_code`,
+`test_post_object_missing_expires`,
+`test_post_object_conditions_isolate_bucket`)_
+
+### Slice E — CORS preflight & presigned (~10 fails)
+
+`OPTIONS` preflight evaluation against stored CORS rules; presigned-URL CORS
+interaction. _(Focus: `test_cors_presigned_get`, `test_cors_origin_response`)_
+
+### Slice F — Versioning edges (~9 fails)
+
+Null-version removal semantics, concurrent create/remove races, version-aware
+copy source selection. _(Focus:
+`test_versioning_obj_plain_null_version_removal`,
+`test_versioned_concurrent_object_create_and_remove`,
+`test_versioning_obj_create_read_remove`)_
+
+### Slice G — Multi-object delete edges (~9 fails)
+
+`POST /?delete` quiet mode, error-per-key reporting shape, key limits, versioned
+deletes in batch. _(Focus: `test_multi_object_delete_key_limit`,
+`test_multi_object_delete_quiet`)_
+
+### Big features (deferred, high effort)
+
+- [ ] **Object Lock** (~36 fails): `?object-lock` configuration, legal-hold,
+      retention periods + WORM enforcement. Largest single cluster.
+- [ ] **Bucket access logging** (~29 fails): `?logging` get/put/enable cycle +
+      log-object delivery. Note: mostly an RGW/Ceph extension; decide whether
+      Herald should implement delivery or only config round-trip.
+- [ ] **Lifecycle rules**: full rule document parse/store/evaluate.
+- [ ] **Tagging** (bucket + object): currently stubbed at dispatch level.
+- [ ] **SSE-C / SSE headers**, `?restore`, `?attributes`, S3 Select.
+- [ ] **IAM/STS/web-identity**: policy evaluation engine, temp credentials.
+
+### Small fry (known, cheap)
+
+- [ ] `encoding-type=url` in list responses (2 fails, both backends) _(Focus:
+      `test_bucket_list{,v2}_encoding_basic`)_
+- [ ] Checksum follow-ups: CRC64NVME, GET-time validation, Swift duplicate
+      `x-amz-meta-` checksum headers, Swift validate-before-commit (zombies)
+- [ ] `Expect: 100-continue` support
+- [ ] Unicode metadata round-trip (fails on all backends)
+- [ ] `X-RGW-*` usage stats headers (Ceph-only; likely wontfix unless needed)
+
+## Architectural / DevEx
+
+- [ ] Config hot-reload: invalidate `BackendResolver` cache on `herald.yaml`
+      change
+- [ ] Header marshalling abstraction: centralize S3 header parse/generate
+- [ ] Consider upstream RustFS caveat doc: none known so far (unlike MinIO's
+      key-shadowing limitation)
+
+## Testing notes
+
+- Unit suite: `deno task test` (373+ green baseline; snapshots under
+  `tests/integration/__snapshots__`; volatile headers filtered in
+  `tests/utils.ts` sanitizer).
+- Backend-tolerance rule: integration specs must accept legitimate backend
+  differences (e.g. duplicate CreateBucket → 200 on AWS/RustFS vs 409
+  BucketAlreadyOwnedByYou on MinIO/Ceph); use `ignoreBaseline: true` when a
+  capability differs (e.g. browser POST uploads unsupported natively by RustFS).
+- s3-tests runs: `x/s3-tests.ts --backend rustfs|swift [--no-abort]`.
