@@ -56,8 +56,9 @@ export function resolveAuthCredentials(
 ): AuthCredentials[] {
   const credentials: AuthCredentials[] = [];
   for (const ref of refs) {
-    const accessKeyId = env[`HERALD_AUTH_${ref.toUpperCase()}_ACCESS_KEY_ID`];
-    const secretAccessKey = env[`HERALD_AUTH_${ref.toUpperCase()}_SECRET_KEY`];
+    const upper = ref.toUpperCase();
+    const accessKeyId = env[`HERALD_AUTH_${upper}_ACCESS_KEY_ID`];
+    const secretAccessKey = env[`HERALD_AUTH_${upper}_SECRET_KEY`];
     if (accessKeyId && secretAccessKey) {
       credentials.push({ accessKeyId, secretAccessKey });
     }
@@ -177,6 +178,74 @@ const computeS3PresignedSignature = (options: {
     canonicalHeaders,
     signedHeadersString,
     "UNSIGNED-PAYLOAD",
+  ].join("\n");
+
+  const canonicalRequestHash = createHash("sha256")
+    .update(canonicalRequest)
+    .digest("hex");
+  const credentialScope =
+    `${options.credentialDate}/${options.region}/${options.service}/aws4_request`;
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    options.amzDate,
+    credentialScope,
+    canonicalRequestHash,
+  ].join("\n");
+  const signingKey = deriveSigV4SigningKey(
+    options.secretAccessKey,
+    options.credentialDate,
+    options.region,
+    options.service,
+  );
+  return createHmac("sha256", signingKey).update(stringToSign).digest("hex");
+};
+
+/**
+ * Hand-rolled header-based SigV4 signature. Used instead of the smithy signer
+ * whenever the request's x-amz-content-sha256 is a SigV4 streaming sentinel
+ * (STREAMING-AWS4-HMAC-SHA256-PAYLOAD, STREAMING-UNSIGNED-PAYLOAD-TRAILER,
+ * UNSIGNED-PAYLOAD): per spec the canonical request then carries the sentinel
+ * LITERALLY as the payload hash, while a body-hashing signer would compute
+ * sha256(body) and never match clients that stream/chunk their uploads
+ * (kopia's S3 client sends the sentinel without Content-Encoding: aws-chunked,
+ * which is why this path exists).
+ */
+export const computeS3HeaderSignature = (options: {
+  readonly method: string;
+  readonly rawPath: string;
+  readonly signedHeaders: readonly string[];
+  readonly queryParams: Readonly<URLSearchParams>;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly amzDate: string;
+  readonly credentialDate: string;
+  readonly region: string;
+  readonly service: string;
+  readonly secretAccessKey: string;
+  readonly payloadHash: string;
+}): string | undefined => {
+  const sortedSignedHeaders = [...options.signedHeaders]
+    .map((headerName) => headerName.toLowerCase())
+    .sort();
+
+  const canonicalHeaderLines: string[] = [];
+  for (const headerName of sortedSignedHeaders) {
+    const value = options.headers[headerName];
+    if (value === undefined) {
+      return undefined;
+    }
+    canonicalHeaderLines.push(`${headerName}:${normalizeHeaderValue(value)}`);
+  }
+
+  const canonicalHeaders = `${canonicalHeaderLines.join("\n")}\n`;
+  const signedHeadersString = sortedSignedHeaders.join(";");
+  const canonicalPath = options.rawPath === "" ? "/" : options.rawPath;
+  const canonicalRequest = [
+    options.method.toUpperCase(),
+    canonicalPath,
+    canonicalizeQueryWithoutSignature(options.queryParams),
+    canonicalHeaders,
+    signedHeadersString,
+    options.payloadHash,
   ].join("\n");
 
   const canonicalRequestHash = createHash("sha256")
@@ -436,17 +505,6 @@ export function verifyIncomingSigV4Detailed(
         headers: filteredHeaders,
       };
 
-      const signer = new SignatureV4({
-        credentials: {
-          accessKeyId: cred.accessKeyId,
-          secretAccessKey: cred.secretAccessKey,
-        },
-        region: effectiveRegion,
-        service: "s3",
-        sha256: Sha256,
-        uriEscapePath: false,
-      });
-
       if (hasSigInQuery) {
         const amzDateFromQuery = queryParams.get("X-Amz-Date");
         const actualSig = queryParams.get("X-Amz-Signature");
@@ -495,32 +553,69 @@ export function verifyIncomingSigV4Detailed(
         continue;
       }
 
-      const signedResult = yield* Effect.tryPromise({
-        try: async () => {
-          return await signer.sign(signableReq, {
-            signingDate,
-            signableHeaders: new Set(signedHeadersList),
-          });
-        },
-        catch: (e) => e,
-      }).pipe(Effect.either);
+      const payloadHashHeader = headers["x-amz-content-sha256"]?.trim()
+        .toUpperCase() ?? "";
+      const isStreamingSentinel = payloadHashHeader.startsWith("STREAMING-") ||
+        payloadHashHeader === "UNSIGNED-PAYLOAD";
 
-      if (Either.isLeft(signedResult)) {
-        continue;
-      }
-      const signed = signedResult.right;
+      const expectedAuth = isStreamingSentinel
+        ? undefined
+        : yield* Effect.tryPromise({
+          try: async () => {
+            const signer = new SignatureV4({
+              credentials: {
+                accessKeyId: cred.accessKeyId,
+                secretAccessKey: cred.secretAccessKey,
+              },
+              region: effectiveRegion,
+              service: "s3",
+              sha256: Sha256,
+              uriEscapePath: false,
+            });
+            return await signer.sign(signableReq, {
+              signingDate,
+              signableHeaders: new Set(signedHeadersList),
+            });
+          },
+          catch: (e) => e,
+        }).pipe(
+          Effect.either,
+          Effect.map(
+            (either): string | undefined =>
+              Either.isRight(either)
+                ? either.right.headers["authorization"]
+                : undefined,
+          ),
+        );
 
-      if (authHeader) {
-        const expectedAuth = signed.headers["authorization"];
-        if (
-          !expectedAuth || typeof expectedAuth !== "string" ||
-          authHeader.length !== expectedAuth.length
-        ) {
-          continue;
-        }
+      const sentinelSig = isStreamingSentinel
+        ? computeS3HeaderSignature({
+          method: request.method,
+          payloadHash: payloadHashHeader, // sentinel must stay uppercase-literal per spec
+          rawPath,
+          signedHeaders: signedHeadersList,
+          queryParams,
+          headers: filteredHeaders,
+          amzDate: headers["x-amz-date"] ?? "",
+          credentialDate,
+          region: effectiveRegion,
+          service: credentialService,
+          secretAccessKey: cred.secretAccessKey,
+        })
+        : undefined;
+
+      const finalExpectedSig = expectedAuth !== undefined
+        // smithy path: expectedAuth is the full Authorization header — compare
+        // the trailing signature portion.
+        ? expectedAuth.match(/Signature=([0-9a-fA-F]+)/)?.[1]?.toLowerCase()
+        : sentinelSig;
+      if (
+        authHeader && finalExpectedSig && parsedHeaderSignature &&
+        finalExpectedSig.length === parsedHeaderSignature.length
+      ) {
         const isValid = timingSafeEqual(
-          encoder.encode(authHeader),
-          encoder.encode(expectedAuth),
+          encoder.encode(parsedHeaderSignature),
+          encoder.encode(finalExpectedSig),
         );
         if (isValid) {
           const initialSignature = parsedHeaderSignature;
