@@ -400,7 +400,7 @@ testEffect("config/parseConfig/env_vars", () =>
   Effect.gen(function* () {
     const env = {
       HERALD_DEFAULT_PROTOCOL: "s3",
-      HERALD_DEFAULT_ENDPOINT: "http://localhost:9000",
+      HERALD_DEFAULT_ENDPOINT: "http://localhost:9100",
       HERALD_MYBACKEND_PROTOCOL: "swift",
       HERALD_MYBACKEND_AUTH_URL: "http://swift.com",
     };
@@ -411,7 +411,7 @@ testEffect("config/parseConfig/env_vars", () =>
     if (defaultBackend.protocol === "s3") {
       yield* EffectAssert.strictEqual(
         defaultBackend.endpoint,
-        "http://localhost:9000",
+        "http://localhost:9100",
       );
     }
 
@@ -592,7 +592,7 @@ testEffect(
         backends: {
           s3_1: {
             protocol: "s3",
-            endpoint: "http://localhost:9000",
+            endpoint: "http://localhost:9100",
             buckets: "*",
           },
         },
@@ -621,7 +621,7 @@ testEffect(
         backends: {
           s3_1: {
             protocol: "s3",
-            endpoint: "http://localhost:9000",
+            endpoint: "http://localhost:9100",
             region: "us-east-1",
             credentials: { accessKeyId: "key", secretAccessKey: "" },
             buckets: "*",
@@ -650,7 +650,7 @@ testEffect(
         backends: {
           s3_1: {
             protocol: "s3",
-            endpoint: "http://localhost:9000",
+            endpoint: "http://localhost:9100",
             region: "us-east-1",
             buckets: "*",
             auth: { accessKeysRefs: ["valid", ""] },
@@ -681,7 +681,7 @@ testEffect(
         backends: {
           s3_1: {
             protocol: "s3",
-            endpoint: "http://localhost:9000",
+            endpoint: "http://localhost:9100",
             region: "us-east-1",
             buckets: "*",
           },
@@ -712,7 +712,7 @@ testEffect(
         backends: {
           s3_1: {
             protocol: "s3",
-            endpoint: "http://localhost:9000",
+            endpoint: "http://localhost:9100",
             region: "us-east-1",
             buckets: {
               mybucket: { auth: { accessKeysRefs: ["ok", ""] } },
@@ -762,7 +762,7 @@ testEffect(
         backends: {
           s3_1: {
             protocol: "s3",
-            endpoint: "http://localhost:9000",
+            endpoint: "http://localhost:9100",
             region: "us-east-1",
             buckets: "*",
           },
@@ -780,7 +780,7 @@ testEffect(
         backends: {
           s3_1: {
             protocol: "s3",
-            endpoint: "http://localhost:9000",
+            endpoint: "http://localhost:9100",
             region: "us-east-1",
             credentials: { accessKeyId: "key", secretAccessKey: "secret" },
             buckets: "*",
@@ -799,7 +799,7 @@ testEffect(
         backends: {
           s3_1: {
             protocol: "s3",
-            endpoint: "http://localhost:9000",
+            endpoint: "http://localhost:9100",
             region: "us-east-1",
             buckets: "*",
             auth: { accessKeysRefs: ["main", "alt"] },
@@ -818,7 +818,7 @@ testEffect(
         backends: {
           s3_1: {
             protocol: "s3",
-            endpoint: "http://localhost:9000",
+            endpoint: "http://localhost:9100",
             region: "us-east-1",
             buckets: "*",
             auth: { accessKeysRefs: [] },

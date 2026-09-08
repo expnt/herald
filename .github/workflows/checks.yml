@@ -17,7 +17,7 @@ env:
   UV_CACHE_DIR: /tmp/.uv-cache
 
 jobs:
-  checks:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -30,6 +30,18 @@ jobs:
 
       - name: pre-commit hooks
         run: nix develop --command prek run --all-files
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: DeterminateSystems/nix-installer-action@v16
+
+      - uses: DeterminateSystems/flakehub-cache-action@v3
 
       - name: deno cache
         uses: actions/cache@v6
@@ -47,7 +59,7 @@ jobs:
           restore-keys: |
             uv-${{ runner.os }}-${{ hashFiles('s3-tests/requirements.txt') }}
             uv-${{ runner.os }}
-
+ 
       - name: start container
         run: nix develop --command deno run --allow-all x/compose-up.ts s3 swift db
 
@@ -55,7 +67,7 @@ jobs:
         run: |
           echo "Waiting for RustFS..."
           for i in {1..30}; do
-            if curl -sf http://localhost:9000/health; then
+            if curl -sf http://localhost:9100/health; then
               echo "RustFS is ready"
               break
             fi
@@ -64,14 +76,12 @@ jobs:
 
           echo "Waiting for SAIO..."
           for i in {1..60}; do
-            if curl -sf http://localhost:8080/healthcheck; then
+            if curl -sf http://localhost:8081/healthcheck; then
               echo "SAIO is ready"
-              exit 0
+              break
             fi
             sleep 2
-          done
-          echo "SAIO failed to start"
-          exit 1
+          done || (echo "SAIO failed to start" && exit 1)
 
       - name: integration tests
         run: nix develop --command deno task test
@@ -79,44 +89,75 @@ jobs:
       - name: benchmarks
         run: nix develop --command deno bench --allow-all benchmarks/
 
-      - name: s3-tests
+  s3-tests:
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [rustfs, swift]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: DeterminateSystems/nix-installer-action@v16
+
+      - uses: DeterminateSystems/flakehub-cache-action@v3
+
+      - name: deno cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/deno
+          key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-deno-
+
+      - name: uv cache
+        uses: actions/cache@v6
+        with:
+          path: /tmp/.uv-cache
+          key: uv-${{ runner.os }}-${{ hashFiles('s3-tests/requirements.txt') }}
+          restore-keys: |
+            uv-${{ runner.os }}-${{ hashFiles('s3-tests/requirements.txt') }}
+            uv-${{ runner.os }}
+
+      - name: start container
         run: |
-          set +e
-
-          run_rustfs() {
-            echo "=== Running s3-tests (RustFS) ==="
-            nix develop --command deno run --allow-all x/s3-tests.ts --backend rustfs --no-abort
-            echo "--- s3-tests/s3-tests.log (RustFS) ---"
-            cat s3-tests/s3-tests.log || true
-            echo "--- s3-tests/herald-proxy.log (RustFS) ---"
-            cat s3-tests/herald-proxy.log || true
-          }
-
-          run_swift() {
-            echo "=== Running s3-tests (Swift) ==="
-            nix develop --command deno run --allow-all x/s3-tests.ts --backend swift --no-abort
-            echo "--- s3-tests/s3-tests-swift.log (Swift) ---"
-            cat s3-tests/s3-tests-swift.log || true
-            echo "--- s3-tests/herald-proxy-swift.log (Swift) ---"
-            cat s3-tests/herald-proxy-swift.log || true
-          }
-
-          run_rustfs &
-          pid_rustfs=$!
-
-          run_swift &
-          pid_swift=$!
-
-          wait $pid_rustfs
-          status_rustfs=$?
-
-          wait $pid_swift
-          status_swift=$?
-
-          # Fail the step if either failed
-          if [ $status_rustfs -ne 0 ] || [ $status_swift -ne 0 ]; then
-            # exit 1
+          if [ "${{ matrix.backend }}" = "rustfs" ]; then
+            nix develop --command deno run --allow-all x/compose-up.ts s3 db
+          else
+            nix develop --command deno run --allow-all x/compose-up.ts swift db
           fi
+
+      - name: wait for service
+        run: |
+          if [ "${{ matrix.backend }}" = "rustfs" ]; then
+            echo "Waiting for RustFS..."
+            for i in {1..30}; do
+              if curl -sf http://localhost:9100/health; then
+                echo "RustFS is ready"
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "RustFS failed to start"
+            exit 1
+          else
+            echo "Waiting for SAIO..."
+            for i in {1..60}; do
+              if curl -sf http://localhost:8081/healthcheck; then
+                echo "SAIO is ready"
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "SAIO failed to start"
+            exit 1
+          fi
+
+      - name: s3-tests
+        run: nix develop --command deno run --allow-all x/s3-tests.ts --backend ${{ matrix.backend }} --no-abort
 
       - name: prune uv cache
         run: nix develop --command uv cache prune --ci
