@@ -16,7 +16,7 @@ Progression: 146 → 185 (special-keys fix era, MinIO-poisoned numbers) → **25
 on RustFS with the current fix set. The MinIO test backend was removed: its
 key-shadowing bug (`foo/bar` hides `foo/bar/xyzzy` from all listings while
 blocking DeleteBucket) made clean measurement impossible. RustFS
-(`docker.io/rustfs/rustfs:latest`) replaced it — same port/creds, correct
+(`docker.io/rustfs/rustfs:1.0.0-beta.12`) replaced it — same port/creds, correct
 nested-key semantics. See `tools/compose.yml` and
 `.github/workflows/checks.yml`.
 
