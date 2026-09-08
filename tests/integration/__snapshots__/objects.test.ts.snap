@@ -77,8 +77,8 @@ snapshot[`Baseline/objects/get/non-existent body 1`] = `
 snapshot[`Proxy/objects/get/non-existent metadata 1`] = `
 {
   headers: {
+    "content-length": "127",
     "content-type": "application/xml",
-    vary: "Accept-Encoding",
   },
   status: 404,
 }
@@ -89,8 +89,8 @@ snapshot[`Proxy/objects/get/non-existent body 1`] = `'<?xml version="1.0" encodi
 snapshot[`Swift/objects/get/non-existent metadata 1`] = `
 {
   headers: {
+    "content-length": "164",
     "content-type": "application/xml",
-    vary: "Accept-Encoding",
   },
   status: 404,
 }
@@ -143,14 +143,18 @@ snapshot[`Baseline/objects/head/non-existent metadata 1`] = `
 
 snapshot[`Proxy/objects/head/non-existent metadata 1`] = `
 {
-  headers: {},
+  headers: {
+    "content-length": "0",
+  },
   status: 404,
 }
 `;
 
 snapshot[`Swift/objects/head/non-existent metadata 1`] = `
 {
-  headers: {},
+  headers: {
+    "content-length": "0",
+  },
   status: 404,
 }
 `;
@@ -232,8 +236,8 @@ snapshot[`Baseline/objects/multipart/abort body 1`] = `
 snapshot[`Proxy/objects/multipart/abort metadata 1`] = `
 {
   headers: {
+    "content-length": "223",
     "content-type": "application/xml",
-    vary: "Accept-Encoding",
   },
   status: 404,
 }
@@ -244,8 +248,8 @@ snapshot[`Proxy/objects/multipart/abort body 1`] = `'<?xml version="1.0" encodin
 snapshot[`Swift/objects/multipart/abort metadata 1`] = `
 {
   headers: {
+    "content-length": "213",
     "content-type": "application/xml",
-    vary: "Accept-Encoding",
   },
   status: 404,
 }
@@ -411,8 +415,8 @@ snapshot[`Baseline/objects/copy/source_key_not_found body 1`] = `
 snapshot[`Proxy/objects/copy/source_key_not_found metadata 1`] = `
 {
   headers: {
+    "content-length": "127",
     "content-type": "application/xml",
-    vary: "Accept-Encoding",
   },
   status: 404,
 }
@@ -423,8 +427,8 @@ snapshot[`Proxy/objects/copy/source_key_not_found body 1`] = `'<?xml version="1.
 snapshot[`Swift/objects/copy/source_key_not_found metadata 1`] = `
 {
   headers: {
+    "content-length": "164",
     "content-type": "application/xml",
-    vary: "Accept-Encoding",
   },
   status: 404,
 }
@@ -455,8 +459,8 @@ snapshot[`Baseline/objects/copy/source_bucket_not_found body 1`] = `
 snapshot[`Proxy/objects/copy/source_bucket_not_found metadata 1`] = `
 {
   headers: {
+    "content-length": "132",
     "content-type": "application/xml",
-    vary: "Accept-Encoding",
   },
   status: 404,
 }
@@ -467,8 +471,8 @@ snapshot[`Proxy/objects/copy/source_bucket_not_found body 1`] = `'<?xml version=
 snapshot[`Swift/objects/copy/source_bucket_not_found metadata 1`] = `
 {
   headers: {
+    "content-length": "164",
     "content-type": "application/xml",
-    vary: "Accept-Encoding",
   },
   status: 404,
 }

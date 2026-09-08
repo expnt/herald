@@ -303,18 +303,45 @@ export const makeMultipartOps = (
           }),
         );
 
-        // 1. Build SLO manifest (Swift requires each segment >= 1 byte)
-        const manifest = [];
-        for (const p of parts) {
+        // 1. Build the SLO manifest. Swift requires every segment to be
+        //    non-empty (>= 1 byte), while S3 allows the final part to be
+        //    0 bytes. Parts are ordered by partNumber (S3 requires ascending
+        //    order in CompleteMultipartUpload), so trailing zero-byte parts
+        //    are omitted from the manifest and a zero-byte part before a
+        //    non-empty part is rejected.
+        const orderedParts = [...parts].sort(
+          (a, b) => a.partNumber - b.partNumber,
+        );
+        let lastNonEmptyIndex = -1;
+        for (let i = 0; i < orderedParts.length; i++) {
+          const segmentKey = `${MP_SEGMENTS_PREFIX}${uploadId}/${
+            orderedParts[i].partNumber
+          }`;
+          if (segmentMap.get(segmentKey)!.size >= 1) {
+            lastNonEmptyIndex = i;
+          }
+        }
+        const manifest: {
+          path: string;
+          etag: string;
+          size_bytes: number;
+        }[] = [];
+        for (let i = 0; i < orderedParts.length; i++) {
+          const p = orderedParts[i];
           const segmentKey = `${MP_SEGMENTS_PREFIX}${uploadId}/${p.partNumber}`;
           const info = segmentMap.get(segmentKey)!;
           if (info.size < 1) {
-            return yield* Effect.fail(
-              new InvalidPart({
-                message:
-                  `Part ${p.partNumber} has size 0; each part must be at least 1 byte`,
-              }),
-            );
+            if (i < lastNonEmptyIndex) {
+              return yield* Effect.fail(
+                new InvalidPart({
+                  message:
+                    `Part ${p.partNumber} has size 0; zero-byte parts are only allowed as the final part`,
+                }),
+              );
+            }
+            // Trailing zero-byte part: S3 allows a 0-byte final part, but
+            // Swift SLO segments must be non-empty, so omit it from the manifest.
+            continue;
           }
           manifest.push({
             path: `/${container}/${segmentKey}`,
@@ -323,7 +350,8 @@ export const makeMultipartOps = (
           });
         }
 
-        // 2. PUT SLO manifest
+        // 2. PUT the SLO manifest — or, when every part was zero-byte, complete
+        //    as a normal empty object instead (Swift SLO requires >= 1 segment).
         const { checksums } = headerService.fromRequestHeaders(headers);
         const swiftHeaders: Record<string, string> = {
           "X-Auth-Token": token,
@@ -332,17 +360,26 @@ export const makeMultipartOps = (
           ...headerService.toSwiftHeaders(metadata, checksums),
         };
 
-        const body = new TextEncoder().encode(JSON.stringify(manifest));
-
-        const request = HttpClientRequest.put(`${url}/${encodedKey}`).pipe(
-          HttpClientRequest.setUrlParams({ "multipart-manifest": "put" }),
-          HttpClientRequest.bodyUint8Array(body),
-          HttpClientRequest.setHeaders({
-            ...swiftHeaders,
-            "X-Static-Large-Object": "true",
-            "Content-Length": String(body.length),
-          }),
-        );
+        let request: HttpClientRequest.HttpClientRequest;
+        if (manifest.length === 0) {
+          request = HttpClientRequest.put(`${url}/${encodedKey}`).pipe(
+            HttpClientRequest.setHeaders({
+              ...swiftHeaders,
+              "Content-Length": "0",
+            }),
+          );
+        } else {
+          const body = new TextEncoder().encode(JSON.stringify(manifest));
+          request = HttpClientRequest.put(`${url}/${encodedKey}`).pipe(
+            HttpClientRequest.setUrlParams({ "multipart-manifest": "put" }),
+            HttpClientRequest.bodyUint8Array(body),
+            HttpClientRequest.setHeaders({
+              ...swiftHeaders,
+              "X-Static-Large-Object": "true",
+              "Content-Length": String(body.length),
+            }),
+          );
+        }
 
         const response: HttpClientResponse.HttpClientResponse = yield* client
           .execute(request).pipe(
@@ -385,6 +422,19 @@ export const makeMultipartOps = (
             HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
           ),
         ).pipe(Effect.ignore);
+        // 5. Zero-byte segments are never part of an SLO manifest, so remove
+        //    them to avoid orphaned objects in the container.
+        for (const p of orderedParts) {
+          const segmentKey = `${MP_SEGMENTS_PREFIX}${uploadId}/${p.partNumber}`;
+          if (segmentMap.get(segmentKey)!.size < 1) {
+            const encodedSegmentKey = encodeObjectKeyForSwift(segmentKey);
+            yield* client.execute(
+              HttpClientRequest.del(`${url}/${encodedSegmentKey}`).pipe(
+                HttpClientRequest.setHeaders({ "X-Auth-Token": token }),
+              ),
+            ).pipe(Effect.ignore);
+          }
+        }
 
         return {
           location: `${url}/${encodedKey}`,

@@ -39,7 +39,7 @@ interface ObjectTestSpec {
   teardown?: (client: S3Client) => Promise<void>;
   expectedErrorCode?: string;
   skipSnapshot?: boolean;
-  /** Skip Baseline (minio may accept 0-byte parts; we assert Herald rejects). */
+  /** Skip Baseline (already covered by zero-byte-last-part-succeeds). */
   ignoreBaseline?: boolean;
   ignoreSwift?: boolean;
 }
@@ -306,7 +306,7 @@ const specs: ObjectTestSpec[] = [
       }
     },
   },
-  // S3 spec: last part has no minimum size (can be 0 bytes). So 0-byte part + complete succeeds for S3/MinIO.
+  // S3 spec: last part has no minimum size (can be 0 bytes). So 0-byte part + complete succeeds for all backends.
   {
     name: "objects/multipart/zero-byte-last-part-succeeds",
     fn: async (c) => {
@@ -354,10 +354,8 @@ const specs: ObjectTestSpec[] = [
       } catch { /* ignore */ }
     },
     skipSnapshot: true,
-    ignoreSwift: true,
   },
-  // Swift SLO requires each segment >= 1 byte; rejection at Complete. S3 allows 0-byte last part.
-  // So: Proxy (S3) complete succeeds; Swift complete returns InvalidPart.
+  // S3 allows a 0-byte final part; the Swift backend completes it as a plain empty object.
   {
     name: "objects/multipart/zero-byte-part-complete",
     fn: async (c) => {
@@ -378,38 +376,31 @@ const specs: ObjectTestSpec[] = [
       );
       if (!ETag) throw new Error("No ETag");
 
+      await c.send(
+        new CompleteMultipartUploadCommand({
+          Bucket: BUCKET,
+          Key: key,
+          UploadId,
+          MultipartUpload: { Parts: [{ PartNumber: 1, ETag }] },
+        }),
+      );
+
+      const { ContentLength } = await c.send(
+        new HeadObjectCommand({ Bucket: BUCKET, Key: key }),
+      );
+      if (ContentLength !== 0) {
+        throw new Error(`Expected size 0, got ${ContentLength}`);
+      }
+    },
+    teardown: async (c) => {
       try {
         await c.send(
-          new CompleteMultipartUploadCommand({
+          new DeleteObjectCommand({
             Bucket: BUCKET,
-            Key: key,
-            UploadId,
-            MultipartUpload: { Parts: [{ PartNumber: 1, ETag }] },
+            Key: "multipart-zero-part-complete.txt",
           }),
         );
-        // S3/MinIO: complete succeeds (0-byte last part allowed)
-      } catch (e) {
-        if (
-          e instanceof S3ServiceException &&
-          e.name === "InvalidPart" &&
-          e.message &&
-          (e.message.includes("size 0") ||
-            e.message.includes("at least 1 byte"))
-        ) {
-          // Swift: complete fails with InvalidPart (SLO segment >= 1 byte)
-          try {
-            await c.send(
-              new AbortMultipartUploadCommand({
-                Bucket: BUCKET,
-                Key: key,
-                UploadId,
-              }),
-            );
-          } catch { /* ignore */ }
-          return;
-        }
-        throw e;
-      }
+      } catch { /* ignore */ }
     },
     skipSnapshot: true,
     ignoreBaseline: true,
