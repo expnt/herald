@@ -20,11 +20,11 @@ jobs:
   checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
-      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/nix-installer-action@v22
 
       - uses: DeterminateSystems/flakehub-cache-action@v3
 
@@ -32,7 +32,7 @@ jobs:
         run: nix develop --command prek run --all-files
 
       - name: deno cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/deno
           key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
@@ -40,7 +40,7 @@ jobs:
             ${{ runner.os }}-deno-
 
       - name: uv cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: /tmp/.uv-cache
           key: uv-${{ runner.os }}-${{ hashFiles('s3-tests/requirements.txt') }}
