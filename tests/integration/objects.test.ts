@@ -6,8 +6,10 @@ import {
   CreateMultipartUploadCommand,
   DeleteBucketCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   ListPartsCommand,
   PutObjectCommand,
   type S3Client,
@@ -129,6 +131,45 @@ const specs: ObjectTestSpec[] = [
           Key: "delete.txt",
           Body: "content to delete",
         }),
+      );
+    },
+  },
+  {
+    // Multi-object delete with XML-special keys. Guards against entity-decoding
+    // regressions where "&" would be deleted as "&amp;" and survive cleanup,
+    // leaving the bucket stuck in BucketNotEmpty state.
+    name: "objects/delete/multi-special-keys",
+    // The fn performs its own assertions (no leftover keys, bucket deletable);
+    // the raw DeleteObjects/List responses are not snapshot-worthy.
+    skipSnapshot: true,
+    fn: async (c) => {
+      const specialKeys = ["&", "<", ">", '"', "'", "a&amp;lt;b"];
+      await c.send(
+        new DeleteObjectsCommand({
+          Bucket: BUCKET,
+          Delete: {
+            Objects: specialKeys.map((Key) => ({ Key })),
+            Quiet: true,
+          },
+        }),
+      );
+      const listed = await c.send(
+        new ListObjectsV2Command({ Bucket: BUCKET }),
+      );
+      const remaining = (listed.Contents ?? []).map((o) => o.Key);
+      if (remaining.length > 0) {
+        throw new Error(
+          `special keys survived multi-delete: ${JSON.stringify(remaining)}`,
+        );
+      }
+      // Prove the bucket is empty enough to delete (s3-tests fixture cleanup path).
+      await c.send(new DeleteBucketCommand({ Bucket: BUCKET }));
+    },
+    setup: async (c) => {
+      await Promise.all(
+        ["&", "<", ">", '"', "'", "a&amp;lt;b"].map((Key) =>
+          c.send(new PutObjectCommand({ Bucket: BUCKET, Key, Body: "x" }))
+        ),
       );
     },
   },

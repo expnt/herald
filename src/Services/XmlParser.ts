@@ -3,6 +3,50 @@ import { CompleteMultipartPart, DeleteObjectEntry } from "./S3Schema.ts";
 import { MalformedXML } from "./Backend.ts";
 
 /**
+ * Decode XML character data into its literal value.
+ *
+ * Client requests (e.g. multi-object delete `<Key>` elements) carry XML-escaped
+ * object keys; without this step a stored key "&" would be deleted as "&amp;"
+ * and survive cleanup, leaving buckets stuck in BucketNotEmpty state.
+ *
+ * Decoding happens in a single pass so that a literal escape sequence in the
+ * key data ("&amp;lt;") resolves to "&lt;" rather than being decoded twice.
+ */
+function decodeXmlEntities(text: string): string {
+  return text.replace(
+    /&(?:#x([0-9a-fA-F]+)|#([0-9]+)|(amp|lt|gt|quot|apos));/g,
+    (
+      _match,
+      hex: string | undefined,
+      dec: string | undefined,
+      named: string | undefined,
+    ) => {
+      if (hex !== undefined) {
+        return String.fromCodePoint(parseInt(hex, 16));
+      }
+      if (dec !== undefined) {
+        return String.fromCodePoint(parseInt(dec, 10));
+      }
+      switch (named) {
+        case "amp":
+          return "&";
+        case "lt":
+          return "<";
+        case "gt":
+          return ">";
+        case "quot":
+          return '"';
+        case "apos":
+          return "'";
+        default:
+          // The regex only produces the five alternatives above.
+          return _match;
+      }
+    },
+  );
+}
+
+/**
  * Simple XML parser that extracts elements and their text content.
  * This is a placeholder for a more robust XML parser if needed.
  * For now, it satisfies the "Parse Don't Validate" principle by
@@ -16,7 +60,7 @@ function extractElements(xml: string, tagName: string): string[] {
 function extractText(xml: string, tagName: string): string | undefined {
   const regex = new RegExp(`<${tagName}>(.*?)<\/${tagName}>`, "s");
   const match = xml.match(regex);
-  return match ? match[1] : undefined;
+  return match ? decodeXmlEntities(match[1]) : undefined;
 }
 
 /**
@@ -46,7 +90,8 @@ export const parseCompleteMultipartUploadRequest = (body: string) =>
       const partNumberStr = extractText(xml, "PartNumber");
       return {
         partNumber: partNumberStr ? parseInt(partNumberStr) : undefined,
-        etag: extractText(xml, "ETag")?.replace(/&quot;/g, '"'),
+        // extractText already resolves XML entities such as &quot;
+        etag: extractText(xml, "ETag"),
         checksumSHA256: extractText(xml, "ChecksumSHA256"),
         checksumSHA1: extractText(xml, "ChecksumSHA1"),
         checksumCRC32: extractText(xml, "ChecksumCRC32"),

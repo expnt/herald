@@ -324,6 +324,10 @@ export const makeObjectOps = (
             versionId: "null",
             isLatest: true,
           })),
+          // formatListVersions renders nextContinuationToken as
+          // <NextVersionIdMarker>; Swift listings are unversioned, and
+          // "null" is the S3-mandated version id and a valid page marker.
+          nextContinuationToken: result.isTruncated ? "null" : undefined,
         };
       }),
 

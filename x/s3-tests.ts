@@ -25,7 +25,16 @@
  *   s3-tests/s3-tests.log: Full pytest output
  */
 
-import { Config, Effect, Layer, Logger, LogLevel, Option } from "effect";
+import {
+  Cause,
+  Config,
+  Effect,
+  Exit,
+  Layer,
+  Logger,
+  LogLevel,
+  Option,
+} from "effect";
 import * as path from "@std/path";
 import { $ } from "@david/dax";
 import * as colors from "@std/fmt/colors";
@@ -358,7 +367,12 @@ email = iam_alt_root@example.com
       "--tb=short",
     ];
 
-    const junitXmlName = "junit.xml";
+    // Backend-specific junit file so parallel minio/swift runs (as in CI)
+    // do not overwrite each other's results, mirroring the per-backend
+    // s3-tests.log / herald-proxy.log naming.
+    const junitXmlName = backend === "swift"
+      ? "junit-swift.xml"
+      : "junit-minio.xml";
     const junitXmlPath = path.join(s3TestsDir, junitXmlName);
     cmdArgs.push(`--junit-xml=${junitXmlName}`);
 
@@ -710,11 +724,15 @@ if (import.meta.main) {
     console.error(colors.red(`Unhandled rejection: ${e.reason}`));
   });
 
-  Effect.runPromiseExit(program.pipe(Effect.scoped)).then((exitCode) => {
-    if (exitCode._tag === "Failure") {
-      console.error(
-        colors.red(`Fatal error: ${JSON.stringify(exitCode.cause, null, 2)}`),
-      );
+  Effect.runPromiseExit(program.pipe(Effect.scoped)).then((exit) => {
+    if (Exit.isFailure(exit)) {
+      // JSON.stringify on an Error yields "{}" (message is non-enumerable),
+      // so extract a descriptive message from the Cause instead.
+      const failure = Cause.failureOption(exit.cause);
+      const message = failure._tag === "Some" && failure.value instanceof Error
+        ? failure.value.message
+        : Cause.pretty(exit.cause);
+      console.error(colors.red(`s3-tests failed: ${message}`));
       Deno.exit(1);
     }
   }).catch((e) => {
