@@ -72,9 +72,12 @@ export const writeStoredPolicy = (
   });
 
 /**
- * Resolves the canonical owner for the S3 backend from ListBuckets, cached
- * per backend instance. MinIO's ACL responses return an empty owner, so the
- * proxy synthesizes the owner from the account that owns the buckets.
+ * Resolves the canonical owner for the S3 backend from the client's
+ * configured credentials, cached per backend instance. Herald presents its
+ * own identity (the configured access key) as the owner of buckets/objects
+ * rather than echoing the backend account's owner (e.g. RustFS's "rustfs"),
+ * which is what s3-tests expects (Owner.DisplayName == the configured
+ * user_id). Falls back to ListBuckets when credentials cannot be resolved.
  */
 export const makeOwnerResolver = (
   client: import("@aws-sdk/client-s3").S3Client,
@@ -83,6 +86,19 @@ export const makeOwnerResolver = (
   return (): Effect.Effect<OwnerInfo, BackendError> =>
     Effect.gen(function* () {
       if (cachedOwner) return cachedOwner;
+      const credentials = yield* Effect.tryPromise({
+        try: () => client.config.credentials(),
+        catch: (e) => mapS3Error(e, "*"),
+      }).pipe(
+        Effect.orElseSucceed(() => undefined),
+      );
+      if (credentials?.accessKeyId) {
+        cachedOwner = {
+          id: credentials.accessKeyId,
+          displayName: credentials.accessKeyId,
+        };
+        return cachedOwner;
+      }
       const result = yield* Effect.tryPromise({
         try: () => client.send(new ListBucketsCommand({})),
         catch: (e) => mapS3Error(e, "*"),

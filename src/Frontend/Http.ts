@@ -6,13 +6,22 @@ import {
 } from "@effect/platform";
 import { Effect, Layer, Option } from "effect";
 import {
+  type AccessControlPolicy,
   AccessDenied,
+  type AclGrant,
   Backend,
+  type BackendError,
   InvalidAccessKeyId,
   InvalidArgument,
   MethodNotAllowed,
+  NoSuchBucket,
+  NoSuchKey,
   RequestTimeTooSkewed,
 } from "../Services/Backend.ts";
+import {
+  GROUP_URI_ALL_USERS,
+  GROUP_URI_AUTHENTICATED_USERS,
+} from "../Services/Acl.ts";
 import { BackendResolver } from "../Services/BackendResolver.ts";
 import { S3Xml } from "../Services/S3Xml.ts";
 import { RequestContext } from "./Utils.ts";
@@ -40,7 +49,10 @@ import {
   verifyIncomingSigV2,
   verifyIncomingSigV4Detailed,
 } from "../Services/Auth.ts";
-import type { SigV4VerifiedContext } from "../Services/Auth.ts";
+import type {
+  AuthCredentials,
+  SigV4VerifiedContext,
+} from "../Services/Auth.ts";
 
 /**
  * Middleware that at debug log level logs every outgoing response's status and
@@ -117,6 +129,248 @@ function getHeaderValue(
   }
   const value = entry[1];
   return Array.isArray(value) ? value[0] : value;
+}
+
+/**
+ * Extracts the access key id from a legacy SigV2 Authorization header
+ * ("AWS <accessKeyId>:<signature>"). The v2 verifier does not return a
+ * SigV4VerifiedContext, so the principal is recovered from the header for
+ * ACL-based authorization.
+ */
+function extractV2AccessKeyId(
+  request: HttpServerRequest.HttpServerRequest,
+): string | undefined {
+  const authorization = request.headers["authorization"];
+  if (typeof authorization !== "string") return undefined;
+  const match = /^AWS\s+([^:]+):/.exec(authorization);
+  return match?.[1];
+}
+
+type AclPermission =
+  | "READ"
+  | "WRITE"
+  | "READ_ACP"
+  | "WRITE_ACP"
+  | "FULL_CONTROL";
+
+type AclCheck =
+  | {
+    readonly kind: "acl";
+    readonly permission: AclPermission;
+    readonly target: "bucket" | "object";
+  }
+  | { readonly kind: "create-bucket" }
+  | { readonly kind: "none" };
+
+/**
+ * Maps an S3 request to the ACL permission it requires. Bucket-level reads
+ * (list/head) need bucket READ; object reads need the OBJECT's READ grant
+ * (bucket READ does not grant object access in S3); object writes and
+ * deletes need bucket WRITE; ACL subresources need READ_ACP/WRITE_ACP.
+ * CreateBucket is special (any authenticated user may create buckets, and
+ * anonymous creation is denied). Subresources that are NotImplemented by
+ * design (tagging, policy, cors, ...) skip the ACL check.
+ */
+function aclCheckFor(
+  method: string,
+  subresource: string | undefined,
+  isObjectRequest: boolean,
+): AclCheck {
+  if (isObjectRequest) {
+    switch (subresource) {
+      case "acl":
+        return {
+          kind: "acl",
+          permission: method === "GET" ? "READ_ACP" : "WRITE_ACP",
+          target: "object",
+        };
+      case "uploads":
+      case "uploadId":
+        return { kind: "acl", permission: "WRITE", target: "bucket" };
+      case undefined:
+        break;
+      default:
+        return { kind: "none" };
+    }
+    switch (method) {
+      case "GET":
+      case "HEAD":
+        return { kind: "acl", permission: "READ", target: "object" };
+      case "PUT":
+      case "POST":
+      case "DELETE":
+        return { kind: "acl", permission: "WRITE", target: "bucket" };
+      default:
+        return { kind: "none" };
+    }
+  }
+  switch (subresource) {
+    case "acl":
+      return {
+        kind: "acl",
+        permission: method === "GET" ? "READ_ACP" : "WRITE_ACP",
+        target: "bucket",
+      };
+    case "versioning":
+      return {
+        kind: "acl",
+        permission: method === "GET" ? "READ" : "WRITE",
+        target: "bucket",
+      };
+    case "delete":
+    case "uploads":
+      return { kind: "acl", permission: "WRITE", target: "bucket" };
+    case undefined:
+      break;
+    default:
+      return { kind: "none" };
+  }
+  switch (method) {
+    case "GET":
+    case "HEAD":
+      return { kind: "acl", permission: "READ", target: "bucket" };
+    case "PUT":
+      return { kind: "create-bucket" };
+    case "DELETE":
+      return { kind: "acl", permission: "FULL_CONTROL", target: "bucket" };
+    case "POST":
+      return { kind: "acl", permission: "WRITE", target: "bucket" };
+    default:
+      return { kind: "none" };
+  }
+}
+
+/**
+ * True when a grant authorizes the given principal for the required
+ * permission. FULL_CONTROL implies every permission; group grants match
+ * AllUsers (anonymous and authenticated) or AuthenticatedUsers
+ * (authenticated only); CanonicalUser grants match by canonical id.
+ */
+function grantAllows(
+  grant: AclGrant,
+  principalId: string | undefined,
+  required: AclPermission,
+): boolean {
+  if (grant.permission !== "FULL_CONTROL" && grant.permission !== required) {
+    return false;
+  }
+  switch (grant.grantee.type) {
+    case "CanonicalUser":
+      return principalId !== undefined && grant.grantee.id === principalId;
+    case "Group":
+      if (grant.grantee.uri === GROUP_URI_ALL_USERS) return true;
+      if (grant.grantee.uri === GROUP_URI_AUTHENTICATED_USERS) {
+        return principalId !== undefined;
+      }
+      return false;
+    case "AmazonCustomerByEmail":
+      return false;
+  }
+}
+
+/**
+ * Query parameters that name S3 subresources. Authorization (and routing)
+ * must not treat ordinary list query params (list-type, encoding-type,
+ * prefix, …) as subresources — otherwise a request like GET /b?list-type=2
+ * would skip the ACL gate entirely.
+ */
+const S3_SUBRESOURCE_PARAMS = new Set([
+  "acl",
+  "versioning",
+  "tagging",
+  "policy",
+  "policyStatus",
+  "cors",
+  "lifecycle",
+  "website",
+  "logging",
+  "replication",
+  "notification",
+  "inventory",
+  "metrics",
+  "intelligent-tiering",
+  "ownershipControls",
+  "publicAccessBlock",
+  "object-lock",
+  "delete",
+  "uploads",
+  "uploadId",
+  "attributes",
+  "restore",
+  "legal-hold",
+  "retention",
+  "torrent",
+]);
+
+const firstS3Subresource = (url: URL): string | undefined =>
+  Array.from(url.searchParams.keys()).find((k) =>
+    S3_SUBRESOURCE_PARAMS.has(k)
+  ) ?? undefined;
+
+/**
+ * The subset of the Backend service the ACL gate needs. Kept structural so
+ * the gate does not depend on the full service shape.
+ */
+interface AclBackend {
+  readonly getBucketAcl: (
+    name: string,
+  ) => Effect.Effect<AccessControlPolicy, BackendError>;
+  readonly getObjectAcl: (
+    key: string,
+  ) => Effect.Effect<AccessControlPolicy, BackendError>;
+}
+
+/**
+ * ACL-based authorization for anonymous and non-root principals. The root
+ * user (the first configured auth credential) bypasses ACL checks entirely;
+ * every other principal must hold the required grant on the bucket or
+ * object ACL, or be the policy owner. Anonymous requests are authorized by
+ * the AllUsers group grants only.
+ */
+function authorizeByAcl(
+  request: HttpServerRequest.HttpServerRequest,
+  bucket: string,
+  key: string | undefined,
+  principalId: string | undefined,
+  backend: AclBackend,
+): Effect.Effect<void, AccessDenied | BackendError> {
+  const method = request.method ?? "UNKNOWN";
+  const url = request.url.startsWith("http")
+    ? new URL(request.url)
+    : new URL(request.url, "http://localhost");
+  const subresource = firstS3Subresource(url);
+  const isObjectRequest = key !== undefined;
+
+  const check = aclCheckFor(method, subresource, isObjectRequest);
+  if (check.kind === "none") return Effect.void;
+  if (check.kind === "create-bucket") {
+    return principalId === undefined
+      ? Effect.fail(new AccessDenied({ message: "Access Denied" }))
+      : Effect.void;
+  }
+
+  return Effect.gen(function* () {
+    const policy: AccessControlPolicy = yield* (
+      check.target === "object" && key !== undefined
+        ? backend.getObjectAcl(key)
+        : backend.getBucketAcl(bucket)
+    ).pipe(
+      // A failed ACL lookup must not leak bucket/object existence to
+      // callers who are not authorized anyway: report AccessDenied.
+      Effect.catchIf(
+        (e) => e instanceof NoSuchBucket || e instanceof NoSuchKey,
+        () => Effect.fail(new AccessDenied({ message: "Access Denied" })),
+      ),
+    );
+
+    if (principalId !== undefined && policy.owner.id === principalId) {
+      return;
+    }
+    for (const grant of policy.grants) {
+      if (grantAllows(grant, principalId, check.permission)) return;
+    }
+    return yield* Effect.fail(new AccessDenied({ message: "Access Denied" }));
+  });
 }
 
 /** Build annotations and log 5xx as error, 4xx as warning; return response. */
@@ -209,7 +463,9 @@ export const makeS3Router = (prefix = "") =>
           }
         }
 
-        const bucket = pathWithoutPrefix.split("/").filter(Boolean)[0] || "";
+        const pathParts = pathWithoutPrefix.split("/").filter(Boolean);
+        const bucket = pathParts[0] || "";
+        const key = pathParts.slice(1).join("/") || undefined;
         const isHead = request.method === "HEAD";
         const method = request.method ?? "UNKNOWN";
         const query = request.url.includes("?")
@@ -247,9 +503,13 @@ export const makeS3Router = (prefix = "") =>
               getHeaderValue(request.headers, "authorization") !== undefined,
           });
 
+          let authCredentials: Option.Option<AuthCredentials[]> = Option.none();
+          let skipSigV4Auth = false;
+          let v2AccessKeyId: string | undefined;
+
           if (bucket !== "") {
-            const authCredentials = config.resolveAuth(bucket);
-            const skipSigV4Auth = isPostObjectMultipartRequest(request);
+            authCredentials = config.resolveAuth(bucket);
+            skipSigV4Auth = isPostObjectMultipartRequest(request);
             if (Option.isSome(authCredentials) && !skipSigV4Auth) {
               if (isLegacyAwsAuthorizationRequest(request)) {
                 const v2Result = verifyIncomingSigV2(
@@ -276,78 +536,98 @@ export const makeS3Router = (prefix = "") =>
                     new AccessDenied({ message: "Access Denied" }),
                   );
                 }
+                v2AccessKeyId = extractV2AccessKeyId(request);
               } else {
-                if (!hasSigV4Credentials(request)) {
-                  return yield* Effect.fail(
-                    new AccessDenied({ message: "Access Denied" }),
-                  );
-                }
-
-                const resolvedBucket = config.lookupBucket(bucket);
-                if (Option.isNone(resolvedBucket)) {
-                  return yield* Effect.fail(
-                    new AccessDenied({ message: "Access Denied" }),
-                  );
-                }
-                const bucketRegion = resolvedBucket.value.region;
-                if (bucketRegion === undefined || bucketRegion.trim() === "") {
-                  return yield* Effect.fail(
-                    new AccessDenied({ message: "Access Denied" }),
-                  );
-                }
-
-                const validation = yield* verifyIncomingSigV4Detailed(
-                  request,
-                  authCredentials.value,
-                  bucketRegion,
-                );
-                if (!validation.valid) {
+                if (hasSigV4Credentials(request)) {
+                  const resolvedBucket = config.lookupBucket(bucket);
+                  if (Option.isNone(resolvedBucket)) {
+                    return yield* Effect.fail(
+                      new AccessDenied({ message: "Access Denied" }),
+                    );
+                  }
+                  const bucketRegion = resolvedBucket.value.region;
                   if (
-                    validation.failure === "MalformedAuthorization" ||
-                    validation.failure === "InvalidExpires"
+                    bucketRegion === undefined || bucketRegion.trim() === ""
                   ) {
                     return yield* Effect.fail(
-                      new InvalidArgument({
-                        message: "Authorization header is malformed",
-                      }),
+                      new AccessDenied({ message: "Access Denied" }),
                     );
                   }
-                  if (validation.failure === "RequestTimeTooSkewed") {
-                    return yield* Effect.fail(
-                      new RequestTimeTooSkewed({
-                        message:
-                          "The difference between the request time and the current time is too large.",
-                      }),
-                    );
-                  }
-                  if (
-                    validation.failure === "ExpiredPresign" ||
-                    validation.failure === "PresignNotYetValid" ||
-                    validation.failure === "PresignExpiresTooLong"
-                  ) {
-                    return yield* Effect.fail(
-                      new AccessDenied({ message: "Request has expired" }),
-                    );
-                  }
-                  if (validation.failure === "UnknownAccessKey") {
-                    return yield* Effect.fail(
-                      new InvalidAccessKeyId({
-                        message:
-                          "The AWS Access Key Id you provided does not exist in our records.",
-                      }),
-                    );
-                  }
-                  return yield* Effect.fail(
-                    new AccessDenied({ message: "Access Denied" }),
+
+                  const validation = yield* verifyIncomingSigV4Detailed(
+                    request,
+                    authCredentials.value,
+                    bucketRegion,
                   );
+                  if (!validation.valid) {
+                    if (
+                      validation.failure === "MalformedAuthorization" ||
+                      validation.failure === "InvalidExpires"
+                    ) {
+                      return yield* Effect.fail(
+                        new InvalidArgument({
+                          message: "Authorization header is malformed",
+                        }),
+                      );
+                    }
+                    if (validation.failure === "RequestTimeTooSkewed") {
+                      return yield* Effect.fail(
+                        new RequestTimeTooSkewed({
+                          message:
+                            "The difference between the request time and the current time is too large.",
+                        }),
+                      );
+                    }
+                    if (
+                      validation.failure === "ExpiredPresign" ||
+                      validation.failure === "PresignNotYetValid" ||
+                      validation.failure === "PresignExpiresTooLong"
+                    ) {
+                      return yield* Effect.fail(
+                        new AccessDenied({ message: "Request has expired" }),
+                      );
+                    }
+                    if (validation.failure === "UnknownAccessKey") {
+                      return yield* Effect.fail(
+                        new InvalidAccessKeyId({
+                          message:
+                            "The AWS Access Key Id you provided does not exist in our records.",
+                        }),
+                      );
+                    }
+                    return yield* Effect.fail(
+                      new AccessDenied({ message: "Access Denied" }),
+                    );
+                  }
+                  sigV4Context = validation.context;
                 }
-                sigV4Context = validation.context;
+                // No SigV4 credentials: anonymous request. Authorization is
+                // decided by the bucket/object ACL below (public-read buckets
+                // allow anonymous reads; everything else is denied).
               }
             }
           }
 
           const backend = yield* resolver.getLayerForBucket(bucket);
           const backendLayer = Layer.succeed(Backend, backend);
+
+          // ACL-based authorization for anonymous and non-root principals.
+          // The root user (the first configured auth credential) bypasses
+          // ACL checks; every other principal must hold the required grant
+          // on the bucket/object ACL or be the policy owner.
+          if (Option.isSome(authCredentials) && !skipSigV4Auth) {
+            const principalId = sigV4Context?.accessKeyId ?? v2AccessKeyId;
+            const primaryId = authCredentials.value[0]?.accessKeyId;
+            if (principalId === undefined || principalId !== primaryId) {
+              yield* authorizeByAcl(
+                request,
+                bucket,
+                key,
+                principalId,
+                backend,
+              );
+            }
+          }
 
           return yield* handler.pipe(
             Effect.provideService(RequestContext, { bucket, sigV4Context }),

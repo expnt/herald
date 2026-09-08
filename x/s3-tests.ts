@@ -254,8 +254,10 @@ is_secure = no
 bucket prefix = herald-${backend}-{random}-
 
 [s3 main]
-user_id = main
-display_name = main
+# Herald presents the access key id as the canonical owner identity, so the
+# main user's id/display_name must match its access_key for ACL assertions.
+user_id = minioadmin
+display_name = minioadmin
 email = main@example.com
 access_key = minioadmin
 secret_key = minioadmin

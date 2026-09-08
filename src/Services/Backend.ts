@@ -91,6 +91,11 @@ export class InvalidArgument extends Data.TaggedError("InvalidArgument")<{
   readonly message: string;
 }> {}
 
+export class UnresolvableGrantByEmailAddress
+  extends Data.TaggedError("UnresolvableGrantByEmailAddress")<{
+    readonly message: string;
+  }> {}
+
 export class RequestTimeTooSkewed extends Data.TaggedError(
   "RequestTimeTooSkewed",
 )<{
@@ -141,6 +146,7 @@ export type BackendError =
   | MissingContentLength
   | InvalidBucketName
   | InvalidArgument
+  | UnresolvableGrantByEmailAddress
   | RequestTimeTooSkewed
   | MalformedXML
   | MethodNotAllowed
@@ -364,6 +370,7 @@ export class Backend extends Context.Tag("Backend")<
     createBucket: (
       name: string,
       headers: Record<string, string | string[] | undefined>,
+      owner?: OwnerInfo,
     ) => Effect.Effect<void, BackendError>;
     deleteBucket: (name: string) => Effect.Effect<void, BackendError>;
     headBucket: (name: string) => Effect.Effect<void, BackendError>;
@@ -382,6 +389,7 @@ export class Backend extends Context.Tag("Backend")<
     putBucketAcl: (
       name: string,
       acl: AccessControlPolicy | CannedAcl,
+      owner?: OwnerInfo,
     ) => Effect.Effect<void, BackendError>;
     getObjectAcl: (
       key: string,
@@ -389,6 +397,7 @@ export class Backend extends Context.Tag("Backend")<
     putObjectAcl: (
       key: string,
       acl: AccessControlPolicy | CannedAcl,
+      owner?: OwnerInfo,
     ) => Effect.Effect<void, BackendError>;
 
     listObjects: (args: {
@@ -426,6 +435,7 @@ export class Backend extends Context.Tag("Backend")<
       key: string,
       stream: Stream.Stream<Uint8Array, Error>,
       headers: Record<string, string | string[] | undefined>,
+      owner?: OwnerInfo,
     ) => Effect.Effect<PutObjectResult, BackendError>;
 
     deleteObject: (key: string) => Effect.Effect<void, BackendError>;

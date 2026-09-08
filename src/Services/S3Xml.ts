@@ -36,6 +36,7 @@ import {
   type OwnerInfo,
   PreconditionFailed,
   RequestTimeTooSkewed,
+  UnresolvableGrantByEmailAddress,
 } from "./Backend.ts";
 
 export class S3Xml extends Context.Tag("S3Xml")<
@@ -122,6 +123,37 @@ export const makeS3Xml = Effect.sync(() => {
           `&#x${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")};`,
       );
 
+  /**
+   * Percent-encodes a string the way S3 does for encoding-type=url responses:
+   * every byte outside the unreserved set (A-Za-z0-9-._~) plus "/" is emitted
+   * as %HH. This matches urllib.parse.quote(key, safe="/") which S3 uses, so
+   * botocore's unquote round-trips keys, prefixes, and echo values exactly.
+   */
+  const urlEncode = (s: string) => {
+    let out = "";
+    for (const ch of s) {
+      const code = ch.codePointAt(0);
+      if (code === undefined) continue;
+      if (
+        (code >= 0x41 && code <= 0x5a) ||
+        (code >= 0x61 && code <= 0x7a) ||
+        (code >= 0x30 && code <= 0x39) ||
+        ch === "-" ||
+        ch === "." ||
+        ch === "_" ||
+        ch === "~" ||
+        ch === "/"
+      ) {
+        out += ch;
+      } else {
+        for (const byte of new TextEncoder().encode(ch)) {
+          out += `%${byte.toString(16).toUpperCase().padStart(2, "0")}`;
+        }
+      }
+    }
+    return out;
+  };
+
   const decodeEntities = (s: string) =>
     s.replace(
       /&(?:#x([0-9a-fA-F]+)|#([0-9]+)|(amp|lt|gt|quot|apos));/g,
@@ -151,18 +183,30 @@ export const makeS3Xml = Effect.sync(() => {
     );
 
   const extractText = (xml: string, tagName: string): string | undefined => {
-    const regex = new RegExp(`<${tagName}>(.*?)<\/${tagName}>`, "s");
+    // Allow attributes on the open tag (e.g. <Grantee xsi:type="...">);
+    // without this, ACL grantee elements fail to match and grants collapse.
+    const regex = new RegExp(
+      `<${tagName}(?:\\s[^>]*)?>(.*?)<\\/${tagName}>`,
+      "s",
+    );
     const match = xml.match(regex);
     return match ? decodeEntities(match[1]) : undefined;
   };
 
   const extractElements = (xml: string, tagName: string): string[] => {
-    const regex = new RegExp(`<${tagName}>(.*?)<\/${tagName}>`, "gs");
+    const regex = new RegExp(
+      `<${tagName}(?:\\s[^>]*)?>(.*?)<\\/${tagName}>`,
+      "gs",
+    );
     return Array.from(xml.matchAll(regex)).map((m) => m[1]);
   };
 
-  const parseGranteeType = (granteeXml: string): AclGrantee["type"] => {
-    const typeMatch = granteeXml.match(/xsi:type="([^"]+)"/);
+  // extractElements/extractText return only the content BETWEEN tags, so the
+  // xsi:type attribute (which lives on the open tag) must be read from the
+  // grant XML itself, not from the extracted inner content.
+  const parseGranteeType = (grantXml: string): AclGrantee["type"] => {
+    const openTag = grantXml.match(/<Grantee\b[^>]*>/)?.[0] ?? "";
+    const typeMatch = openTag.match(/xsi:type="([^"]+)"/);
     const type = typeMatch ? typeMatch[1] : undefined;
     if (type === "Group") return "Group";
     if (type === "AmazonCustomerByEmail") return "AmazonCustomerByEmail";
@@ -173,7 +217,7 @@ export const makeS3Xml = Effect.sync(() => {
     const granteeXml = extractElements(grantXml, "Grantee")[0] ?? "";
     const permission = extractText(grantXml, "Permission") ?? "READ";
     const grantee: AclGrantee = {
-      type: parseGranteeType(granteeXml),
+      type: parseGranteeType(grantXml),
       id: extractText(granteeXml, "ID"),
       displayName: extractText(granteeXml, "DisplayName"),
       uri: extractText(granteeXml, "URI"),
@@ -291,6 +335,10 @@ export const makeS3Xml = Effect.sync(() => {
         code = "InvalidArgument";
         message = err.message;
         status = 400;
+      } else if (err instanceof UnresolvableGrantByEmailAddress) {
+        code = "UnresolvableGrantByEmailAddress";
+        message = err.message;
+        status = 400;
       } else if (err instanceof RequestTimeTooSkewed) {
         code = "RequestTimeTooSkewed";
         message = err.message;
@@ -354,11 +402,14 @@ export const makeS3Xml = Effect.sync(() => {
     },
 
     formatListObjects: (result: ListObjectsResult) => {
+      const urlEncoding = result.encodingType === "url";
+      const enc = (s: string) => (urlEncoding ? urlEncode(s) : encode(s));
+
       const contentsXml = result.contents
         .map(
           (c) =>
             `<Contents><Key>${
-              encode(
+              enc(
                 c.key,
               )
             }</Key><LastModified>${c.lastModified.toISOString()}</LastModified><ETag>${c.etag}</ETag><Size>${c.size}</Size><StorageClass>${
@@ -375,7 +426,7 @@ export const makeS3Xml = Effect.sync(() => {
         .map(
           (cp) =>
             `<CommonPrefixes><Prefix>${
-              encode(cp.prefix)
+              enc(cp.prefix)
             }</Prefix></CommonPrefixes>`,
         )
         .join("");
@@ -384,14 +435,14 @@ export const makeS3Xml = Effect.sync(() => {
 
       const xml = isV2
         ? `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>${result.name}</Name><Prefix>${
-          encode(
+          enc(
             result.prefix ?? "",
           )
         }</Prefix>${
           result.delimiter !== undefined
-            ? `<Delimiter>${encode(result.delimiter)}</Delimiter>`
+            ? `<Delimiter>${enc(result.delimiter)}</Delimiter>`
             : ""
-        }<KeyCount>${
+        }${urlEncoding ? "<EncodingType>url</EncodingType>" : ""}<KeyCount>${
           result.keyCount ?? 0
         }</KeyCount><MaxKeys>${result.maxKeys}</MaxKeys><IsTruncated>${result.isTruncated}</IsTruncated>${
           result.continuationToken !== undefined
@@ -411,24 +462,24 @@ export const makeS3Xml = Effect.sync(() => {
             : ""
         }${
           result.startAfter !== undefined
-            ? `<StartAfter>${encode(result.startAfter)}</StartAfter>`
+            ? `<StartAfter>${enc(result.startAfter)}</StartAfter>`
             : ""
         }${contentsXml}${commonPrefixesXml}</ListBucketResult>`
         : `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>${result.name}</Name><Prefix>${
-          encode(
+          enc(
             result.prefix ?? "",
           )
         }</Prefix>${
           result.delimiter !== undefined
-            ? `<Delimiter>${encode(result.delimiter)}</Delimiter>`
+            ? `<Delimiter>${enc(result.delimiter)}</Delimiter>`
             : ""
-        }<Marker>${
-          encode(
+        }${urlEncoding ? "<EncodingType>url</EncodingType>" : ""}<Marker>${
+          enc(
             result.marker ?? "",
           )
         }</Marker><MaxKeys>${result.maxKeys}</MaxKeys><IsTruncated>${result.isTruncated}</IsTruncated>${
           result.nextMarker
-            ? `<NextMarker>${encode(result.nextMarker)}</NextMarker>`
+            ? `<NextMarker>${enc(result.nextMarker)}</NextMarker>`
             : ""
         }${contentsXml}${commonPrefixesXml}</ListBucketResult>`;
 
@@ -441,10 +492,13 @@ export const makeS3Xml = Effect.sync(() => {
     },
 
     formatListVersions: (result: ListObjectsResult) => {
+      const urlEncoding = result.encodingType === "url";
+      const enc = (s: string) => (urlEncoding ? urlEncode(s) : encode(s));
+
       const versionsXml = result.contents
         .map((c) => {
           const tag = c.isDeleteMarker ? "DeleteMarker" : "Version";
-          return `<${tag}><Key>${encode(c.key)}</Key><VersionId>${
+          return `<${tag}><Key>${enc(c.key)}</Key><VersionId>${
             c.versionId || "null"
           }</VersionId><IsLatest>${
             c.isLatest || false
@@ -462,22 +516,22 @@ export const makeS3Xml = Effect.sync(() => {
         .map(
           (cp) =>
             `<CommonPrefixes><Prefix>${
-              encode(cp.prefix)
+              enc(cp.prefix)
             }</Prefix></CommonPrefixes>`,
         )
         .join("");
 
       const xml =
         `<?xml version="1.0" encoding="UTF-8"?><ListVersionsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>${result.name}</Name><Prefix>${
-          encode(
+          enc(
             result.prefix ?? "",
           )
         }</Prefix>${
           result.delimiter !== undefined
-            ? `<Delimiter>${encode(result.delimiter)}</Delimiter>`
+            ? `<Delimiter>${enc(result.delimiter)}</Delimiter>`
             : ""
-        }<KeyMarker>${
-          encode(
+        }${urlEncoding ? "<EncodingType>url</EncodingType>" : ""}<KeyMarker>${
+          enc(
             result.marker ?? "",
           )
         }</KeyMarker><VersionIdMarker>${
@@ -486,7 +540,7 @@ export const makeS3Xml = Effect.sync(() => {
           )
         }</VersionIdMarker><MaxKeys>${result.maxKeys}</MaxKeys><IsTruncated>${result.isTruncated}</IsTruncated>${
           result.nextMarker
-            ? `<NextKeyMarker>${encode(result.nextMarker)}</NextKeyMarker>`
+            ? `<NextKeyMarker>${enc(result.nextMarker)}</NextKeyMarker>`
             : ""
         }${
           result.nextContinuationToken
@@ -751,10 +805,16 @@ export const makeS3Xml = Effect.sync(() => {
               `<Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="CanonicalUser">${
                 g.id ? `<ID>${encode(g.id)}</ID>` : ""
               }${
-                g.displayName
-                  ? `<DisplayName>${encode(g.displayName)}</DisplayName>`
-                  : ""
-              }</Grantee>`;
+                // CanonicalUser responses must always carry DisplayName:
+                // s3-tests' check_grants sorts grants by it and crashes on
+                // None when a stored grant (e.g. written via a grant header
+                // with only an ID) lacks one. Herald's display name equals
+                // the access key id, so fall back to the id itself.
+                (g.displayName ?? g.id)
+                  ? `<DisplayName>${
+                    encode(g.displayName ?? g.id!)
+                  }</DisplayName>`
+                  : ""}</Grantee>`;
           }
           return `<Grant>${granteeXml}<Permission>${grant.permission}</Permission></Grant>`;
         })

@@ -203,6 +203,174 @@ const specs: AclTestSpec[] = [
       assertOwnerFullControl(response.Grants ?? []);
     },
   },
+
+  // Regression: PUT ?acl with explicit grants used to collapse every grant
+  // to FULL_CONTROL on the round-trip (grantee XML attributes dropped).
+  {
+    name: "acl/bucket/grant-roundtrip",
+    ignoreBaseline: true,
+    fn: async (c) => {
+      const current = await c.send(
+        new GetBucketAclCommand({ Bucket: BUCKET }),
+      );
+      const owner = current.Owner!;
+      await c.send(
+        new PutBucketAclCommand({
+          Bucket: BUCKET,
+          AccessControlPolicy: {
+            Owner: owner,
+            Grants: [
+              {
+                Grantee: { Type: "CanonicalUser", ID: owner.ID! },
+                Permission: "FULL_CONTROL",
+              },
+              {
+                Grantee: { Type: "CanonicalUser", ID: "alt" },
+                Permission: "READ",
+              },
+            ],
+          },
+        }),
+      );
+      const response = await c.send(
+        new GetBucketAclCommand({ Bucket: BUCKET }),
+      );
+      const altRead = findGrant(
+        response.Grants ?? [],
+        (g) =>
+          g.Grantee?.Type === "CanonicalUser" && g.Grantee?.ID === "alt" &&
+          g.Permission === "READ",
+      );
+      assert(
+        altRead !== undefined,
+        "explicit alt-user READ grant must survive the round-trip; grants must not collapse to FULL_CONTROL",
+      );
+    },
+  },
+
+  // Regression: grants to nonexistent canonical IDs must be rejected
+  // (InvalidArgument), not silently accepted.
+  {
+    name: "acl/bucket/grant-nonexist-user-rejected",
+    ignoreBaseline: true,
+    fn: async (c) => {
+      const current = await c.send(
+        new GetBucketAclCommand({ Bucket: BUCKET }),
+      );
+      let thrown: Error | undefined;
+      try {
+        await c.send(
+          new PutBucketAclCommand({
+            Bucket: BUCKET,
+            AccessControlPolicy: {
+              Owner: current.Owner!,
+              Grants: [
+                {
+                  Grantee: {
+                    Type: "CanonicalUser",
+                    ID: "nonexistent-grantee-id-xyz",
+                  },
+                  Permission: "READ",
+                },
+              ],
+            },
+          }),
+        );
+      } catch (e) {
+        thrown = e as Error;
+      }
+      assert(
+        thrown !== undefined,
+        "grant to nonexistent canonical user must be rejected",
+      );
+      assertEquals(thrown.name, "InvalidArgument");
+    },
+  },
+
+  // Regression: email grantees cannot be resolved without a user directory
+  // and must be rejected with UnresolvableGrantByEmailAddress.
+  {
+    name: "acl/bucket/grant-email-rejected",
+    ignoreBaseline: true,
+    fn: async (c) => {
+      const current = await c.send(
+        new GetBucketAclCommand({ Bucket: BUCKET }),
+      );
+      let thrown: Error | undefined;
+      try {
+        await c.send(
+          new PutBucketAclCommand({
+            Bucket: BUCKET,
+            AccessControlPolicy: {
+              Owner: current.Owner!,
+              Grants: [
+                {
+                  Grantee: {
+                    Type: "AmazonCustomerByEmail",
+                    EmailAddress: "nonexistent@example.com",
+                  },
+                  Permission: "READ",
+                },
+              ],
+            },
+          }),
+        );
+      } catch (e) {
+        thrown = e as Error;
+      }
+      assert(
+        thrown !== undefined,
+        "email grantee must be rejected",
+      );
+      assertEquals(thrown.name, "UnresolvableGrantByEmailAddress");
+    },
+  },
+
+  // Regression: the bucket-owner-read canned ACL must grant READ to the
+  // bucket owner (previously expanded to AllUsers READ).
+  {
+    name: "acl/object/canned-bucket-owner-read",
+    ignoreBaseline: true,
+    fn: async (c) => {
+      await c.send(
+        new PutObjectCommand({ Bucket: BUCKET, Key: KEY, Body: "bar" }),
+      );
+      await c.send(
+        new PutObjectAclCommand({
+          Bucket: BUCKET,
+          Key: KEY,
+          ACL: "bucket-owner-read",
+        }),
+      );
+      const response = await c.send(
+        new GetObjectAclCommand({ Bucket: BUCKET, Key: KEY }),
+      );
+      const grants = response.Grants ?? [];
+      const ownerFull = findGrant(
+        grants,
+        (g) =>
+          g.Permission === "FULL_CONTROL" &&
+          g.Grantee?.Type === "CanonicalUser" &&
+          g.Grantee.ID === response.Owner?.ID,
+      );
+      assert(
+        ownerFull !== undefined,
+        "object owner must retain FULL_CONTROL",
+      );
+      assert(
+        !grants.some((g) => g.Grantee?.Type === "Group"),
+        "bucket-owner-read must not grant to the AllUsers group",
+      );
+      const bucketOwnerRead = findGrant(
+        grants,
+        (g) => g.Permission === "READ" && g.Grantee?.Type === "CanonicalUser",
+      );
+      assert(
+        bucketOwnerRead !== undefined,
+        "bucket owner must receive READ",
+      );
+    },
+  },
 ];
 
 const cases: ProxyTestCase[] = specs.map((spec) => ({

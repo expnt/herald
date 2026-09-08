@@ -366,6 +366,9 @@ export const putObject = Effect.gen(function* () {
     key,
     validatedBody,
     request.headers,
+    sigV4Context
+      ? { id: sigV4Context.accessKeyId, displayName: sigV4Context.accessKeyId }
+      : undefined,
   );
 
   const headers = headerService.toResponseHeaders(result);
