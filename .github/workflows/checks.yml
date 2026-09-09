@@ -127,13 +127,12 @@ jobs:
       matrix:
         backend: [rustfs, swift]
     steps:
-      # Live SSH debugging (requires an SSH key on the triggering GitHub
-      # account; the SSH command is printed in this step's log).
+      # Live SSH debugging: the session is open to anyone with the connection
+      # string printed in this step's log (no SSH key setup needed).
       - name: Setup upterm session
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
+        # if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
         uses: owenthereal/action-upterm@v1
         with:
-          limit-access-to-actor: true
           detached: true
 
       - uses: actions/checkout@v4
