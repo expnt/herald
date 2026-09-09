@@ -59,7 +59,7 @@ jobs:
           restore-keys: |
             uv-${{ runner.os }}-${{ hashFiles('s3-tests/requirements.txt') }}
             uv-${{ runner.os }}
- 
+
       - name: start container
         run: nix develop --command deno run --allow-all x/compose-up.ts s3 swift db
 
