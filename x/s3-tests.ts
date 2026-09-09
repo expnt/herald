@@ -8,9 +8,12 @@
  *  - Configuring s3-tests to point to the proxy
  *  - Running pytest with real-time output streaming
  *  - Parsing JUnit XML for a final summary
+ *  - Pass-list regression gate: s3-tests doesn't fully pass against Herald, so
+ *    CI fails only if a checked-in known-passing test (x/s3-tests-pass-{backend}.txt)
+ *    regresses. Newly-passing tests are reported; fold them in with --update-pass-list.
  *
  * Usage:
- *   ./x/s3-tests.ts [pytest-args] [--backend <rustfs|swift>] [--no-abort]
+ *   ./x/s3-tests.ts [pytest-args] [--backend <rustfs|swift>] [--no-abort] [--update-pass-list]
  *
  * Environment Variables:
  *   S3TEST_TAGS: Custom pytest marks (default: not buckets and ...)
@@ -132,6 +135,9 @@ const program = Effect.gen(function* () {
   const rawArgs = [...Deno.args];
   const noAbort = rawArgs.includes("--no-abort") ||
     Deno.env.get("S3TEST_NO_ABORT") === "true";
+  const updatePassList = rawArgs.includes("--update-pass-list");
+  // A baseline run for regenerating the pass list must see all results.
+  const effectiveNoAbort = noAbort || updatePassList;
 
   let backend = "rustfs";
   const backendIdx = rawArgs.indexOf("--backend");
@@ -140,7 +146,9 @@ const program = Effect.gen(function* () {
     rawArgs.splice(backendIdx, 2);
   }
 
-  const pytestArgsFromCli = rawArgs.filter((arg) => arg !== "--no-abort");
+  const pytestArgsFromCli = rawArgs.filter(
+    (arg) => arg !== "--no-abort" && arg !== "--update-pass-list",
+  );
 
   const proxyLogName = backend === "swift"
     ? "herald-proxy-swift.log"
@@ -359,8 +367,15 @@ email = iam_alt_root@example.com
         `${colors.gray("Additional pytest args:")} ${pytestArgs.join(" ")}`,
       );
     }
-    if (noAbort) {
+    if (effectiveNoAbort) {
       console.log(colors.yellow("Abort on ERROR disabled (--no-abort)"));
+    }
+    if (updatePassList) {
+      console.log(
+        colors.yellow(
+          "Regenerating pass list from this run (--update-pass-list)",
+        ),
+      );
     }
 
     // Build command arguments
@@ -422,6 +437,7 @@ email = iam_alt_root@example.com
         let skippedCount = 0;
         let lastResultTime = Date.now();
         const seenTests = new Set<string>();
+        const passedTests = new Set<string>();
         const failedTests = new Set<string>();
         const errorTests = new Set<string>();
         let currentTestName = "";
@@ -447,6 +463,7 @@ email = iam_alt_root@example.com
             currentTestName = testName;
 
             if (status === "PASSED") {
+              passedTests.add(testName);
               console.log(
                 `${colors.green("✓")} ${testName} ${
                   colors.gray(`(${duration}s)`)
@@ -474,7 +491,7 @@ email = iam_alt_root@example.com
                   colors.gray(`(${duration}s)`)
                 }`,
               );
-              if (!noAbort) {
+              if (!effectiveNoAbort) {
                 shouldAbort = true;
                 abortReason = `ERROR in ${testName}`;
                 child.kill("SIGTERM");
@@ -510,7 +527,7 @@ email = iam_alt_root@example.com
               }`,
             );
 
-            if (!noAbort) {
+            if (!effectiveNoAbort) {
               shouldAbort = true;
               abortReason = `ERROR in ${testName}`;
               child.kill("SIGTERM");
@@ -588,6 +605,7 @@ email = iam_alt_root@example.com
           errors: number;
           skipped: number;
           time?: number;
+          passedNames: string[];
           failedNames: string[];
           errorNames: string[];
         } | null = null;
@@ -599,17 +617,28 @@ email = iam_alt_root@example.com
             return match ? parseFloat(match[1]) : 0;
           };
 
+          const passedNames: string[] = [];
           const failedNames: string[] = [];
           const errorNames: string[] = [];
 
           const testcaseMatches = junitXml.matchAll(
-            /<testcase classname="([^"]+)" name="([^"]+)"[^>]*>([\s\S]*?)<\/testcase>/g,
+            /<testcase classname="([^"]+)" name="([^"]+)"[^>]*?(\/>|>([\s\S]*?)<\/testcase>)/g,
           );
           for (const match of testcaseMatches) {
-            const fullName = `${match[1]}::${match[2]}`;
-            const content = match[3];
+            // JUnit classnames are dotted ("s3tests.functional.test_s3"); the
+            // pass list uses pytest nodeids ("s3tests/functional/test_s3.py::…").
+            const fullName = `${match[1].replaceAll(".", "/")}.py::${match[2]}`;
+            // Passing tests serialize as self-closing <testcase …/> (group 4
+            // undefined); failures/errors/skips have inner content.
+            const content = match[4] ?? "";
             if (content.includes("<failure")) failedNames.push(fullName);
             if (content.includes("<error")) errorNames.push(fullName);
+            if (
+              !content.includes("<failure") && !content.includes("<error") &&
+              !content.includes("<skipped")
+            ) {
+              passedNames.push(fullName);
+            }
           }
 
           junitData = {
@@ -618,6 +647,7 @@ email = iam_alt_root@example.com
             errors: Math.floor(getAttr("errors")),
             skipped: Math.floor(getAttr("skipped")),
             time: getAttr("time"),
+            passedNames,
             failedNames,
             errorNames,
           };
@@ -631,6 +661,7 @@ email = iam_alt_root@example.com
           failures: failedCount,
           errors: errorCount,
           skipped: skippedCount,
+          passedNames: Array.from(passedTests),
           time: undefined,
           failedNames: Array.from(failedTests),
           errorNames: Array.from(errorTests),
@@ -651,10 +682,17 @@ email = iam_alt_root@example.com
       console.log(colors.gray(result.collectedInfo));
     }
 
-    const { tests, failures, errors, skipped, time, failedNames, errorNames } =
-      result.counts;
+    const {
+      tests,
+      failures,
+      errors,
+      skipped,
+      time,
+      passedNames,
+      failedNames,
+      errorNames,
+    } = result.counts;
     const passed = tests - failures - errors - skipped;
-
     console.log();
     const durationStr = time ? ` ${colors.cyan(`${time.toFixed(2)}s`)}` : "";
     console.log(
@@ -698,20 +736,132 @@ email = iam_alt_root@example.com
         console.log(`  ${colors.red("-")} ${name}`);
       }
     }
+    // --- Pass-list regression gate ---
+    // s3-tests doesn't fully pass against Herald, so CI can't require a green
+    // suite. Instead we check in a per-backend list of known-passing tests and
+    // fail only if any of THOSE regress. Known failures are tolerated.
+    const passListPath = path.join(__dirname, `s3-tests-pass-${backend}.txt`);
+    const passListContent = yield* Effect.tryPromise(() =>
+      Deno.readTextFile(passListPath)
+    ).pipe(Effect.catchAll(() => Effect.succeed(null)));
+    let passList: Set<string> | null = null;
+    if (passListContent !== null) {
+      passList = new Set(
+        passListContent.split("\n").map((l) => l.trim()).filter((l) =>
+          l && !l.startsWith("#")
+        ),
+      );
+      console.log(
+        colors.gray(
+          `Pass list: ${passList.size} known-passing tests (${passListPath})`,
+        ),
+      );
+    } else {
+      console.log(
+        colors.yellow(
+          `No pass list found at ${passListPath} — failing on any failure.`,
+        ),
+      );
+    }
 
-    if (errors > 0 || (result.shouldAbort && result.abortReason)) {
-      if (result.shouldAbort) {
+    if (updatePassList && passList !== null) {
+      // Guard against regenerating from a filtered/partial run, which would
+      // silently truncate the list. The full tag-selected suite is 618 tests.
+      if (tests < 500) {
         yield* Effect.fail(
           new Error(
-            `Aborted due to ERROR: ${result.abortReason || "Test Error"}`,
+            `Refusing to update pass list: only ${tests} tests ran (need >= 500). ` +
+              `A partial run would truncate the list.`,
           ),
         );
-      } else {
-        yield* Effect.fail(new Error(`s3-tests finished with errors.`));
+      }
+      const gitResult = yield* Effect.tryPromise(() =>
+        $`git -C ${s3TestsDir} rev-parse --short HEAD`.noThrow().quiet()
+      );
+      const submoduleCommit = gitResult.stdout.trim();
+      const header = [
+        `# s3-tests pass list for the ${backend} backend (auto-generated).`,
+        `# One pytest nodeid per line. CI fails if any of these regress.`,
+        `# Generated from s3-tests submodule ${submoduleCommit} on ${
+          new Date().toISOString()
+        }`,
+        `# Regenerate: ./x/s3-tests.ts --backend ${backend} --update-pass-list`,
+      ];
+      const sorted = [...new Set(passedNames)].sort();
+      yield* Effect.tryPromise(() =>
+        Deno.writeTextFile(
+          passListPath,
+          header.join("\n") + "\n" + sorted.join("\n") + "\n",
+        )
+      );
+      console.log(
+        colors.green(
+          `\nWrote ${sorted.length} passing tests to ${passListPath}`,
+        ),
+      );
+    } else if (passList !== null) {
+      const regressed = [...new Set([...failedNames, ...errorNames])].filter((
+        n,
+      ) => passList.has(n));
+      if (regressed.length > 0) {
+        console.error(
+          colors.red(
+            `\nRegression: ${regressed.length} previously-passing test(s) failed:`,
+          ),
+        );
+        for (const name of regressed) {
+          console.error(`  ${colors.red("-")} ${name}`);
+        }
+        yield* Effect.fail(
+          new Error(
+            `${regressed.length} previously-passing test(s) regressed.`,
+          ),
+        );
+      }
+      const newlyPassing = passedNames.filter((n) => !passList.has(n));
+      if (newlyPassing.length > 0) {
+        console.log(
+          colors.green(
+            `\n${newlyPassing.length} newly-passing test(s) (not in pass list):`,
+          ),
+        );
+        for (const name of newlyPassing.slice(0, 20)) {
+          console.log(`  ${colors.green("+")} ${name}`);
+        }
+        if (newlyPassing.length > 20) {
+          console.log(`  ... and ${newlyPassing.length - 20} more`);
+        }
+        console.log(
+          colors.gray(
+            `Run with --update-pass-list to fold them into the pass list.`,
+          ),
+        );
       }
     }
 
-    if (failures > 0 || result.code !== 0) {
+    // With a pass list (or in update mode) known failures/errors are tolerated;
+    // the regression check above is the gate. Without one, any failure fails.
+    const gateActive = passList !== null || updatePassList;
+
+    if (tests === 0) {
+      yield* Effect.fail(
+        new Error("No tests ran — pytest collection or startup failure."),
+      );
+    }
+
+    if (result.shouldAbort && result.abortReason) {
+      yield* Effect.fail(
+        new Error(
+          `Aborted due to ERROR: ${result.abortReason || "Test Error"}`,
+        ),
+      );
+    }
+
+    if (errors > 0 && !gateActive) {
+      yield* Effect.fail(new Error(`s3-tests finished with errors.`));
+    }
+
+    if ((failures > 0 || result.code !== 0) && !gateActive) {
       yield* Effect.fail(
         new Error(`s3-tests finished with failures (code ${result.code}).`),
       );
