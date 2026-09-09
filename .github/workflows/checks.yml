@@ -43,16 +43,29 @@ jobs:
 
       - uses: DeterminateSystems/flakehub-cache-action@v3
 
-      - name: deno cache
-        uses: actions/cache@v6
+      - name: deno cache restore
+        uses: actions/cache/restore@v6
         with:
           path: ~/.cache/deno
           key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
           restore-keys: |
             ${{ runner.os }}-deno-
 
-      - name: uv cache
-        uses: actions/cache@v6
+      # Write the cache only on main: caches created on PR runs are scoped to
+      # the PR's merge ref (refs/pull/.../merge) and can only be restored by
+      # re-runs of that same PR — never by other PRs — so PR writes just
+      # churn the repo's cache budget. The default branch cache is readable
+      # by every branch/PR, which is what the restore step above relies on.
+      # `always()` keeps the save-on-failure behavior of the combined
+      # actions/cache post-phase.
+      - name: deno cache save
+        if: always() && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/deno
+          key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
+      - name: uv cache restore
+        uses: actions/cache/restore@v6
         with:
           path: /tmp/.uv-cache
           key: uv-${{ runner.os }}-${{ hashFiles('s3-tests/requirements.txt') }}
@@ -60,6 +73,12 @@ jobs:
             uv-${{ runner.os }}-${{ hashFiles('s3-tests/requirements.txt') }}
             uv-${{ runner.os }}
 
+      - name: uv cache save
+        if: always() && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v6
+        with:
+          path: /tmp/.uv-cache
+          key: uv-${{ runner.os }}-${{ hashFiles('s3-tests/requirements.txt') }}
       - name: start container
         run: nix develop --command deno run --allow-all x/compose-up.ts s3 swift db
 
@@ -105,16 +124,22 @@ jobs:
 
       - uses: DeterminateSystems/flakehub-cache-action@v3
 
-      - name: deno cache
-        uses: actions/cache@v4
+      - name: deno cache restore
+        uses: actions/cache/restore@v6
         with:
           path: ~/.cache/deno
           key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
           restore-keys: |
             ${{ runner.os }}-deno-
 
-      - name: uv cache
-        uses: actions/cache@v6
+      - name: deno cache save
+        if: always() && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/deno
+          key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
+      - name: uv cache restore
+        uses: actions/cache/restore@v6
         with:
           path: /tmp/.uv-cache
           key: uv-${{ runner.os }}-${{ hashFiles('s3-tests/requirements.txt') }}
@@ -122,6 +147,12 @@ jobs:
             uv-${{ runner.os }}-${{ hashFiles('s3-tests/requirements.txt') }}
             uv-${{ runner.os }}
 
+      - name: uv cache save
+        if: always() && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v6
+        with:
+          path: /tmp/.uv-cache
+          key: uv-${{ runner.os }}-${{ hashFiles('s3-tests/requirements.txt') }}
       - name: start container
         run: |
           if [ "${{ matrix.backend }}" = "rustfs" ]; then
