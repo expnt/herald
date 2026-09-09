@@ -8,13 +8,13 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
-      tmate_enabled:
+      debug_enabled:
         type: boolean
         description: |
-          Run the s3-tests job with a detached tmate session for live debugging
-          (https://github.com/marketplace/actions/debugging-with-tmate).
+          Run the s3-tests job with a detached upterm session for live SSH
+          debugging (https://github.com/owenthereal/action-upterm).
         required: false
-        default: true
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
@@ -127,6 +127,15 @@ jobs:
       matrix:
         backend: [rustfs, swift]
     steps:
+      # Live SSH debugging (requires an SSH key on the triggering GitHub
+      # account; the SSH command is printed in this step's log).
+      - name: Setup upterm session
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
+        uses: owenthereal/action-upterm@v1
+        with:
+          limit-access-to-actor: true
+          detached: true
+
       - uses: actions/checkout@v4
         with:
           submodules: recursive
@@ -198,14 +207,38 @@ jobs:
             exit 1
           fi
 
-      # Detached tmate session for live debugging of the s3-tests hang
-      # (trigger a workflow_dispatch with tmate_enabled=true, then SSH in
-      # from the session URL printed in this step's log).
-      - name: Setup tmate session
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.tmate_enabled }}
-        uses: mxschmitt/action-tmate@v3
-        with:
-          detached: true
+      # Background hang watcher: dumps process state every 30s to
+      # /tmp/hang-watch.log, and SIGKILLs the runner if s3-tests.log goes
+      # stale for 10 min — turning a silent hang into a failed step whose
+      # artifacts (logs + watcher output) show exactly where it stuck.
+      - name: start hang watcher
+        run: |
+          nohup bash -c '
+            WATCH=/tmp/hang-watch.log
+            LOG=s3-tests/s3-tests.log
+            : > "$WATCH"
+            while true; do
+              {
+                echo "=== $(date -u +%H:%M:%S) ==="
+                ps -eo pid,ppid,stat,wchan:25,cmd | grep -E "s3-tests.ts|uv run pytest" | grep -v grep
+                for p in $(pgrep -f "deno run.*s3-tests.ts"); do
+                  echo "--- pid $p ---"
+                  cat /proc/$p/wchan 2>/dev/null
+                  head -8 /proc/$p/stack 2>/dev/null
+                  ls -l /proc/$p/fd 2>/dev/null | head -12
+                done
+                if [ -f "$LOG" ]; then
+                  age=$(( $(date +%s) - $(stat -c %Y "$LOG") ))
+                  if [ "$age" -gt 600 ] && pgrep -f "deno run.*s3-tests.ts" > /dev/null; then
+                    echo "STALE $age s — killing runner" >> "$WATCH"
+                    pkill -9 -f "deno run.*s3-tests.ts"
+                  fi
+                fi
+              } >> "$WATCH" 2>&1
+              sleep 30
+            done
+          ' > /dev/null 2>&1 &
+          echo "hang watcher started (pid $!)"
       - name: s3-tests
         run: nix develop --command deno run --allow-all x/s3-tests.ts --backend ${{ matrix.backend }} --no-abort
 
@@ -221,6 +254,7 @@ jobs:
             s3-tests/s3-tests*.log
             s3-tests/herald-proxy*.log
             s3-tests/junit-*.xml
+            /tmp/hang-watch.log
           if-no-files-found: ignore
       - name: prune uv cache
         run: nix develop --command uv cache prune --ci
