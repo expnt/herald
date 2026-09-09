@@ -221,6 +221,7 @@ jobs:
         run: |
           nohup bash -c '
             WATCH=/tmp/hang-watch.log
+            SEEN_RUNNER=0
             : > "$WATCH"
             while true; do
               {
@@ -241,7 +242,9 @@ jobs:
                     pkill -9 -f "deno run.*s3-tests.ts"
                   fi
                 fi
-                if ! pgrep -f "deno run.*s3-tests.ts" > /dev/null; then
+                if pgrep -f "deno run.*s3-tests.ts" > /dev/null; then
+                  SEEN_RUNNER=1
+                elif [ "$SEEN_RUNNER" = 1 ]; then
                   if pgrep -f "upterm" > /dev/null; then
                     echo "runner gone — killing upterm to unstick the job" >> "$WATCH"
                     pkill -9 -f "upterm"
