@@ -121,7 +121,8 @@ jobs:
     needs: lint
     # Backstop: the runner has its own 25-min pytest timeout, but a hang
     # before pytest (nix develop, deno startup) must also fail, not hang.
-    timeout-minutes: 40
+    # Suite is ~8 min; 20 min leaves margin while bounding hang fallout.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -130,7 +131,7 @@ jobs:
       # Live SSH debugging: the session is open to anyone with the connection
       # string printed in this step's log (no SSH key setup needed).
       - name: Setup upterm session
-        # if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
         uses: owenthereal/action-upterm@v1
         with:
           detached: true
@@ -207,30 +208,43 @@ jobs:
           fi
 
       # Background hang watcher: dumps process state every 30s to
-      # /tmp/hang-watch.log, and SIGKILLs the runner if s3-tests.log goes
-      # stale for 10 min — turning a silent hang into a failed step whose
-      # artifacts (logs + watcher output) show exactly where it stuck.
+      # /tmp/hang-watch.log. Two safety nets turn silent hangs into failed
+      # steps whose artifacts (logs + watcher output) show exactly where it
+      # stuck:
+      #  1. If the runner is ALIVE but s3-tests*.log goes stale for 10 min
+      #     (e.g. the allSettled wait), SIGKILL the runner.
+      #  2. If the runner process is GONE (crashed/killed), the detached
+      #     upterm server can hold the step's output pipes open so the
+      #     GitHub runner agent never sees EOF and the job hangs forever —
+      #     kill the upterm to unstick it and let artifacts upload.
       - name: start hang watcher
         run: |
           nohup bash -c '
             WATCH=/tmp/hang-watch.log
-            LOG=s3-tests/s3-tests.log
             : > "$WATCH"
             while true; do
               {
                 echo "=== $(date -u +%H:%M:%S) ==="
-                ps -eo pid,ppid,stat,wchan:25,cmd | grep -E "s3-tests.ts|uv run pytest" | grep -v grep
+                ps -eo pid,ppid,stat,wchan:25,cmd | grep -E "s3-tests.ts|uv run pytest|upterm" | grep -v grep
                 for p in $(pgrep -f "deno run.*s3-tests.ts"); do
                   echo "--- pid $p ---"
                   cat /proc/$p/wchan 2>/dev/null
                   head -8 /proc/$p/stack 2>/dev/null
-                  ls -l /proc/$p/fd 2>/dev/null | head -12
+                  ls -l /proc/$p/fd 2>/dev/null | head -20
                 done
-                if [ -f "$LOG" ]; then
+                # swift writes s3-tests-swift.log, rustfs s3-tests.log
+                LOG=$(ls -t s3-tests/s3-tests*.log 2>/dev/null | head -1)
+                if [ -n "$LOG" ]; then
                   age=$(( $(date +%s) - $(stat -c %Y "$LOG") ))
                   if [ "$age" -gt 600 ] && pgrep -f "deno run.*s3-tests.ts" > /dev/null; then
                     echo "STALE $age s — killing runner" >> "$WATCH"
                     pkill -9 -f "deno run.*s3-tests.ts"
+                  fi
+                fi
+                if ! pgrep -f "deno run.*s3-tests.ts" > /dev/null; then
+                  if pgrep -f "upterm" > /dev/null; then
+                    echo "runner gone — killing upterm to unstick the job" >> "$WATCH"
+                    pkill -9 -f "upterm"
                   fi
                 fi
               } >> "$WATCH" 2>&1

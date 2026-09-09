@@ -573,6 +573,13 @@ email = iam_alt_root@example.com
               for (const line of lines) {
                 processLine(line);
               }
+              // A single unterminated line (e.g. a megabyte-scale pytest
+              // assertion diff with no newlines) would otherwise accumulate
+              // in the buffer forever, ballooning memory and wedging the
+              // stream loop; drop the excess so a huge diff can't stall us.
+              if (buffer.length > MAX_BUFFERED_LINE) {
+                buffer = buffer.slice(-MAX_BUFFERED_LINE);
+              }
             }
           } catch (e) {
             if (!(e instanceof Deno.errors.Interrupted)) {
@@ -590,6 +597,10 @@ email = iam_alt_root@example.com
         // with a clear message instead of hanging CI for hours. The suite
         // takes ~6-9 min per backend; 25 min is generous.
         const HARD_TIMEOUT_MS = 25 * 60 * 1000;
+        // Cap the partial-line buffer: pytest can emit megabyte-scale single-
+        // line assertion diffs (e.g. versioning multipart content checks) that
+        // contain no newlines and would otherwise accumulate unboundedly.
+        const MAX_BUFFERED_LINE = 1024 * 1024;
         const timeoutPromise = new Promise<"timeout">((resolve) => {
           setTimeout(() => {
             console.error(
