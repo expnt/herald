@@ -752,30 +752,41 @@ email = iam_alt_root@example.com
       errorNames,
     } = result.counts;
     const passed = tests - failures - errors - skipped;
-    console.log();
+    // Mirror summary output to the log file as well as the console: if the
+    // step's stdout pipe blocks (CI log-service degradation), the summary is
+    // still captured in s3-tests.log for the artifact upload.
+    const logAndPrint = (line: string) => {
+      try {
+        Deno.writeTextFileSync(logPath, line + "\n", { append: true });
+      } catch {
+        // best-effort
+      }
+      console.log(line);
+    };
+    logAndPrint("");
     const durationStr = time ? ` ${colors.cyan(`${time.toFixed(2)}s`)}` : "";
-    console.log(
+    logAndPrint(
       `${colors.bold(tests.toString())} tests completed in${durationStr}:`,
     );
-    console.log(
+    logAndPrint(
       `  ${colors.green("successes")}: ${
         colors.bold(passed.toString())
       }/${tests}`,
     );
-    console.log(
+    logAndPrint(
       `  ${colors.red("failures")}:  ${
         colors.bold(failures.toString())
       }/${tests}`,
     );
     if (errors > 0) {
-      console.log(
+      logAndPrint(
         `  ${colors.red("errors")}:    ${
           colors.bold(errors.toString())
         }/${tests}`,
       );
     }
     if (skipped > 0) {
-      console.log(
+      logAndPrint(
         `  ${colors.gray("skipped")}:   ${
           colors.bold(skipped.toString())
         }/${tests}`,

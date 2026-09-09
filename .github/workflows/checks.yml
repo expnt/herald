@@ -7,6 +7,14 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
+    inputs:
+      tmate_enabled:
+        type: boolean
+        description: |
+          Run the s3-tests job with a detached tmate session for live debugging
+          (https://github.com/marketplace/actions/debugging-with-tmate).
+        required: false
+        default: true
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
@@ -190,6 +198,14 @@ jobs:
             exit 1
           fi
 
+      # Detached tmate session for live debugging of the s3-tests hang
+      # (trigger a workflow_dispatch with tmate_enabled=true, then SSH in
+      # from the session URL printed in this step's log).
+      - name: Setup tmate session
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.tmate_enabled }}
+        uses: mxschmitt/action-tmate@v3
+        with:
+          detached: true
       - name: s3-tests
         run: nix develop --command deno run --allow-all x/s3-tests.ts --backend ${{ matrix.backend }} --no-abort
 
