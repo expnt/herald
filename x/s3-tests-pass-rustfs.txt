@@ -1,6 +1,6 @@
 # s3-tests pass list for the rustfs backend (auto-generated).
 # One pytest nodeid per line. CI fails if any of these regress.
-# Generated from s3-tests submodule 344ecde on 2026-09-09
+# Generated from s3-tests submodule 344ecde on 2026-09-09T11:33:21.028Z
 # Regenerate: ./x/s3-tests.ts --backend rustfs --update-pass-list
 s3tests/functional/test_headers.py::test_bucket_create_bad_contentlength_empty
 s3tests/functional/test_headers.py::test_bucket_create_bad_contentlength_negative
@@ -79,6 +79,7 @@ s3tests/functional/test_s3.py::test_bucket_acl_grant_userid_readacp
 s3tests/functional/test_s3.py::test_bucket_acl_grant_userid_write
 s3tests/functional/test_s3.py::test_bucket_acl_grant_userid_writeacp
 s3tests/functional/test_s3.py::test_bucket_acl_revoke_all
+s3tests/functional/test_s3.py::test_bucket_concurrent_set_canned_acl
 s3tests/functional/test_s3.py::test_bucket_create_delete
 s3tests/functional/test_s3.py::test_bucket_create_exists
 s3tests/functional/test_s3.py::test_bucket_create_naming_bad_ip

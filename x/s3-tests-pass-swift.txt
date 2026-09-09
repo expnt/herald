@@ -1,6 +1,6 @@
 # s3-tests pass list for the swift backend (auto-generated).
 # One pytest nodeid per line. CI fails if any of these regress.
-# Generated from s3-tests submodule 344ecde on 2026-09-09
+# Generated from s3-tests submodule 344ecde on 2026-09-09T11:41:47.323Z
 # Regenerate: ./x/s3-tests.ts --backend swift --update-pass-list
 s3tests/functional/test_headers.py::test_bucket_create_bad_contentlength_empty
 s3tests/functional/test_headers.py::test_bucket_create_bad_contentlength_negative
@@ -168,6 +168,7 @@ s3tests/functional/test_s3.py::test_get_object_ifunmodifiedsince_good
 s3tests/functional/test_s3.py::test_list_multipart_upload
 s3tests/functional/test_s3.py::test_multi_object_delete
 s3tests/functional/test_s3.py::test_multi_objectv2_delete
+s3tests/functional/test_s3.py::test_multipart_upload_complete_without_create
 s3tests/functional/test_s3.py::test_multipart_upload_contents
 s3tests/functional/test_s3.py::test_multipart_upload_multiple_sizes
 s3tests/functional/test_s3.py::test_multipart_upload_overwrite_existing_object
