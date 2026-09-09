@@ -111,6 +111,9 @@ jobs:
   s3-tests:
     runs-on: ubuntu-latest
     needs: lint
+    # Backstop: the runner has its own 25-min pytest timeout, but a hang
+    # before pytest (nix develop, deno startup) must also fail, not hang.
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -190,5 +193,18 @@ jobs:
       - name: s3-tests
         run: nix develop --command deno run --allow-all x/s3-tests.ts --backend ${{ matrix.backend }} --no-abort
 
+      # The runner writes pytest output, proxy logs and junit to the checkout;
+      # upload them on failure so a hang/crash is diagnosable even when the
+      # step's own output capture is lost.
+      - name: upload s3-tests logs
+        if: always() && failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s3-tests-${{ matrix.backend }}-logs
+          path: |
+            s3-tests/s3-tests*.log
+            s3-tests/herald-proxy*.log
+            s3-tests/junit-*.xml
+          if-no-files-found: ignore
       - name: prune uv cache
         run: nix develop --command uv cache prune --ci

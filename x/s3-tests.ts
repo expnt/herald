@@ -586,13 +586,72 @@ email = iam_alt_root@example.com
           }
         }
 
-        const [procResult] = await Promise.allSettled([
-          child,
-          streamToLogAndConsole(child.stdout()),
-          streamToLogAndConsole(child.stderr()),
+        // Hard timeout: a hung pytest (or proxy deadlock) must fail the job
+        // with a clear message instead of hanging CI for hours. The suite
+        // takes ~6-9 min per backend; 25 min is generous.
+        const HARD_TIMEOUT_MS = 25 * 60 * 1000;
+        const timeoutPromise = new Promise<"timeout">((resolve) => {
+          setTimeout(() => {
+            console.error(
+              colors.red(
+                `\nHard timeout after ${
+                  HARD_TIMEOUT_MS / 60000
+                } min — killing pytest.`,
+              ),
+            );
+            child.kill("SIGKILL");
+            resolve("timeout");
+          }, HARD_TIMEOUT_MS);
+        });
+
+        // Heartbeat: if pytest goes silent for 5 min, say so (points at the
+        // test that's stuck) instead of looking like a dead job.
+        const heartbeat = setInterval(() => {
+          const idle = Date.now() - lastResultTime;
+          if (idle > 5 * 60 * 1000) {
+            console.error(
+              colors.yellow(
+                `\nNo test output for ${Math.round(idle / 60000)} min (last: ${
+                  currentTestName || "startup"
+                }).`,
+              ),
+            );
+          }
+        }, 60 * 1000);
+
+        const raceResult = await Promise.race([
+          Promise.allSettled([
+            child,
+            streamToLogAndConsole(child.stdout()),
+            streamToLogAndConsole(child.stderr()),
+          ]),
+          timeoutPromise,
         ]);
 
+        clearInterval(heartbeat);
+
         Deno.removeSignalListener("SIGINT", sigintHandler);
+
+        if (raceResult === "timeout") {
+          return {
+            code: 124,
+            counts: {
+              tests: seenTests.size,
+              failures: failedCount,
+              errors: errorCount,
+              skipped: skippedCount,
+              passedNames: Array.from(passedTests),
+              time: undefined,
+              failedNames: Array.from(failedTests),
+              errorNames: Array.from(errorTests),
+            },
+            collectedInfo: "",
+            shouldAbort: true,
+            abortReason: `Hard timeout after ${HARD_TIMEOUT_MS / 60000} min`,
+          };
+        }
+
+        const [procResult] = raceResult;
 
         const exitCode = procResult.status === "fulfilled"
           ? procResult.value.code
