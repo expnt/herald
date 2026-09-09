@@ -1,6 +1,6 @@
 # s3-tests pass list for the swift backend (auto-generated).
 # One pytest nodeid per line. CI fails if any of these regress.
-# Generated from s3-tests submodule 9e60e5e on 2026-09-09
+# Generated from s3-tests submodule 344ecde on 2026-09-09
 # Regenerate: ./x/s3-tests.ts --backend swift --update-pass-list
 s3tests/functional/test_headers.py::test_bucket_create_bad_contentlength_empty
 s3tests/functional/test_headers.py::test_bucket_create_bad_contentlength_negative
