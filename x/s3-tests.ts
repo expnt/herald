@@ -395,7 +395,15 @@ email = iam_alt_root@example.com
     console.log(`Command: uv run pytest ${cmdArgs.join(" ")}`);
     const child = $`uv run pytest ${cmdArgs}`
       .cwd(s3TestsDir)
-      .env({ S3TEST_CONF: confPath, PYTHONUNBUFFERED: "1" })
+      .env({
+        S3TEST_CONF: confPath,
+        PYTHONUNBUFFERED: "1",
+        // The s3-tests teardown calls IAM ListRoles against the S3 endpoint,
+        // which Herald doesn't implement (500). boto3's default retry/backoff
+        // on that 500 burned ~8s per test (~20x the whole suite). One attempt
+        // keeps failures fast; passing tests are unaffected.
+        AWS_MAX_ATTEMPTS: "1",
+      })
       .stdout("piped")
       .stderr("piped")
       .spawn();

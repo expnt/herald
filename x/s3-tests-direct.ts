@@ -204,7 +204,13 @@ email = iam_alt_root@example.com
     console.log(`Command: uv run pytest ${cmdArgs.join(" ")}`);
     const child = $`uv run pytest ${cmdArgs}`
       .cwd(s3TestsDir)
-      .env({ S3TEST_CONF: confPath, PYTHONUNBUFFERED: "1" })
+      .env({
+        S3TEST_CONF: confPath,
+        PYTHONUNBUFFERED: "1",
+        // See x/s3-tests.ts: the teardown's IAM ListRoles 500 + boto3 retry
+        // backoff dominates runtime; one attempt keeps failures fast.
+        AWS_MAX_ATTEMPTS: "1",
+      })
       .stdout("piped")
       .stderr("piped")
       .spawn();
