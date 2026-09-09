@@ -806,6 +806,19 @@ email = iam_alt_root@example.com
         console.log(`  ${colors.red("-")} ${name}`);
       }
     }
+
+    // The scoped finalizers (server.shutdown, webHandler.dispose) can hang if
+    // a request is stuck in-flight (observed in CI: the runner sat in ep_poll
+    // forever after pytest exited). The event loop stays idle during that
+    // wait, so a timer still fires — force-exit after a grace period so the
+    // job fails (and artifacts upload) instead of hanging.
+    const finalizerDeadline = setTimeout(() => {
+      console.error(
+        colors.red("Finalizer deadline exceeded — force exiting."),
+      );
+      Deno.exit(124);
+    }, 30 * 1000);
+
     // --- Pass-list regression gate ---
     // s3-tests doesn't fully pass against Herald, so CI can't require a green
     // suite. Instead we check in a per-backend list of known-passing tests and
