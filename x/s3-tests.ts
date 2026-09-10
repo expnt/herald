@@ -396,6 +396,13 @@ email = iam_alt_root@example.com
     if (tags) {
       cmdArgs.push("-m", tags);
     }
+    // Exclude tests that emit megabyte-scale single-line assertion diffs.
+    // test_versioning_obj_create_overwrite_multipart is a versioning test
+    // mis-marked fails_on_dbstore (so -m not versioning doesn't catch it);
+    // Herald's versioning is broken, the test fails, and the full content
+    // diff (75MB junit) has crashed the runner in CI. It's a known failure
+    // (not in the pass list), so excluding it costs nothing on the gate.
+    cmdArgs.push("-k", "not test_versioning_obj_create_overwrite_multipart");
 
     cmdArgs.push(...pytestArgs);
 
