@@ -54,5 +54,8 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # GHA cache scope defaults to the ref: PR runs would write to
+          # refs/pull/.../merge, invisible to every other PR (and to main).
+          # Scope to main: PRs read main's cache, and only main writes.
+          cache-from: type=gha,scope=main
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,mode=max,scope=main' || '' }}

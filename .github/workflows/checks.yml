@@ -7,6 +7,14 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
+    inputs:
+      debug_enabled:
+        type: boolean
+        description: |
+          Run the s3-tests job with a detached upterm session for live SSH
+          debugging (https://github.com/owenthereal/action-upterm).
+        required: false
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
@@ -43,23 +51,42 @@ jobs:
 
       - uses: DeterminateSystems/flakehub-cache-action@v3
 
-      - name: deno cache
-        uses: actions/cache@v6
+      - name: deno cache restore
+        uses: actions/cache/restore@v6
         with:
           path: ~/.cache/deno
           key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
           restore-keys: |
             ${{ runner.os }}-deno-
 
-      - name: uv cache
-        uses: actions/cache@v6
+      # Write the cache only on main: caches created on PR runs are scoped to
+      # the PR's merge ref (refs/pull/.../merge) and can only be restored by
+      # re-runs of that same PR — never by other PRs — so PR writes just
+      # churn the repo's cache budget. The default branch cache is readable
+      # by every branch/PR, which is what the restore step above relies on.
+      # `always()` keeps the save-on-failure behavior of the combined
+      # actions/cache post-phase.
+      - name: deno cache save
+        if: always() && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/deno
+          key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
+      - name: uv cache restore
+        uses: actions/cache/restore@v6
         with:
           path: /tmp/.uv-cache
           key: uv-${{ runner.os }}-${{ hashFiles('s3-tests/requirements.txt') }}
           restore-keys: |
             uv-${{ runner.os }}-${{ hashFiles('s3-tests/requirements.txt') }}
             uv-${{ runner.os }}
- 
+
+      - name: uv cache save
+        if: always() && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v6
+        with:
+          path: /tmp/.uv-cache
+          key: uv-${{ runner.os }}-${{ hashFiles('s3-tests/requirements.txt') }}
       - name: start container
         run: nix develop --command deno run --allow-all x/compose-up.ts s3 swift db
 
@@ -92,11 +119,23 @@ jobs:
   s3-tests:
     runs-on: ubuntu-latest
     needs: lint
+    # Backstop: the runner has its own 25-min pytest timeout, but a hang
+    # before pytest (nix develop, deno startup) must also fail, not hang.
+    # Suite is ~8 min; 20 min leaves margin while bounding hang fallout.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         backend: [rustfs, swift]
     steps:
+      # Live SSH debugging: the session is open to anyone with the connection
+      # string printed in this step's log (no SSH key setup needed).
+      - name: Setup upterm session
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
+        uses: owenthereal/action-upterm@v1
+        with:
+          detached: true
+
       - uses: actions/checkout@v4
         with:
           submodules: recursive
@@ -105,16 +144,22 @@ jobs:
 
       - uses: DeterminateSystems/flakehub-cache-action@v3
 
-      - name: deno cache
-        uses: actions/cache@v4
+      - name: deno cache restore
+        uses: actions/cache/restore@v6
         with:
           path: ~/.cache/deno
           key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
           restore-keys: |
             ${{ runner.os }}-deno-
 
-      - name: uv cache
-        uses: actions/cache@v6
+      - name: deno cache save
+        if: always() && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/deno
+          key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock') }}
+      - name: uv cache restore
+        uses: actions/cache/restore@v6
         with:
           path: /tmp/.uv-cache
           key: uv-${{ runner.os }}-${{ hashFiles('s3-tests/requirements.txt') }}
@@ -122,6 +167,12 @@ jobs:
             uv-${{ runner.os }}-${{ hashFiles('s3-tests/requirements.txt') }}
             uv-${{ runner.os }}
 
+      - name: uv cache save
+        if: always() && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v6
+        with:
+          path: /tmp/.uv-cache
+          key: uv-${{ runner.os }}-${{ hashFiles('s3-tests/requirements.txt') }}
       - name: start container
         run: |
           if [ "${{ matrix.backend }}" = "rustfs" ]; then
@@ -156,8 +207,70 @@ jobs:
             exit 1
           fi
 
+      # Background hang watcher: dumps process state every 30s to
+      # /tmp/hang-watch.log. Two safety nets turn silent hangs into failed
+      # steps whose artifacts (logs + watcher output) show exactly where it
+      # stuck:
+      #  1. If the runner is ALIVE but s3-tests*.log goes stale for 10 min
+      #     (e.g. the allSettled wait), SIGKILL the runner.
+      #  2. If the runner process is GONE (crashed/killed), the detached
+      #     upterm server can hold the step's output pipes open so the
+      #     GitHub runner agent never sees EOF and the job hangs forever —
+      #     kill the upterm to unstick it and let artifacts upload.
+      - name: start hang watcher
+        run: |
+          nohup bash -c '
+            WATCH=/tmp/hang-watch.log
+            SEEN_RUNNER=0
+            : > "$WATCH"
+            while true; do
+              {
+                echo "=== $(date -u +%H:%M:%S) ==="
+                ps -eo pid,ppid,stat,wchan:25,cmd | grep -E "s3-tests.ts|uv run pytest|upterm" | grep -v grep
+                for p in $(pgrep -f "deno run.*s3-tests.ts"); do
+                  echo "--- pid $p ---"
+                  cat /proc/$p/wchan 2>/dev/null
+                  head -8 /proc/$p/stack 2>/dev/null
+                  ls -l /proc/$p/fd 2>/dev/null | head -20
+                done
+                # swift writes s3-tests-swift.log, rustfs s3-tests.log
+                LOG=$(ls -t s3-tests/s3-tests*.log 2>/dev/null | head -1)
+                if [ -n "$LOG" ]; then
+                  age=$(( $(date +%s) - $(stat -c %Y "$LOG") ))
+                  if [ "$age" -gt 600 ] && pgrep -f "deno run.*s3-tests.ts" > /dev/null; then
+                    echo "STALE $age s — killing runner" >> "$WATCH"
+                    pkill -9 -f "deno run.*s3-tests.ts"
+                  fi
+                fi
+                if pgrep -f "deno run.*s3-tests.ts" > /dev/null; then
+                  SEEN_RUNNER=1
+                elif [ "$SEEN_RUNNER" = 1 ]; then
+                  if pgrep -f "upterm" > /dev/null; then
+                    echo "runner gone — killing upterm to unstick the job" >> "$WATCH"
+                    pkill -9 -f "upterm"
+                  fi
+                fi
+              } >> "$WATCH" 2>&1
+              sleep 30
+            done
+          ' > /dev/null 2>&1 &
+          echo "hang watcher started (pid $!)"
       - name: s3-tests
         run: nix develop --command deno run --allow-all x/s3-tests.ts --backend ${{ matrix.backend }} --no-abort
 
+      # The runner writes pytest output, proxy logs and junit to the checkout;
+      # upload them on failure so a hang/crash is diagnosable even when the
+      # step's own output capture is lost.
+      - name: upload s3-tests logs
+        if: always() && failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s3-tests-${{ matrix.backend }}-logs
+          path: |
+            s3-tests/s3-tests*.log
+            s3-tests/herald-proxy*.log
+            s3-tests/junit-*.xml
+            /tmp/hang-watch.log
+          if-no-files-found: ignore
       - name: prune uv cache
         run: nix develop --command uv cache prune --ci
