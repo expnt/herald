@@ -201,6 +201,7 @@ s3tests/functional/test_s3.py::test_get_object_ifnonematch_failed
 s3tests/functional/test_s3.py::test_get_object_ifnonematch_good
 s3tests/functional/test_s3.py::test_get_object_ifunmodifiedsince_failed
 s3tests/functional/test_s3.py::test_get_object_ifunmodifiedsince_good
+s3tests/functional/test_s3.py::test_list_buckets_anonymous
 s3tests/functional/test_s3.py::test_multi_object_delete
 s3tests/functional/test_s3.py::test_multi_object_delete_key_limit
 s3tests/functional/test_s3.py::test_multi_objectv2_delete
@@ -301,4 +302,3 @@ s3tests/functional/test_s3.py::test_versioning_concurrent_multi_object_delete
 s3tests/functional/test_s3.py::test_versioning_multi_object_delete
 s3tests/functional/test_s3.py::test_versioning_obj_plain_null_version_overwrite_suspended
 s3tests/functional/test_utils.py::test_generate
-s3tests/functional/test_s3.py::test_list_buckets_anonymous

@@ -595,8 +595,11 @@ email = iam_alt_root@example.com
 
         // Hard timeout: a hung pytest (or proxy deadlock) must fail the job
         // with a clear message instead of hanging CI for hours. The suite
-        // takes ~6-9 min per backend; 25 min is generous.
-        const HARD_TIMEOUT_MS = 25 * 60 * 1000;
+        // takes ~6-9 min per backend; 15 min is generous. Must stay BELOW
+        // the job timeout (20 min) so it fires first and the artifact
+        // upload runs — otherwise the job timeout kills the job with no
+        // diagnostics (observed: swift job hung in the allSettled).
+        const HARD_TIMEOUT_MS = 15 * 60 * 1000;
         // Cap the partial-line buffer: pytest can emit megabyte-scale single-
         // line assertion diffs (e.g. versioning multipart content checks) that
         // contain no newlines and would otherwise accumulate unboundedly.
@@ -822,12 +825,15 @@ email = iam_alt_root@example.com
     // a request is stuck in-flight (observed in CI: the runner sat in ep_poll
     // forever after pytest exited). The event loop stays idle during that
     // wait, so a timer still fires — force-exit after a grace period so the
-    // job fails (and artifacts upload) instead of hanging.
+    // job fails (and artifacts upload) instead of hanging. If the gate
+    // already passed, exit 0: the hang is a Deno runtime thread-cleanup
+    // issue after a successful run, not a test failure.
+    let gatePassed = false;
     const finalizerDeadline = setTimeout(() => {
       console.error(
         colors.red("Finalizer deadline exceeded — force exiting."),
       );
-      Deno.exit(124);
+      Deno.exit(gatePassed ? 0 : 124);
     }, 30 * 1000);
 
     // --- Pass-list regression gate ---
@@ -961,6 +967,7 @@ email = iam_alt_root@example.com
       );
     }
 
+    gatePassed = true;
     console.log(colors.green(`\n✓ s3-tests completed successfully.`));
   }).pipe(
     Effect.provide(Logger.minimumLogLevel(minLogLevel)),
@@ -989,6 +996,11 @@ if (import.meta.main) {
       console.error(colors.red(`s3-tests failed: ${message}`));
       Deno.exit(1);
     }
+    // Success: the scoped finalizers have run, but a Deno runtime thread
+    // (blocked on an internal socketpair) can keep the process alive
+    // indefinitely after a successful run. Exit explicitly so the job
+    // passes instead of hanging until the finalizer deadline.
+    Deno.exit(0);
   }).catch((e) => {
     console.error(colors.red(`Unhandled error: ${e}`));
     Deno.exit(1);
