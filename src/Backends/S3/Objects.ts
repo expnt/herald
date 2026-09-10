@@ -29,8 +29,13 @@ import {
   type ListObjectsResult,
   type ObjectInfo,
   type ObjectResponse,
+  type OwnerInfo,
 } from "../../Services/Backend.ts";
-import { defaultPolicy, resolveAclInput } from "../../Services/Acl.ts";
+import {
+  defaultPolicy,
+  parseGrantHeaders,
+  resolveAclInput,
+} from "../../Services/Acl.ts";
 import { normalizeHeaders } from "../../Services/S3HeaderService.ts";
 import { stripAwsChunkedFromContentEncoding } from "../../Services/AwsChunked.ts";
 import type {
@@ -39,6 +44,7 @@ import type {
 } from "../../Services/S3Schema.ts";
 import { mapS3Error, type S3Target, stripMinioMetadata } from "./Utils.ts";
 import {
+  ACL_BUCKET_KEY,
   aclObjectKey,
   makeOwnerResolver,
   readStoredPolicy,
@@ -474,6 +480,7 @@ export const makeObjectOps = ({
       key: string,
       bodyStream: Stream.Stream<Uint8Array, Error>,
       headers: Record<string, string | string[] | undefined>,
+      ownerOverride?: OwnerInfo,
     ) =>
       Effect.gen(function* () {
         const { checksums, metadata, s3Params } = headerService
@@ -623,15 +630,35 @@ export const makeObjectOps = ({
           catch: (e) => mapS3Error(e, bucketName),
         });
 
-        // Persist a canned ACL supplied at creation time (x-amz-acl header).
+        // Persist a canned ACL supplied at creation time (x-amz-acl header)
+        // and/or explicit x-amz-grant-* headers. The object owner is the
+        // authenticated caller when known (ownerOverride), otherwise the
+        // backend account. bucket-owner-* canned ACLs grant the bucket owner
+        // (read from the stored bucket ACL) READ / FULL_CONTROL.
         const cannedAcl = normalized["x-amz-acl"];
-        if (cannedAcl) {
-          const owner = yield* getOwner();
+        const grantHeaders = parseGrantHeaders(headers);
+        if (cannedAcl || grantHeaders) {
+          const owner = ownerOverride ?? (yield* getOwner());
+          const bucketPolicy = yield* readStoredPolicy(
+            client,
+            bucketName,
+            ACL_BUCKET_KEY,
+          );
+          const bucketOwner = bucketPolicy?.owner ?? owner;
+          // x-amz-grant-* headers fully define the ACL when no canned header
+          // is present — they replace the ACL instead of merging into the
+          // default owner-FULL_CONTROL policy.
+          const policy = cannedAcl
+            ? resolveAclInput(cannedAcl as CannedAcl, owner, bucketOwner)
+            : { owner, grants: grantHeaders ?? [] };
+          const resolved = grantHeaders && cannedAcl
+            ? { ...policy, grants: [...policy.grants, ...grantHeaders] }
+            : policy;
           yield* writeStoredPolicy(
             client,
             bucketName,
             aclObjectKey(key),
-            resolveAclInput(cannedAcl as CannedAcl, owner),
+            resolved,
           );
         }
 
@@ -838,14 +865,24 @@ export const makeObjectOps = ({
         return stored ?? defaultPolicy(owner);
       }),
 
-    putObjectAcl: (key: string, acl: AccessControlPolicy | CannedAcl) =>
+    putObjectAcl: (
+      key: string,
+      acl: AccessControlPolicy | CannedAcl,
+      ownerOverride?: OwnerInfo,
+    ) =>
       Effect.gen(function* () {
-        const owner = yield* getOwner();
+        const owner = ownerOverride ?? (yield* getOwner());
+        const bucketPolicy = yield* readStoredPolicy(
+          client,
+          bucketName,
+          ACL_BUCKET_KEY,
+        );
+        const bucketOwner = bucketPolicy?.owner ?? owner;
         yield* writeStoredPolicy(
           client,
           bucketName,
           aclObjectKey(key),
-          resolveAclInput(acl, owner),
+          resolveAclInput(acl, owner, bucketOwner),
         );
       }),
   };

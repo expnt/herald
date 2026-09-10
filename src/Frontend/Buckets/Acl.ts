@@ -1,13 +1,21 @@
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 import { HttpServerRequest, HttpServerResponse } from "@effect/platform";
 import {
   Backend,
   type CannedAcl,
   InvalidArgument,
 } from "../../Services/Backend.ts";
-import { isCannedAcl } from "../../Services/Acl.ts";
+import {
+  aclValidationError,
+  isCannedAcl,
+  knownEmailsFromCredentials,
+  parseGrantHeaders,
+  resolveEmailGrants,
+  validatePolicyGrants,
+} from "../../Services/Acl.ts";
 import { S3Xml } from "../../Services/S3Xml.ts";
 import { RequestContext } from "../Utils.ts";
+import { HeraldConfig } from "../../Config/Layer.ts";
 
 const getHeaderValue = (
   headers: Record<string, string | string[] | undefined>,
@@ -36,14 +44,31 @@ export const getBucketAcl = Effect.gen(function* () {
 
 /**
  * Handler for PUT /:bucket?acl
- * Accepts either an x-amz-acl canned ACL header or an AccessControlPolicy XML
- * body, and persists the resulting policy on the backend.
+ * Accepts an x-amz-acl canned ACL header, x-amz-grant-* headers, or an
+ * AccessControlPolicy XML body, and persists the resulting policy on the
+ * backend.
  */
 export const putBucketAcl = Effect.gen(function* () {
   const backend = yield* Backend;
   const s3Xml = yield* S3Xml;
   const request = yield* HttpServerRequest.HttpServerRequest;
-  const { bucket } = yield* RequestContext;
+  const { bucket, sigV4Context } = yield* RequestContext;
+  const config = yield* HeraldConfig;
+
+  const owner = sigV4Context
+    ? { id: sigV4Context.accessKeyId, displayName: sigV4Context.accessKeyId }
+    : undefined;
+
+  const knownIds = new Set(
+    config.resolveAuth(bucket).pipe(
+      Option.map((creds) => creds.map((c) => c.accessKeyId)),
+      Option.getOrElse(() => [] as string[]),
+    ),
+  );
+  const knownEmails = config.resolveAuth(bucket).pipe(
+    Option.map((creds) => knownEmailsFromCredentials(creds)),
+    Option.getOrElse(() => new Map<string, string>()),
+  );
 
   const cannedAcl = getHeaderValue(request.headers, "x-amz-acl");
   if (cannedAcl !== undefined) {
@@ -54,12 +79,33 @@ export const putBucketAcl = Effect.gen(function* () {
         }),
       );
     }
-    yield* backend.putBucketAcl(bucket, cannedAcl as CannedAcl);
+    yield* backend.putBucketAcl(bucket, cannedAcl as CannedAcl, owner);
+    return HttpServerResponse.text("", { status: 200 });
+  }
+
+  // x-amz-grant-* headers fully define the ACL: S3 replaces the policy with
+  // exactly the header grants instead of merging into the default policy.
+  const grantHeaders = parseGrantHeaders(request.headers);
+  if (grantHeaders !== undefined) {
+    const resolved = resolveEmailGrants(
+      { owner: owner!, grants: grantHeaders },
+      knownEmails,
+    );
+    const validationError = validatePolicyGrants(resolved, knownIds);
+    if (validationError !== undefined) {
+      return yield* aclValidationError(validationError);
+    }
+    yield* backend.putBucketAcl(bucket, resolved, owner);
     return HttpServerResponse.text("", { status: 200 });
   }
 
   const body = yield* request.text;
-  const policy = yield* s3Xml.parseAccessControlPolicy(body);
-  yield* backend.putBucketAcl(bucket, policy);
+  const parsed = yield* s3Xml.parseAccessControlPolicy(body);
+  const policy = resolveEmailGrants(parsed, knownEmails);
+  const validationError = validatePolicyGrants(policy, knownIds);
+  if (validationError !== undefined) {
+    return yield* aclValidationError(validationError);
+  }
+  yield* backend.putBucketAcl(bucket, policy, owner);
   return HttpServerResponse.text("", { status: 200 });
 });

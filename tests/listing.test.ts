@@ -5,10 +5,11 @@ import {
   DeleteObjectsCommand,
   ListObjectsCommand,
   ListObjectsV2Command,
+  ListObjectVersionsCommand,
   PutObjectCommand,
   type S3Client,
 } from "@aws-sdk/client-s3";
-import { assertEquals, assertStringIncludes } from "@std/assert";
+import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import { harness, type ProxyTestCase } from "./utils.ts";
 import type { GlobalConfig } from "../src/Domain/Config.ts";
 
@@ -412,6 +413,104 @@ const cases: ProxyTestCase[] = [
         context.lastRawBody() ?? "",
         "<StartAfter>a&#x0A;b</StartAfter>",
       );
+    },
+  },
+  {
+    name: "listing/encoding-url-v1",
+    config: testConfig,
+    skipSnapshot: true,
+    // Regression: s3-tests test_bucket_list_encoding_basic requires keys and
+    // common prefixes to be percent-encoded and <EncodingType>url</EncodingType>
+    // emitted when encoding-type=url is requested. botocore leaves the values
+    // encoded when the customer explicitly requested the encoding, so the
+    // parsed values are the encoded forms.
+    beforeAll: (c) =>
+      putKeys(c, ["foo+1/bar", "foo/bar/xyzzy", "quux ab/thud", "asdf+b"]),
+    afterAll: (c) =>
+      deleteKeys(c, ["foo+1/bar", "foo/bar/xyzzy", "quux ab/thud", "asdf+b"]),
+    fn: async (client, context) => {
+      if (!context) throw new Error("context required");
+      const r = await client.send(
+        new ListObjectsCommand({
+          Bucket: BUCKET,
+          Delimiter: "/",
+          EncodingType: "url",
+        }),
+      );
+      assertEquals(r.Delimiter, "/");
+      assertEquals(getKeys(r), ["asdf%2Bb"]);
+      assertEquals(getPrefixes(r), ["foo%2B1/", "foo/", "quux%20ab/"]);
+      assertStringIncludes(
+        context.lastRawBody() ?? "",
+        "<EncodingType>url</EncodingType>",
+      );
+    },
+  },
+  {
+    name: "listing/encoding-url-v2",
+    config: testConfig,
+    skipSnapshot: true,
+    // Regression: s3-tests test_bucket_listv2_encoding_basic (same expectations
+    // as the v1 case, via ListObjectsV2).
+    beforeAll: (c) =>
+      putKeys(c, ["foo+1/bar", "foo/bar/xyzzy", "quux ab/thud", "asdf+b"]),
+    afterAll: (c) =>
+      deleteKeys(c, ["foo+1/bar", "foo/bar/xyzzy", "quux ab/thud", "asdf+b"]),
+    fn: async (client, context) => {
+      if (!context) throw new Error("context required");
+      const r = await client.send(
+        new ListObjectsV2Command({
+          Bucket: BUCKET,
+          Delimiter: "/",
+          EncodingType: "url",
+        }),
+      );
+      assertEquals(r.Delimiter, "/");
+      assertEquals(getKeys(r), ["asdf%2Bb"]);
+      assertEquals(getPrefixes(r), ["foo%2B1/", "foo/", "quux%20ab/"]);
+      assertStringIncludes(
+        context.lastRawBody() ?? "",
+        "<EncodingType>url</EncodingType>",
+      );
+    },
+  },
+  {
+    name: "listing/encoding-url-versions",
+    config: testConfig,
+    skipSnapshot: true,
+    // ListObjectVersions must encode keys the same way when encoding-type=url
+    // is requested (s3-tests test_object_copy_versioned_url_encoding family).
+    beforeAll: (c) => putKeys(c, ["asdf+b"]),
+    afterAll: (c) => deleteKeys(c, ["asdf+b"]),
+    fn: async (client, context) => {
+      if (!context) throw new Error("context required");
+      const r = await client.send(
+        new ListObjectVersionsCommand({ Bucket: BUCKET, EncodingType: "url" }),
+      );
+      const keys = (r.Versions ?? []).map((v) => v.Key);
+      assertEquals(keys, ["asdf%2Bb"]);
+      assertStringIncludes(
+        context.lastRawBody() ?? "",
+        "<EncodingType>url</EncodingType>",
+      );
+    },
+  },
+  {
+    name: "listing/encoding-url-negative",
+    config: testConfig,
+    skipSnapshot: true,
+    // Without encoding-type=url the response must stay byte-identical to
+    // before: raw keys and no <EncodingType> element.
+    beforeAll: (c) => putKeys(c, ["asdf+b", "quux ab"]),
+    afterAll: (c) => deleteKeys(c, ["asdf+b", "quux ab"]),
+    fn: async (client, context) => {
+      if (!context) throw new Error("context required");
+      const r = await client.send(
+        new ListObjectsCommand({ Bucket: BUCKET }),
+      );
+      assertEquals(getKeys(r), ["asdf+b", "quux ab"]);
+      const raw = context.lastRawBody() ?? "";
+      assert(!raw.includes("<EncodingType>"), "no EncodingType element");
     },
   },
 ];

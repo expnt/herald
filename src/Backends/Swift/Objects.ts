@@ -11,6 +11,7 @@ import type {
   ObjectAttributes,
   ObjectInfo,
   ObjectResponse,
+  OwnerInfo,
   PutObjectResult,
 } from "../../Services/Backend.ts";
 import {
@@ -23,6 +24,7 @@ import {
   decodeCompactPolicy,
   defaultPolicy,
   encodeCompactPolicy,
+  parseGrantHeaders,
   resolveAclInput,
 } from "../../Services/Acl.ts";
 import { SWIFT_OWNER } from "./Buckets.ts";
@@ -336,6 +338,7 @@ export const makeObjectOps = ({
           delimiter: args.delimiter,
           marker: args.keyMarker,
           maxKeys: args.maxKeys,
+          encodingType: args.encodingType,
         });
         return {
           ...result,
@@ -507,6 +510,7 @@ export const makeObjectOps = ({
       key: string,
       stream: Stream.Stream<Uint8Array, Error>,
       headers: Record<string, string | string[] | undefined>,
+      ownerOverride?: OwnerInfo,
     ) => {
       const encodedKey = encodeObjectKeyForSwift(key);
 
@@ -525,12 +529,24 @@ export const makeObjectOps = ({
         };
 
         // Persist a canned ACL supplied at creation time (x-amz-acl header)
-        // as object metadata so GET ?acl can reconstruct the policy.
+        // and/or explicit x-amz-grant-* headers as object metadata so GET
+        // ?acl can reconstruct the policy. The object owner is the
+        // authenticated caller when known (ownerOverride), otherwise the
+        // Swift account owner.
         const cannedAcl = normalized["x-amz-acl"];
-        if (cannedAcl) {
-          swiftHeaders["X-Object-Meta-S3-Acl"] = encodeCompactPolicy(
-            resolveAclInput(cannedAcl as CannedAcl, SWIFT_OWNER),
-          );
+        const grantHeaders = parseGrantHeaders(headers);
+        if (cannedAcl || grantHeaders) {
+          const owner = ownerOverride ?? SWIFT_OWNER;
+          // x-amz-grant-* headers fully define the ACL when no canned header
+          // is present — they replace the ACL instead of merging into the
+          // default owner-FULL_CONTROL policy.
+          const policy = cannedAcl
+            ? resolveAclInput(cannedAcl as CannedAcl, owner)
+            : { owner, grants: grantHeaders ?? [] };
+          const resolved = grantHeaders && cannedAcl
+            ? { ...policy, grants: [...policy.grants, ...grantHeaders] }
+            : policy;
+          swiftHeaders["X-Object-Meta-S3-Acl"] = encodeCompactPolicy(resolved);
         }
 
         // With AWS streaming framing the inbound Content-Length is the wire
@@ -1007,10 +1023,14 @@ export const makeObjectOps = ({
         return defaultPolicy(SWIFT_OWNER);
       }),
 
-    putObjectAcl: (key: string, acl: AccessControlPolicy | CannedAcl) =>
+    putObjectAcl: (
+      key: string,
+      acl: AccessControlPolicy | CannedAcl,
+      ownerOverride?: OwnerInfo,
+    ) =>
       Effect.gen(function* () {
         const encodedKey = encodeObjectKeyForSwift(key);
-        const policy = resolveAclInput(acl, SWIFT_OWNER);
+        const policy = resolveAclInput(acl, ownerOverride ?? SWIFT_OWNER);
         const response = yield* client
           .execute(
             HttpClientRequest.post(`${url}/${encodedKey}`).pipe(

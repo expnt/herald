@@ -15,8 +15,13 @@ import type {
   BucketInfo,
   CannedAcl,
   ListBucketsResult,
+  OwnerInfo,
 } from "../../Services/Backend.ts";
-import { defaultPolicy, resolveAclInput } from "../../Services/Acl.ts";
+import {
+  defaultPolicy,
+  parseGrantHeaders,
+  resolveAclInput,
+} from "../../Services/Acl.ts";
 import { mapS3Error, type S3Target } from "./Utils.ts";
 import {
   ACL_BUCKET_KEY,
@@ -68,16 +73,22 @@ export const makeBucketOps = ({
           catch: (e) => mapS3Error(e, name),
         });
 
-        // Persist a canned ACL supplied at creation time (x-amz-acl header).
+        // Persist a canned ACL supplied at creation time (x-amz-acl header)
+        // and/or explicit x-amz-grant-* headers.
         const canned = headerValue(headers, "x-amz-acl");
-        if (canned) {
+        const grantHeaders = parseGrantHeaders(headers);
+        if (canned || grantHeaders) {
           const owner = yield* getOwner();
-          yield* writeStoredPolicy(
-            client,
-            name,
-            ACL_BUCKET_KEY,
-            resolveAclInput(canned as CannedAcl, owner),
-          );
+          // S3 semantics: x-amz-grant-* headers fully define the ACL when no
+          // canned header is present — they replace the ACL instead of
+          // merging into the default owner-FULL_CONTROL policy.
+          const policy = canned
+            ? resolveAclInput(canned as CannedAcl, owner)
+            : { owner, grants: grantHeaders ?? [] };
+          const resolved = grantHeaders && canned
+            ? { ...policy, grants: [...policy.grants, ...grantHeaders] }
+            : policy;
+          yield* writeStoredPolicy(client, name, ACL_BUCKET_KEY, resolved);
         }
       }),
 
@@ -202,9 +213,13 @@ export const makeBucketOps = ({
         return stored ?? defaultPolicy(owner);
       }),
 
-    putBucketAcl: (name: string, acl: AccessControlPolicy | CannedAcl) =>
+    putBucketAcl: (
+      name: string,
+      acl: AccessControlPolicy | CannedAcl,
+      ownerOverride?: OwnerInfo,
+    ) =>
       Effect.gen(function* () {
-        const owner = yield* getOwner();
+        const owner = ownerOverride ?? (yield* getOwner());
         yield* writeStoredPolicy(
           client,
           name,

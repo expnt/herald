@@ -14,6 +14,7 @@ import {
   decodeCompactPolicy,
   defaultPolicy,
   encodeCompactPolicy,
+  parseGrantHeaders,
   resolveAclInput,
 } from "../../Services/Acl.ts";
 import {
@@ -185,15 +186,26 @@ export const makeBucketOps = (
 
         // Swift returns 201 (Created) for new containers, 202/204 for existing containers
         if (response.status === 201) {
-          // Persist a canned ACL supplied at creation time (x-amz-acl header).
+          // Persist a canned ACL supplied at creation time (x-amz-acl header)
+          // and/or explicit x-amz-grant-* headers.
           const canned = headerValue(headers, "x-amz-acl");
-          if (canned) {
+          const grantHeaders = parseGrantHeaders(headers);
+          if (canned || grantHeaders) {
+            // x-amz-grant-* headers fully define the ACL when no canned
+            // header is present — they replace the ACL instead of merging
+            // into the default owner-FULL_CONTROL policy.
+            const policy = canned
+              ? resolveAclInput(canned as CannedAcl, SWIFT_OWNER)
+              : { owner: SWIFT_OWNER, grants: grantHeaders ?? [] };
+            const resolved = grantHeaders && canned
+              ? { ...policy, grants: [...policy.grants, ...grantHeaders] }
+              : policy;
             yield* writeContainerAcl(
               client,
               storageUrl,
               container,
               token,
-              resolveAclInput(canned as CannedAcl, SWIFT_OWNER),
+              resolved,
             );
           }
           // Successfully created
@@ -361,14 +373,18 @@ export const makeBucketOps = (
         return stored ?? defaultPolicy(SWIFT_OWNER);
       }),
 
-    putBucketAcl: (_name: string, acl: AccessControlPolicy | CannedAcl) =>
+    putBucketAcl: (
+      _name: string,
+      acl: AccessControlPolicy | CannedAcl,
+      ownerOverride?: OwnerInfo,
+    ) =>
       Effect.gen(function* () {
         yield* writeContainerAcl(
           client,
           storageUrl,
           container,
           token,
-          resolveAclInput(acl, SWIFT_OWNER),
+          resolveAclInput(acl, ownerOverride ?? SWIFT_OWNER),
         );
       }),
   };

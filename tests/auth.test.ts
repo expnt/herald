@@ -285,6 +285,131 @@ testEffect(
 );
 
 testEffect(
+  "auth/verifyIncomingSigV4/streaming_sentinel_with_query_params",
+  () =>
+    Effect.gen(function* () {
+      const credentials = [{
+        accessKeyId: "test-id",
+        secretAccessKey: "test-secret",
+      }];
+      const region = "us-east-1";
+      const signingDate = new Date();
+      const amzDate = formatAmzDate(signingDate);
+
+      const signer = new SignatureV4({
+        credentials: credentials[0],
+        region,
+        service: "s3",
+        sha256: Sha256,
+      });
+
+      // Streaming sentinel payload hash (UNSIGNED-PAYLOAD) combined with
+      // URL query params — the case the hand-rolled header signer must
+      // canonicalize the query string for. Multipart UploadPart sends
+      // `?partNumber=X&uploadId=Y` with a sentinel payload hash.
+      const signed = yield* Effect.promise(() =>
+        signer.sign({
+          method: "PUT",
+          protocol: "http:",
+          hostname: "localhost",
+          path: "/my-bucket/my-key",
+          query: { partNumber: "1", uploadId: "ZTQzYWJjZA==" },
+          headers: {
+            host: "localhost",
+            "x-amz-date": amzDate,
+            "x-amz-content-sha256": "UNSIGNED-PAYLOAD",
+          },
+        }, { signingDate })
+      );
+
+      const httpServerRequest = {
+        method: "PUT",
+        url:
+          "http://localhost/my-bucket/my-key?partNumber=1&uploadId=ZTQzYWJjZA==",
+        headers: signed.headers as Record<string, string>,
+      } as unknown as HttpServerRequest.HttpServerRequest;
+
+      const result = yield* verifyIncomingSigV4Detailed(
+        httpServerRequest,
+        credentials,
+        region,
+      );
+      if (!result.valid) {
+        throw new Error(
+          `Expected streaming sentinel request with query params to verify, got ${result.failure}`,
+        );
+      }
+      yield* EffectAssert.strictEqual(result.context.isPresigned, false);
+      yield* EffectAssert.strictEqual(
+        result.context.signedHeaders.includes("x-amz-content-sha256"),
+        true,
+      );
+    }),
+);
+
+testEffect(
+  "auth/verifyIncomingSigV4/streaming_sentinel_payload",
+  () =>
+    Effect.gen(function* () {
+      const credentials = [{
+        accessKeyId: "test-id",
+        secretAccessKey: "test-secret",
+      }];
+      const region = "us-east-1";
+      const signingDate = new Date();
+      const amzDate = formatAmzDate(signingDate);
+
+      const signer = new SignatureV4({
+        credentials: credentials[0],
+        region,
+        service: "s3",
+        sha256: Sha256,
+      });
+
+      // kopia's S3 client sends STREAMING-AWS4-HMAC-SHA256-PAYLOAD without
+      // Content-Encoding: aws-chunked. Per SigV4 the canonical payload hash is
+      // then the sentinel LITERAL, not sha256(body) — the verifier must carry
+      // it through verbatim or the seed signature never matches.
+      const signed = yield* Effect.promise(() =>
+        signer.sign({
+          method: "PUT",
+          protocol: "http:",
+          hostname: "localhost",
+          path: "/my-bucket/my-key",
+          headers: {
+            host: "localhost",
+            "x-amz-date": amzDate,
+            "x-amz-content-sha256": "STREAMING-AWS4-HMAC-SHA256-PAYLOAD",
+          },
+          body: new TextEncoder().encode("kopia-blob"),
+        }, { signingDate })
+      );
+
+      const httpServerRequest = {
+        method: "PUT",
+        url: "http://localhost/my-bucket/my-key",
+        headers: signed.headers as Record<string, string>,
+      } as unknown as HttpServerRequest.HttpServerRequest;
+
+      const result = yield* verifyIncomingSigV4Detailed(
+        httpServerRequest,
+        credentials,
+        region,
+      );
+      if (!result.valid) {
+        throw new Error(
+          `Expected STREAMING sentinel request to verify, got ${result.failure}`,
+        );
+      }
+      yield* EffectAssert.strictEqual(result.context.isPresigned, false);
+      yield* EffectAssert.strictEqual(
+        result.context.signedHeaders.includes("x-amz-content-sha256"),
+        true,
+      );
+    }),
+);
+
+testEffect(
   "auth/verifyIncomingSigV4/query_params/non_positive_expires_is_expired",
   () =>
     Effect.gen(function* () {
