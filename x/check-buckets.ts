@@ -1,7 +1,7 @@
 import { ListBucketsCommand, S3Client } from "npm:@aws-sdk/client-s3";
 
 const client = new S3Client({
-  endpoint: "http://localhost:9000",
+  endpoint: "http://localhost:9100",
   region: "us-east-1",
   credentials: {
     accessKeyId: "minioadmin",

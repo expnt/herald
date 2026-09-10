@@ -33,9 +33,7 @@ export const MP_SEGMENTS_PREFIX = ".hrld/sgmnts/";
 export const CLIENT_DISCONNECT_MESSAGE =
   "The client closed the request body before the upload was completed";
 
-const isInboundRequestErrorShape = (
-  error: unknown,
-): boolean => {
+const isInboundRequestErrorShape = (error: unknown): boolean => {
   if (error === null || typeof error !== "object") return false;
   const candidate = error as { _tag?: unknown; reason?: unknown };
   return candidate._tag === "RequestError" && candidate.reason === "Decode";
@@ -70,9 +68,7 @@ export const causeChainHasClientDisconnect = (
   return false;
 };
 
-const parseNonNegativeInt = (
-  raw: string | undefined,
-): number | undefined => {
+const parseNonNegativeInt = (raw: string | undefined): number | undefined => {
   if (raw === undefined || raw.trim() === "") return undefined;
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isInteger(parsed) || parsed < 0) return undefined;
@@ -93,7 +89,10 @@ export const resolveOutboundContentLength = (
 ): number | undefined => {
   const contentEncoding = normalized["content-encoding"];
   const hasAwsChunked = contentEncoding !== undefined &&
-    contentEncoding.toLowerCase().split(",").map((s) => s.trim())
+    contentEncoding
+      .toLowerCase()
+      .split(",")
+      .map((s) => s.trim())
       .includes("aws-chunked");
   const amzContentSha256 = normalized["x-amz-content-sha256"];
   const hasStreamingSigV4 = amzContentSha256 !== undefined &&
@@ -113,13 +112,16 @@ export const resolveOutboundContentLength = (
  * (e.g. %2F from the client).
  */
 export function encodeObjectKeyForSwift(key: string): string {
-  return key.split("/").map((seg) => {
-    try {
-      return encodeURIComponent(decodeURIComponent(seg));
-    } catch {
-      return encodeURIComponent(seg);
-    }
-  }).join("/");
+  return key
+    .split("/")
+    .map((seg) => {
+      try {
+        return encodeURIComponent(decodeURIComponent(seg));
+      } catch {
+        return encodeURIComponent(seg);
+      }
+    })
+    .join("/");
 }
 
 /**
@@ -131,14 +133,10 @@ export function formatSwiftTransportError(e: unknown): string {
   if (e === null || typeof e !== "object") return base;
   const parts = [base];
   if ("cause" in e && (e as { cause?: unknown }).cause !== undefined) {
-    parts.push(
-      `cause=${String((e as { cause: unknown }).cause)}`,
-    );
+    parts.push(`cause=${String((e as { cause: unknown }).cause)}`);
   }
   if ("reason" in e && (e as { reason?: unknown }).reason !== undefined) {
-    parts.push(
-      `reason=${String((e as { reason: unknown }).reason)}`,
-    );
+    parts.push(`reason=${String((e as { reason: unknown }).reason)}`);
   }
   return parts.join(" ");
 }
@@ -163,9 +161,16 @@ export const mapError = (
     if (message.includes("already exists")) {
       return new BucketAlreadyExists({ bucket, message });
     }
-    // For bucket operations (no key), default to BucketAlreadyOwnedByYou
-    // For object operations (has key), 409 likely indicates a conflict (e.g., concurrent writes)
-    // Use InternalError to avoid misleading bucket ownership error
+    // A 409 on a bucket-level operation is only BucketAlreadyOwnedByYou when
+    // the backend explicitly reports the bucket already exists and is owned.
+    // Any other 409 (e.g. a conflict from a subresource operation) must not be
+    // misreported as a bucket ownership error.
+    if (
+      message.includes("already owned") ||
+      message.includes("you already own")
+    ) {
+      return new BucketAlreadyOwnedByYou({ bucket, message });
+    }
     if (key) {
       return new InternalError({
         message: `Swift Conflict [409] on ${
@@ -173,7 +178,11 @@ export const mapError = (
         } for object ${key}: ${message}`,
       });
     }
-    return new BucketAlreadyOwnedByYou({ bucket, message });
+    return new InternalError({
+      message: `Swift Conflict [409] on ${
+        method ?? "UNKNOWN"
+      } for bucket ${bucket}: ${message}`,
+    });
   }
   if (status === 403) {
     return new AccessDenied({ message });

@@ -12,9 +12,9 @@ import type { S3Client as S3ClientSDK } from "@aws-sdk/client-s3";
 
 const testConfig: GlobalConfig = {
   backends: {
-    minio: {
+    rustfs: {
       protocol: "s3",
-      endpoint: "http://localhost:9000",
+      endpoint: "http://localhost:9100",
       region: "us-east-1",
       credentials: {
         accessKeyId: "minioadmin",

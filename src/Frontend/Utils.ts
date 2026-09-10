@@ -1,6 +1,11 @@
 import { HttpServerRequest, Url } from "@effect/platform";
-import { Context, Effect, Either, Schema } from "effect";
-import { InternalError } from "../Services/Backend.ts";
+import { Context, Effect, Either, Schema, Stream } from "effect";
+import { createHash } from "node-crypto";
+import {
+  BadDigest,
+  InternalError,
+  InvalidDigest,
+} from "../Services/Backend.ts";
 import { S3HeaderService } from "../Services/S3HeaderService.ts";
 import type { SigV4VerifiedContext } from "../Services/Auth.ts";
 
@@ -100,6 +105,7 @@ export const S3QueryParams = Schema.Struct({
   "continuation-token": Schema.optional(Schema.String),
   "start-after": Schema.optional(Schema.String),
   "list-type": Schema.optional(Schema.String),
+  "fetch-owner": Schema.optional(Schema.String),
   "version-id-marker": Schema.optional(Schema.String),
   "key-marker": Schema.optional(Schema.String),
   "upload-id-marker": Schema.optional(Schema.String),
@@ -111,3 +117,65 @@ export const S3QueryParams = Schema.Struct({
 });
 
 export type S3QueryParams = Schema.Schema.Type<typeof S3QueryParams>;
+
+/**
+ * Validates the Content-MD5 header format: it must be base64 that decodes to
+ * exactly 16 bytes. Returns an InvalidDigest error when malformed.
+ */
+export const validateContentMd5Header = (
+  raw: string | undefined,
+): Effect.Effect<void, InvalidDigest> =>
+  Effect.gen(function* () {
+    if (raw === undefined) return;
+    let decoded: Uint8Array;
+    try {
+      decoded = Uint8Array.from(atob(raw), (c) => c.charCodeAt(0));
+    } catch {
+      return yield* Effect.fail(
+        new InvalidDigest({
+          message:
+            "The Content-MD5 you specified is not valid. It must be base64-encoded 16 bytes.",
+        }),
+      );
+    }
+    if (decoded.length !== 16) {
+      return yield* Effect.fail(
+        new InvalidDigest({
+          message:
+            "The Content-MD5 you specified is not valid. It must be base64-encoded 16 bytes.",
+        }),
+      );
+    }
+  });
+
+/**
+ * Wraps a body stream so the MD5 of the payload is computed while it flows
+ * through, failing with BadDigest on stream end when it does not match the
+ * expected Content-MD5 value.
+ */
+export const withContentMd5Validation = (
+  stream: Stream.Stream<Uint8Array, Error>,
+  expected: string,
+): Stream.Stream<Uint8Array, Error | BadDigest> => {
+  const hash = createHash("md5");
+  return stream.pipe(
+    Stream.tap((chunk) =>
+      Effect.sync(() => {
+        hash.update(chunk);
+      })
+    ),
+    Stream.onEnd(
+      Effect.gen(function* () {
+        const calculated = hash.digest("base64");
+        if (calculated !== expected) {
+          yield* Effect.fail(
+            new BadDigest({
+              message:
+                "The Content-MD5 you specified did not match what we received.",
+            }),
+          );
+        }
+      }),
+    ),
+  );
+};

@@ -159,7 +159,7 @@ export const makeTestHarness = (
     );
 
     const proxyUrl = `http://localhost:${server.addr.port}`;
-    const minioUrl = "http://localhost:9000";
+    const backendUrl = "http://localhost:9100";
 
     const credentials = {
       accessKeyId: "minioadmin",
@@ -202,6 +202,7 @@ export const makeTestHarness = (
           if (
             lowerK !== "date" &&
             lowerK !== "x-amz-request-id" &&
+            lowerK !== "x-request-id" &&
             lowerK !== "x-amz-id-2" &&
             lowerK !== "last-modified" &&
             lowerK !== "etag" &&
@@ -251,11 +252,16 @@ export const makeTestHarness = (
         headers: Record<string, string>;
         body?: BodyInit;
       }) => {
+        // Re-encode query values: the SDK hands them decoded, and a raw
+        // control character (e.g. a newline delimiter) would be silently
+        // stripped from the URL by the WHATWG URL parser.
         const queryStr =
           (request.query && Object.keys(request.query).length > 0)
             ? "?" +
               Object.entries(request.query).map(([k, v]) =>
-                v === "" ? k : `${k}=${v}`
+                v === ""
+                  ? encodeURIComponent(k)
+                  : `${encodeURIComponent(k)}=${encodeURIComponent(v)}`
               ).join(
                 "&",
               )
@@ -290,7 +296,7 @@ export const makeTestHarness = (
     });
 
     const client = new S3Client({
-      endpoint: minioUrl,
+      endpoint: backendUrl,
       region: "us-east-1",
       credentials,
       forcePathStyle: true,
@@ -311,7 +317,7 @@ export const makeTestHarness = (
 
     return {
       proxyUrl,
-      minioUrl,
+      backendUrl,
       client,
       proxyClient,
       getLastResponse: () => lastResponse,
@@ -342,7 +348,12 @@ export const testEffect = <E>(
   });
 };
 
-export type ProxyTestContext = { baseUrl: string };
+export type ProxyTestContext = {
+  baseUrl: string;
+  /** Raw (unparsed) body text of the most recent response, for asserting
+   * exact XML that SDK parsers may normalize away. */
+  lastRawBody: () => string | undefined;
+};
 
 export type ProxyTestCase = {
   name: string;
@@ -385,7 +396,10 @@ function baselineRunner(tc: ProxyTestCase, t: Deno.TestContext) {
     }
 
     const resultEffect = Effect.gen(function* () {
-      const result = tc.fn(h.client, { baseUrl: h.minioUrl });
+      const result = tc.fn(h.client, {
+        baseUrl: h.backendUrl,
+        lastRawBody: () => h.getLastResponse()?.body,
+      });
       if (Effect.isEffect(result)) {
         yield* result;
       } else {
@@ -509,7 +523,10 @@ function proxyRunner(tc: ProxyTestCase, t: Deno.TestContext) {
     }
 
     const resultEffect = Effect.gen(function* () {
-      const result = tc.fn(h.proxyClient, { baseUrl: h.proxyUrl });
+      const result = tc.fn(h.proxyClient, {
+        baseUrl: h.proxyUrl,
+        lastRawBody: () => h.getLastResponse()?.body,
+      });
       if (Effect.isEffect(result)) {
         yield* result;
       } else {
@@ -619,7 +636,7 @@ const getSwiftConfig = () =>
   Effect.gen(function* () {
     const authUrl = yield* Config.string("HERALD_SWIFTTEST_AUTH_URL").pipe(
       Config.orElse(() => Config.string("OS_AUTH_URL")),
-      Config.withDefault("http://localhost:8080/auth/v1.0"),
+      Config.withDefault("http://localhost:8081/auth/v1.0"),
       Config.option,
     );
 
@@ -702,7 +719,10 @@ function swiftRunner(tc: ProxyTestCase, t: Deno.TestContext) {
     }
 
     const resultEffect = Effect.gen(function* () {
-      const result = tc.fn(h.proxyClient, { baseUrl: h.proxyUrl });
+      const result = tc.fn(h.proxyClient, {
+        baseUrl: h.proxyUrl,
+        lastRawBody: () => h.getLastResponse()?.body,
+      });
       if (Effect.isEffect(result)) {
         yield* result;
       } else {

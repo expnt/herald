@@ -15,9 +15,9 @@ import type { GlobalConfig } from "../../src/Domain/Config.ts";
 
 const testConfig: GlobalConfig = {
   backends: {
-    minio: {
+    rustfs: {
       protocol: "s3",
-      endpoint: "http://localhost:9000",
+      endpoint: "http://localhost:9100",
       region: "us-east-1",
       credentials: {
         accessKeyId: "minioadmin",
@@ -62,9 +62,9 @@ function awsChunkedHeaders(
   }
   return {
     "content-encoding": "aws-chunked",
-    ...(contentLength !== undefined
-      ? { "content-length": String(contentLength) }
-      : {}),
+    ...(contentLength === undefined
+      ? {}
+      : { "content-length": String(contentLength) }),
     "x-amz-content-sha256": "UNSIGNED-PAYLOAD",
     "x-amz-decoded-content-length": String(PLAINTEXT.length),
   };
@@ -228,7 +228,7 @@ async function sendAwsChunkedPut(
     method: "PUT",
     headers: requestHeaders,
     body,
-    // @ts-ignore duplex is required for non-GET body in Deno fetch with streams/body bytes
+    // @ts-expect-error duplex is required for non-GET body in Deno fetch with streams/body bytes
     duplex: "half",
   });
 }
@@ -322,7 +322,7 @@ async function sendAwsChunkedUploadPart(
     method: "PUT",
     headers: requestHeaders,
     body,
-    // @ts-ignore duplex is required for non-GET body in Deno fetch with streams/body bytes
+    // @ts-expect-error duplex is required for non-GET body in Deno fetch with streams/body bytes
     duplex: "half",
   });
 }
@@ -412,7 +412,7 @@ async function sendKopiaStyleStreamingPut(baseUrl: string): Promise<Response> {
     method: "PUT",
     headers: requestHeaders,
     body,
-    // @ts-ignore duplex is required for non-GET body in Deno fetch with streams/body bytes
+    // @ts-expect-error duplex is required for non-GET body in Deno fetch with streams/body bytes
     duplex: "half",
   });
 }

@@ -15,23 +15,22 @@ services:
     volumes:
       - redisdata:/data
 
-  minio:
+  rustfs:
     profiles: ["s3"]
-    image: docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
-    command: server /data --console-address ":9001"
+    image: docker.io/rustfs/rustfs:latest
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9100:9000"
+      - "9101:9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      RUSTFS_ACCESS_KEY: minioadmin
+      RUSTFS_SECRET_KEY: minioadmin
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
       interval: 30s
       timeout: 20s
       retries: 3
     volumes:
-      - miniodata:/data
+      - rustfsdata:/data
 
   saio:
     profiles: ["swift"]
@@ -41,4 +40,4 @@ services:
 
 volumes:
   redisdata:
-  miniodata:
+  rustfsdata:

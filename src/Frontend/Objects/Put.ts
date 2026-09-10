@@ -4,6 +4,10 @@ import {
   Backend,
   InternalError,
   InvalidRequest,
+  MissingContentLength,
+  NoSuchBucket,
+  NoSuchKey,
+  PreconditionFailed,
 } from "../../Services/Backend.ts";
 import { BackendResolver } from "../../Services/BackendResolver.ts";
 import {
@@ -15,10 +19,19 @@ import {
   ensureClientWritableKey,
 } from "../../Services/InternalNamespace.ts";
 import { S3Xml } from "../../Services/S3Xml.ts";
-import { S3RequestParser } from "../Utils.ts";
+import {
+  S3RequestParser,
+  validateContentMd5Header,
+  withContentMd5Validation,
+} from "../Utils.ts";
 import { S3HeaderService } from "../../Services/S3HeaderService.ts";
 import { RequestContext } from "../Utils.ts";
 import { uploadPart } from "../Multipart/Put.ts";
+import {
+  evaluatePreconditions,
+  hasConditionalHeaders,
+  parseConditionalHeaders,
+} from "./Conditional.ts";
 
 function getHeader(
   headers: Record<string, string | string[] | undefined>,
@@ -232,7 +245,7 @@ const copyObject = Effect.gen(function* () {
 export const putObject = Effect.gen(function* () {
   const backend = yield* Backend;
   const request = yield* HttpServerRequest.HttpServerRequest;
-  const { sigV4Context } = yield* RequestContext;
+  const { sigV4Context, bucket } = yield* RequestContext;
   const { key, s3Params } = yield* S3RequestParser;
   yield* ensureClientWritableKey(key);
   const headerService = yield* S3HeaderService;
@@ -247,6 +260,77 @@ export const putObject = Effect.gen(function* () {
   }
 
   const hasAwsChunked = hasAwsChunkedContentEncoding(request.headers);
+
+  // S3 requires Content-Length on PUT object unless the body uses AWS
+  // streaming framing (aws-chunked / STREAMING-* payloads carry the decoded
+  // size in x-amz-decoded-content-length instead) or HTTP chunked transfer
+  // encoding, which s3-tests exercises and real S3 accepts as a legacy
+  // behavior (the backend infers the exact size from the stream).
+  const contentLengthHeader = getHeader(request.headers, "content-length");
+  const decodedLengthHeader = getHeader(
+    request.headers,
+    "x-amz-decoded-content-length",
+  );
+  const hasChunkedTransferEncoding = getHeader(
+    request.headers,
+    "transfer-encoding",
+  )?.toLowerCase().includes("chunked");
+  if (
+    !hasAwsChunked && !hasChunkedTransferEncoding &&
+    contentLengthHeader === undefined && decodedLengthHeader === undefined
+  ) {
+    return yield* Effect.fail(
+      new MissingContentLength({
+        message: "You must provide the Content-Length HTTP header.",
+      }),
+    );
+  }
+
+  // Content-MD5: reject malformed values up front, then verify the payload
+  // MD5 while the body streams to the backend.
+  const contentMd5 = getHeader(request.headers, "content-md5");
+  yield* validateContentMd5Header(contentMd5);
+
+  // RFC 7232 conditional requests: evaluate against the current
+  // representation before consuming the request body.
+  const conditions = parseConditionalHeaders(request.headers);
+  if (hasConditionalHeaders(conditions)) {
+    const head = yield* backend.headObject(key, request.headers).pipe(
+      Effect.catchIf(
+        (e) => e instanceof NoSuchKey || e instanceof NoSuchBucket,
+        () => Effect.succeed(undefined),
+      ),
+    );
+    if (head === undefined) {
+      // S3: PUT with If-Match on a non-existent key fails with NoSuchKey;
+      // If-None-Match on a non-existent key proceeds.
+      if (conditions.ifMatch !== undefined) {
+        return yield* Effect.fail(
+          new NoSuchKey({
+            bucket,
+            key,
+            message: "The specified key does not exist.",
+          }),
+        );
+      }
+    } else {
+      const outcome = evaluatePreconditions({
+        conditions,
+        etag: head.etag,
+        lastModified: head.lastModified,
+        method: "PUT",
+      });
+      if (outcome.kind === "preconditionFailed") {
+        return yield* Effect.fail(
+          new PreconditionFailed({
+            message:
+              "At least one of the pre-conditions you specified did not hold",
+          }),
+        );
+      }
+    }
+  }
+
   yield* Effect.logDebug("PutObject aws-chunked decision", {
     key,
     hasAwsChunked,
@@ -274,9 +358,13 @@ export const putObject = Effect.gen(function* () {
     })
     : request.stream;
 
+  const validatedBody = contentMd5 !== undefined && contentMd5 !== ""
+    ? withContentMd5Validation(bodyStream, contentMd5)
+    : bodyStream;
+
   const result = yield* backend.putObject(
     key,
-    bodyStream,
+    validatedBody,
     request.headers,
   );
 

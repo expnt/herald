@@ -13,9 +13,9 @@ import { createHash } from "node-crypto";
 
 const testConfig: GlobalConfig = {
   backends: {
-    minio: {
+    rustfs: {
       protocol: "s3",
-      endpoint: "http://localhost:9000",
+      endpoint: "http://localhost:9100",
       region: "us-east-1",
       credentials: {
         accessKeyId: "minioadmin",
@@ -98,7 +98,7 @@ const signedStreamPutWithoutContentLength = async (
     method: "PUT",
     headers: requestHeaders,
     body: stream,
-    // @ts-ignore required by fetch implementations for streaming request body
+    // @ts-expect-error required by fetch implementations for streaming request body
     duplex: "half",
   });
 };
@@ -145,7 +145,7 @@ const signedPutWithHeaders = async (
     method: "PUT",
     headers: requestHeaders,
     body: bodyBytes,
-    // @ts-ignore duplex is required for non-GET body in Deno fetch with streams/body bytes
+    // @ts-expect-error duplex is required for non-GET body in Deno fetch with streams/body bytes
     duplex: "half",
   });
 };
@@ -190,7 +190,7 @@ const cases: ProxyTestCase[] = [
         // Ignore already-exists races.
       }
     },
-    fn: async (client, context) => {
+    fn: async (_client, context) => {
       if (!context?.baseUrl) {
         throw new Error("Missing baseUrl in test context");
       }
@@ -200,9 +200,15 @@ const cases: ProxyTestCase[] = [
         KEY_CHUNKED,
         "bar",
       );
+      // Streamed body without Content-Length: undici sends
+      // Transfer-Encoding: chunked, which Herald accepts (matching real S3
+      // legacy behavior and s3-tests
+      // test_object_write_with_chunked_transfer_encoding). A PUT with NO
+      // Content-Length and NO chunked TE is rejected 411 MissingContentLength
+      // (s3-tests test_object_create_bad_contentlength_none).
       assertEquals(response.status, 200);
 
-      const out = await client.send(
+      const out = await _client.send(
         new GetObjectCommand({ Bucket: BUCKET, Key: KEY_CHUNKED }),
       );
       const bytes = await out.Body?.transformToByteArray();

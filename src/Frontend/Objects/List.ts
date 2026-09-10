@@ -38,6 +38,7 @@ export const listObjects = Effect.gen(function* () {
     continuationToken: s3Params["continuation-token"],
     startAfter: s3Params["start-after"],
     listType: s3Params["list-type"] === "2" ? 2 : 1,
+    fetchOwner: s3Params["fetch-owner"] === "true",
   });
 
   return s3Xml.formatListObjects(filterVisibleObjectList(result));
