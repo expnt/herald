@@ -301,3 +301,4 @@ s3tests/functional/test_s3.py::test_versioning_concurrent_multi_object_delete
 s3tests/functional/test_s3.py::test_versioning_multi_object_delete
 s3tests/functional/test_s3.py::test_versioning_obj_plain_null_version_overwrite_suspended
 s3tests/functional/test_utils.py::test_generate
+s3tests/functional/test_s3.py::test_list_buckets_anonymous
