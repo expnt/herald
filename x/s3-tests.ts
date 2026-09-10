@@ -429,6 +429,10 @@ email = iam_alt_root@example.com
     };
     Deno.addSignalListener("SIGINT", sigintHandler);
 
+    // Set by the pass-list gate below; read by the finalizer deadline (which
+    // is armed inside the pytest try block, before the hard-timeout return).
+    let gatePassed = false;
+
     const result = yield* Effect.tryPromise({
       try: async () => {
         let collectedInfo = "";
@@ -646,6 +650,23 @@ email = iam_alt_root@example.com
 
         Deno.removeSignalListener("SIGINT", sigintHandler);
 
+        // The scoped finalizers (server.shutdown, webHandler.dispose) can hang if
+        // a request is stuck in-flight (observed in CI: the runner sat in ep_poll
+        // forever after pytest exited). The event loop stays idle during that
+        // wait, so a timer still fires — force-exit after a grace period so the
+        // job fails (and artifacts upload) instead of hanging. If the gate
+        // already passed, exit 0: the hang is a Deno runtime thread-cleanup
+        // issue after a successful run, not a test failure. Set this BEFORE the
+        // hard-timeout early return so a finalizer hang after a timeout is also
+        // caught (previously the deadline was skipped on that path, letting the
+        // job hang until the workflow timeout).
+        const finalizerDeadline = setTimeout(() => {
+          console.error(
+            colors.red("Finalizer deadline exceeded — force exiting."),
+          );
+          Deno.exit(gatePassed ? 0 : 124);
+        }, 30 * 1000);
+
         if (raceResult === "timeout") {
           return {
             code: 124,
@@ -821,20 +842,8 @@ email = iam_alt_root@example.com
       }
     }
 
-    // The scoped finalizers (server.shutdown, webHandler.dispose) can hang if
-    // a request is stuck in-flight (observed in CI: the runner sat in ep_poll
-    // forever after pytest exited). The event loop stays idle during that
-    // wait, so a timer still fires — force-exit after a grace period so the
-    // job fails (and artifacts upload) instead of hanging. If the gate
-    // already passed, exit 0: the hang is a Deno runtime thread-cleanup
-    // issue after a successful run, not a test failure.
-    let gatePassed = false;
-    const finalizerDeadline = setTimeout(() => {
-      console.error(
-        colors.red("Finalizer deadline exceeded — force exiting."),
-      );
-      Deno.exit(gatePassed ? 0 : 124);
-    }, 30 * 1000);
+    // (finalizer deadline is set right after the pytest race, before the
+    // hard-timeout early return, so it also covers that path)
 
     // --- Pass-list regression gate ---
     // s3-tests doesn't fully pass against Herald, so CI can't require a green

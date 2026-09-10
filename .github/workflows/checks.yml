@@ -261,6 +261,17 @@ jobs:
       # The runner writes pytest output, proxy logs and junit to the checkout;
       # upload them on failure so a hang/crash is diagnosable even when the
       # step's own output capture is lost.
+      # The hang-watch log is small and is the key diagnostic for the flaky
+      # swift hang (process state every 30s). Upload it on every run so a
+      # hang that survives to a green job still leaves evidence. The big
+      # logs (pytest output, junit) only on failure to avoid 70MB uploads.
+      - name: upload hang-watch log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s3-tests-${{ matrix.backend }}-hang-watch
+          path: /tmp/hang-watch.log
+          if-no-files-found: ignore
       - name: upload s3-tests logs
         if: always() && failure()
         uses: actions/upload-artifact@v4
@@ -270,7 +281,6 @@ jobs:
             s3-tests/s3-tests*.log
             s3-tests/herald-proxy*.log
             s3-tests/junit-*.xml
-            /tmp/hang-watch.log
           if-no-files-found: ignore
       - name: prune uv cache
         run: nix develop --command uv cache prune --ci
