@@ -226,6 +226,7 @@ jobs:
             while true; do
               {
                 echo "=== $(date -u +%H:%M:%S) ==="
+                ulimit -v; ulimit -a | grep -iE "virtual|address|data|stack"
                 ps -eo pid,ppid,stat,wchan:25,cmd | grep -E "s3-tests.ts|uv run pytest|upterm" | grep -v grep
                 for p in $(pgrep -f "deno run.*s3-tests.ts"); do
                   echo "--- pid $p ---"
