@@ -226,7 +226,9 @@ jobs:
             while true; do
               {
                 echo "=== $(date -u +%H:%M:%S) ==="
-                ps -eo pid,ppid,stat,wchan:25,cmd | grep -E "s3-tests.ts|uv run pytest|upterm" | grep -v grep
+                ulimit -v; ulimit -a | grep -iE "virtual|address|data|stack"
+                free -m | head -2
+                ps -eo pid,ppid,rss,stat,wchan:25,cmd | grep -E "s3-tests.ts|uv run pytest|upterm" | grep -v grep
                 for p in $(pgrep -f "deno run.*s3-tests.ts"); do
                   echo "--- pid $p ---"
                   cat /proc/$p/wchan 2>/dev/null
@@ -261,6 +263,17 @@ jobs:
       # The runner writes pytest output, proxy logs and junit to the checkout;
       # upload them on failure so a hang/crash is diagnosable even when the
       # step's own output capture is lost.
+      # The hang-watch log is small and is the key diagnostic for the flaky
+      # swift hang (process state every 30s). Upload it on every run so a
+      # hang that survives to a green job still leaves evidence. The big
+      # logs (pytest output, junit) only on failure to avoid 70MB uploads.
+      - name: upload hang-watch log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s3-tests-${{ matrix.backend }}-hang-watch
+          path: /tmp/hang-watch.log
+          if-no-files-found: ignore
       - name: upload s3-tests logs
         if: always() && failure()
         uses: actions/upload-artifact@v4
@@ -270,7 +283,6 @@ jobs:
             s3-tests/s3-tests*.log
             s3-tests/herald-proxy*.log
             s3-tests/junit-*.xml
-            /tmp/hang-watch.log
           if-no-files-found: ignore
       - name: prune uv cache
         run: nix develop --command uv cache prune --ci

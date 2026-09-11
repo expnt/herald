@@ -396,6 +396,13 @@ email = iam_alt_root@example.com
     if (tags) {
       cmdArgs.push("-m", tags);
     }
+    // Exclude tests that emit megabyte-scale single-line assertion diffs.
+    // test_versioning_obj_create_overwrite_multipart is a versioning test
+    // mis-marked fails_on_dbstore (so -m not versioning doesn't catch it);
+    // Herald's versioning is broken, the test fails, and the full content
+    // diff (75MB junit) has crashed the runner in CI. It's a known failure
+    // (not in the pass list), so excluding it costs nothing on the gate.
+    cmdArgs.push("-k", "not test_versioning_obj_create_overwrite_multipart");
 
     cmdArgs.push(...pytestArgs);
 
@@ -428,6 +435,10 @@ email = iam_alt_root@example.com
       child.kill("SIGTERM");
     };
     Deno.addSignalListener("SIGINT", sigintHandler);
+
+    // Set by the pass-list gate below; read by the finalizer deadline (which
+    // is armed inside the pytest try block, before the hard-timeout return).
+    let gatePassed = false;
 
     const result = yield* Effect.tryPromise({
       try: async () => {
@@ -646,6 +657,23 @@ email = iam_alt_root@example.com
 
         Deno.removeSignalListener("SIGINT", sigintHandler);
 
+        // The scoped finalizers (server.shutdown, webHandler.dispose) can hang if
+        // a request is stuck in-flight (observed in CI: the runner sat in ep_poll
+        // forever after pytest exited). The event loop stays idle during that
+        // wait, so a timer still fires — force-exit after a grace period so the
+        // job fails (and artifacts upload) instead of hanging. If the gate
+        // already passed, exit 0: the hang is a Deno runtime thread-cleanup
+        // issue after a successful run, not a test failure. Set this BEFORE the
+        // hard-timeout early return so a finalizer hang after a timeout is also
+        // caught (previously the deadline was skipped on that path, letting the
+        // job hang until the workflow timeout).
+        const finalizerDeadline = setTimeout(() => {
+          console.error(
+            colors.red("Finalizer deadline exceeded — force exiting."),
+          );
+          Deno.exit(gatePassed ? 0 : 124);
+        }, 30 * 1000);
+
         if (raceResult === "timeout") {
           return {
             code: 124,
@@ -684,46 +712,7 @@ email = iam_alt_root@example.com
         } | null = null;
 
         try {
-          const junitXml = await Deno.readTextFile(junitXmlPath);
-          const getAttr = (name: string) => {
-            const match = junitXml.match(new RegExp(`${name}="([\\d.]+)"`));
-            return match ? parseFloat(match[1]) : 0;
-          };
-
-          const passedNames: string[] = [];
-          const failedNames: string[] = [];
-          const errorNames: string[] = [];
-
-          const testcaseMatches = junitXml.matchAll(
-            /<testcase classname="([^"]+)" name="([^"]+)"[^>]*?(\/>|>([\s\S]*?)<\/testcase>)/g,
-          );
-          for (const match of testcaseMatches) {
-            // JUnit classnames are dotted ("s3tests.functional.test_s3"); the
-            // pass list uses pytest nodeids ("s3tests/functional/test_s3.py::…").
-            const fullName = `${match[1].replaceAll(".", "/")}.py::${match[2]}`;
-            // Passing tests serialize as self-closing <testcase …/> (group 4
-            // undefined); failures/errors/skips have inner content.
-            const content = match[4] ?? "";
-            if (content.includes("<failure")) failedNames.push(fullName);
-            if (content.includes("<error")) errorNames.push(fullName);
-            if (
-              !content.includes("<failure") && !content.includes("<error") &&
-              !content.includes("<skipped")
-            ) {
-              passedNames.push(fullName);
-            }
-          }
-
-          junitData = {
-            tests: Math.floor(getAttr("tests")),
-            failures: Math.floor(getAttr("failures")),
-            errors: Math.floor(getAttr("errors")),
-            skipped: Math.floor(getAttr("skipped")),
-            time: getAttr("time"),
-            passedNames,
-            failedNames,
-            errorNames,
-          };
+          junitData = await parseJunitStreaming(junitXmlPath);
         } catch (e) {
           console.error(`Failed to parse JUnit XML: ${e}`);
         }
@@ -821,20 +810,8 @@ email = iam_alt_root@example.com
       }
     }
 
-    // The scoped finalizers (server.shutdown, webHandler.dispose) can hang if
-    // a request is stuck in-flight (observed in CI: the runner sat in ep_poll
-    // forever after pytest exited). The event loop stays idle during that
-    // wait, so a timer still fires — force-exit after a grace period so the
-    // job fails (and artifacts upload) instead of hanging. If the gate
-    // already passed, exit 0: the hang is a Deno runtime thread-cleanup
-    // issue after a successful run, not a test failure.
-    let gatePassed = false;
-    const finalizerDeadline = setTimeout(() => {
-      console.error(
-        colors.red("Finalizer deadline exceeded — force exiting."),
-      );
-      Deno.exit(gatePassed ? 0 : 124);
-    }, 30 * 1000);
+    // (finalizer deadline is set right after the pytest race, before the
+    // hard-timeout early return, so it also covers that path)
 
     // --- Pass-list regression gate ---
     // s3-tests doesn't fully pass against Herald, so CI can't require a green
@@ -973,6 +950,160 @@ email = iam_alt_root@example.com
     Effect.provide(Logger.minimumLogLevel(minLogLevel)),
   ));
 });
+
+// Parse a JUnit XML file in a memory-bounded way. A single pathological
+// testcase (a megabyte-scale assertion diff with no newlines, e.g. the
+// versioning multipart content checks) can make the file 75MB+; reading it
+// whole into a string and regex-matching the bodies risks a V8 OOM crash
+// (observed in CI: the runner died mid-step on a 75MB junit). We only need
+// the testsuite counts and each testcase's name + pass/fail/error/skipped
+// status, so we stream the file and never buffer a testcase body.
+export async function parseJunitStreaming(
+  path: string,
+): Promise<
+  {
+    tests: number;
+    failures: number;
+    errors: number;
+    skipped: number;
+    time?: number;
+    passedNames: string[];
+    failedNames: string[];
+    errorNames: string[];
+  } | null
+> {
+  // Size the document first (diagnostic): a pathological junit (megabyte-
+  // scale single-line diffs) can be 75MB+. The chunked reader below is
+  // memory-bounded regardless of size, so we only log the size.
+  const stat = await Deno.stat(path);
+  if (stat.size > 8 * 1024 * 1024) {
+    console.warn(`JUnit is large (${stat.size} bytes) — streaming parse`);
+  }
+
+  const file = await Deno.open(path);
+  const decoder = new TextDecoder();
+  let buffer = "";
+  // State machine: scan for <testcase>, read its opening tag, then skip the
+  // body (only peeking at the first few KB for failure/error/skipped markers,
+  // which pytest emits right after the opening tag).
+  let state: "scan" | "tag" | "body" = "scan";
+  let current: { classname: string; name: string } | null = null;
+  let bodyScanned = 0;
+  let status: "failed" | "error" | "skipped" | null = null;
+  const MARKER_SCAN = 4096;
+  const passedNames: string[] = [];
+  const failedNames: string[] = [];
+  const errorNames: string[] = [];
+  let testsuite: {
+    tests: number;
+    failures: number;
+    errors: number;
+    skipped: number;
+    time?: number;
+  } | null = null;
+
+  const record = (tc: { classname: string; name: string }, s: string) => {
+    const fullName = `${tc.classname.replaceAll(".", "/")}.py::${tc.name}`;
+    if (s === "failed") failedNames.push(fullName);
+    else if (s === "error") errorNames.push(fullName);
+    else if (s === "skipped") return; // not tracked (matches the old parser)
+    else passedNames.push(fullName);
+  };
+
+  const chunk = new Uint8Array(64 * 1024);
+  try {
+    while (true) {
+      const n = await file.read(chunk);
+      if (n === null) break;
+      buffer += decoder.decode(chunk.subarray(0, n), { stream: true });
+
+      // Extract the <testsuite> counts from the first chunk.
+      if (testsuite === null) {
+        const m = buffer.match(/<testsuite\b[^>]*>/);
+        if (m) {
+          const getAttr = (name: string) => {
+            const am = m[0].match(new RegExp(`${name}="([\\d.]+)"`));
+            return am ? parseFloat(am[1]) : 0;
+          };
+          testsuite = {
+            tests: Math.floor(getAttr("tests")),
+            failures: Math.floor(getAttr("failures")),
+            errors: Math.floor(getAttr("errors")),
+            skipped: Math.floor(getAttr("skipped")),
+            time: getAttr("time"),
+          };
+        }
+      }
+
+      while (true) {
+        if (state === "scan") {
+          const idx = buffer.indexOf("<testcase");
+          if (idx === -1) {
+            // Keep a tail in case "<testcase" straddles a chunk boundary.
+            buffer = buffer.slice(-16);
+            break;
+          }
+          buffer = buffer.slice(idx);
+          state = "tag";
+        } else if (state === "tag") {
+          const end = buffer.indexOf(">");
+          if (end === -1) {
+            buffer = buffer.slice(-256);
+            break;
+          }
+          const tag = buffer.slice(0, end + 1);
+          buffer = buffer.slice(end + 1);
+          const cm = tag.match(/\bclassname="([^"]+)"/);
+          const nm = tag.match(/\bname="([^"]+)"/);
+          current = { classname: cm?.[1] ?? "", name: nm?.[1] ?? "" };
+          if (tag.trimEnd().endsWith("/>")) {
+            record(current, "passed");
+            current = null;
+            state = "scan";
+          } else {
+            bodyScanned = 0;
+            status = null;
+            state = "body";
+          }
+        } else {
+          // body: peek at the first few KB for markers, then skip to </testcase>.
+          if (status === null && bodyScanned < MARKER_SCAN) {
+            const window = buffer.slice(0, MARKER_SCAN - bodyScanned);
+            if (window.includes("<failure")) status = "failed";
+            else if (window.includes("<error")) status = "error";
+            else if (window.includes("<skipped")) status = "skipped";
+            bodyScanned += window.length;
+          }
+          const end = buffer.indexOf("</testcase>");
+          if (end === -1) {
+            // Keep the un-scanned window plus a tail for the closing tag.
+            const keep = Math.max(MARKER_SCAN - bodyScanned, 0) + 32;
+            buffer = buffer.slice(-keep);
+            break;
+          }
+          record(current!, status ?? "passed");
+          current = null;
+          buffer = buffer.slice(end + "</testcase>".length);
+          state = "scan";
+        }
+      }
+    }
+  } finally {
+    file.close();
+  }
+
+  if (testsuite === null) return null;
+  return {
+    tests: testsuite.tests,
+    failures: testsuite.failures,
+    errors: testsuite.errors,
+    skipped: testsuite.skipped,
+    time: testsuite.time,
+    passedNames,
+    failedNames,
+    errorNames,
+  };
+}
 
 if (import.meta.main) {
   // Add a global unhandled rejection handler to catch stray promises
